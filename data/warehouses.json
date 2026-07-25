@@ -1,0 +1,35 @@
+[
+  {
+    "id": "WH1",
+    "name": "WH1 - Ethiopia Agricultural Export Hub",
+    "code": "WH1-AGRI-EXP",
+    "location": "Modjo Export Terminal, Ethiopia",
+    "type": "Export Hub",
+    "specialization": "Ethiopian Agricultural Commodities (Coffee, Sesame, Teff, Pulses, Spices)",
+    "targetMarkets": "Europe (Germany, Netherlands), Asia (Japan, China, UAE), USA",
+    "manager": "Abebe Kasahun",
+    "status": "Active"
+  },
+  {
+    "id": "WH2",
+    "name": "WH2 - Veterinary Import Hub (India)",
+    "code": "WH2-VET-IND",
+    "location": "Kaliti Industrial Zone, Addis Ababa, Ethiopia",
+    "type": "Import & Distribution Hub",
+    "specialization": "Veterinary Pharmaceuticals & Livestock Injectables (India Origin)",
+    "targetMarkets": "Ethiopian Dairy Farms, Pastoralist Cooperatives, Clinics & Bureaus",
+    "manager": "Sintayehu Kebede",
+    "status": "Active"
+  },
+  {
+    "id": "WH3",
+    "name": "WH3 - Veterinary Import Hub (China)",
+    "code": "WH3-VET-CHN",
+    "location": "Bishoftu Vet Park, Oromia, Ethiopia",
+    "type": "Import & Distribution Hub",
+    "specialization": "Veterinary Soluble Powders, Biologics & Poultry Vaccines (China Origin)",
+    "targetMarkets": "Poultry Farms (Bishoftu), Regional Veterinary Clinics, Farm Cooperatives",
+    "manager": "Tigist Haile",
+    "status": "Active"
+  }
+]

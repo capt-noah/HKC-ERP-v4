@@ -1,0 +1,22 @@
+[
+  {
+    "id": "PAY-2026-001",
+    "direction": "Received",
+    "linked_invoice_id": "inv-101",
+    "amount": 45200.0,
+    "currency": "ETB",
+    "date": "2026-07-02",
+    "method": "Wire Transfer",
+    "reference": "TXN-9021"
+  },
+  {
+    "id": "PAY-2026-002",
+    "direction": "Made",
+    "linked_invoice_id": null,
+    "amount": 14250.0,
+    "currency": "ETB",
+    "date": "2026-07-06",
+    "method": "Corporate Card",
+    "reference": "TXN-9022"
+  }
+]

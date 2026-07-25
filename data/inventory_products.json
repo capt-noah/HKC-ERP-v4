@@ -1,0 +1,304 @@
+[
+  {
+    "id": "P-101",
+    "name": "Grade 1 Yirgacheffe Arabica Coffee Beans",
+    "sku": "AGR-COF-YRG1",
+    "category": "Agricultural Export (Coffee)",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "quantity": 1850,
+    "unit": "bags (60kg)",
+    "unitCost": 10500.0,
+    "sellingPrice": 14200.0,
+    "batch": "B-YRG-2026-04",
+    "expiry": "2027-12-31",
+    "status": "In Stock",
+    "origin": "Ethiopia (Local Sourcing - Sidama & Oromia)",
+    "supplierName": "Oromia Coffee Farmers Cooperative Union",
+    "stockBreakdown": [
+      { "warehouse": "WH1", "qty": 1850 }
+    ],
+    "batches": [
+      { "batchNo": "B-YRG-2026-04", "qty": 1200, "expiry": "2027-12-31", "status": "Released" },
+      { "batchNo": "B-YRG-2026-03", "qty": 650, "expiry": "2027-09-30", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-102",
+    "name": "Humera White Sesame Seeds (Grade A, Purity 99.5%)",
+    "sku": "AGR-SES-HUM1",
+    "category": "Agricultural Export (Oilseeds)",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "quantity": 620,
+    "unit": "Metric Tons",
+    "unitCost": 72000.0,
+    "sellingPrice": 92500.0,
+    "batch": "B-HUM-2026-01",
+    "expiry": "2027-08-15",
+    "status": "In Stock",
+    "origin": "Ethiopia (Local Sourcing - Gondar & Tigray)",
+    "supplierName": "Gondar Sesame Farmers Union",
+    "stockBreakdown": [
+      { "warehouse": "WH1", "qty": 620 }
+    ],
+    "batches": [
+      { "batchNo": "B-HUM-2026-01", "qty": 620, "expiry": "2027-08-15", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-103",
+    "name": "Export Quality White Ethiopian Teff Grain",
+    "sku": "AGR-TEF-WHT1",
+    "category": "Agricultural Export (Grains)",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "quantity": 1400,
+    "unit": "bags (50kg)",
+    "unitCost": 3200.0,
+    "sellingPrice": 4600.0,
+    "batch": "B-TEF-2026-02",
+    "expiry": "2028-01-20",
+    "status": "In Stock",
+    "origin": "Ethiopia (Local Sourcing - Debre Markos)",
+    "supplierName": "Ethiopian Grain Trade Enterprise",
+    "stockBreakdown": [
+      { "warehouse": "WH1", "qty": 1400 }
+    ],
+    "batches": [
+      { "batchNo": "B-TEF-2026-02", "qty": 1400, "expiry": "2028-01-20", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-104",
+    "name": "Ethiopian Red Kidney Beans & Desi Chickpeas",
+    "sku": "AGR-PLS-RKB1",
+    "category": "Agricultural Export (Pulses)",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "quantity": 310,
+    "unit": "bags (50kg)",
+    "unitCost": 2400.0,
+    "sellingPrice": 3400.0,
+    "batch": "B-PLS-2026-08",
+    "expiry": "2027-11-10",
+    "status": "Low Stock",
+    "origin": "Ethiopia (Local Sourcing - Rift Valley)",
+    "supplierName": "Rift Valley Farmers Association",
+    "stockBreakdown": [
+      { "warehouse": "WH1", "qty": 310 }
+    ],
+    "batches": [
+      { "batchNo": "B-PLS-2026-08", "qty": 310, "expiry": "2027-11-10", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-105",
+    "name": "Wild Ethiopian Korarima (Black Cardamom)",
+    "sku": "AGR-SPC-KOR1",
+    "category": "Agricultural Export (Spices)",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "quantity": 240,
+    "unit": "bags (25kg)",
+    "unitCost": 14500.0,
+    "sellingPrice": 19800.0,
+    "batch": "B-KOR-2026-05",
+    "expiry": "2028-06-30",
+    "status": "In Stock",
+    "origin": "Ethiopia (Local Sourcing - Kaffa & Bench Maji)",
+    "supplierName": "Kaffa Organic Spice Union",
+    "stockBreakdown": [
+      { "warehouse": "WH1", "qty": 240 }
+    ],
+    "batches": [
+      { "batchNo": "B-KOR-2026-05", "qty": 240, "expiry": "2028-06-30", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-201",
+    "name": "Oxytetracycline 20% LA Injectable (100ml)",
+    "sku": "VET-OXY-20LA",
+    "category": "Veterinary Pharmaceuticals (India Import)",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "quantity": 4800,
+    "unit": "vials (100ml)",
+    "unitCost": 320.0,
+    "sellingPrice": 480.0,
+    "batch": "B-OXY-IND-99",
+    "expiry": "2028-05-18",
+    "status": "In Stock",
+    "origin": "India (Mumbai Port Import)",
+    "supplierName": "Indian Vet Bio Pharma Ltd",
+    "stockBreakdown": [
+      { "warehouse": "WH2", "qty": 4800 }
+    ],
+    "batches": [
+      { "batchNo": "B-OXY-IND-99", "qty": 3500, "expiry": "2028-05-18", "status": "Released" },
+      { "batchNo": "B-OXY-IND-98", "qty": 1300, "expiry": "2027-12-10", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-202",
+    "name": "Ivermectin 1% Injectable Solution for Livestock",
+    "sku": "VET-IVM-01IN",
+    "category": "Veterinary Anti-Parasitics (India Import)",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "quantity": 3200,
+    "unit": "vials (50ml)",
+    "unitCost": 220.0,
+    "sellingPrice": 350.0,
+    "batch": "B-IVM-IND-42",
+    "expiry": "2028-09-30",
+    "status": "In Stock",
+    "origin": "India (Gujarat Port Import)",
+    "supplierName": "SunVet Healthcare Ltd",
+    "stockBreakdown": [
+      { "warehouse": "WH2", "qty": 3200 }
+    ],
+    "batches": [
+      { "batchNo": "B-IVM-IND-42", "qty": 3200, "expiry": "2028-09-30", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-203",
+    "name": "Albendazole 2500mg Dewormer Bolus (Box of 50)",
+    "sku": "VET-ALB-2500",
+    "category": "Veterinary Anthelmintics (India Import)",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "quantity": 850,
+    "unit": "boxes",
+    "unitCost": 810.0,
+    "sellingPrice": 1200.0,
+    "batch": "B-ALB-IND-18",
+    "expiry": "2027-10-15",
+    "status": "In Stock",
+    "origin": "India (Mumbai Port Import)",
+    "supplierName": "Indian Vet Bio Pharma Ltd",
+    "stockBreakdown": [
+      { "warehouse": "WH2", "qty": 850 }
+    ],
+    "batches": [
+      { "batchNo": "B-ALB-IND-18", "qty": 850, "expiry": "2027-10-15", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-204",
+    "name": "Livestock Multivitamin + Mineral Injection (100ml)",
+    "sku": "VET-VIT-MIN1",
+    "category": "Veterinary Supplements (India Import)",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "quantity": 280,
+    "unit": "vials",
+    "unitCost": 360.0,
+    "sellingPrice": 520.0,
+    "batch": "B-VIT-IND-07",
+    "expiry": "2027-04-30",
+    "status": "Low Stock",
+    "origin": "India (Gujarat Port Import)",
+    "supplierName": "SunVet Healthcare Ltd",
+    "stockBreakdown": [
+      { "warehouse": "WH2", "qty": 280 }
+    ],
+    "batches": [
+      { "batchNo": "B-VIT-IND-07", "qty": 280, "expiry": "2027-04-30", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-301",
+    "name": "Amoxicillin Trihydrate 50% Soluble Powder (1kg Tin)",
+    "sku": "VET-AMX-50SP",
+    "category": "Veterinary Soluble Powders (China Import)",
+    "warehouse": "WH3",
+    "warehouseName": "WH3 - Veterinary Import Hub (China)",
+    "quantity": 2100,
+    "unit": "tins (1kg)",
+    "unitCost": 980.0,
+    "sellingPrice": 1450.0,
+    "batch": "B-AMX-CHN-88",
+    "expiry": "2028-03-22",
+    "status": "In Stock",
+    "origin": "China (Shandong Import)",
+    "supplierName": "Shandong Animal Health Corp",
+    "stockBreakdown": [
+      { "warehouse": "WH3", "qty": 2100 }
+    ],
+    "batches": [
+      { "batchNo": "B-AMX-CHN-88", "qty": 1500, "expiry": "2028-03-22", "status": "Released" },
+      { "batchNo": "B-AMX-CHN-87", "qty": 600, "expiry": "2027-11-14", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-302",
+    "name": "Ceftiofur Sodium 1g Sterile Powder for Injection",
+    "sku": "VET-CEF-01GM",
+    "category": "Veterinary Injectables (China Import)",
+    "warehouse": "WH3",
+    "warehouseName": "WH3 - Veterinary Import Hub (China)",
+    "quantity": 1250,
+    "unit": "vials",
+    "unitCost": 420.0,
+    "sellingPrice": 650.0,
+    "batch": "B-CEF-CHN-12",
+    "expiry": "2027-12-10",
+    "status": "In Stock",
+    "origin": "China (Shijiazhuang Import)",
+    "supplierName": "Hebei Vet Chem Ltd",
+    "stockBreakdown": [
+      { "warehouse": "WH3", "qty": 1250 }
+    ],
+    "batches": [
+      { "batchNo": "B-CEF-CHN-12", "qty": 1250, "expiry": "2027-12-10", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-303",
+    "name": "Enrofloxacin 10% Oral Solution for Poultry (1L)",
+    "sku": "VET-ENR-10OR",
+    "category": "Veterinary Biologics & Poultry (China Import)",
+    "warehouse": "WH3",
+    "warehouseName": "WH3 - Veterinary Import Hub (China)",
+    "quantity": 1900,
+    "unit": "bottles (1L)",
+    "unitCost": 510.0,
+    "sellingPrice": 780.0,
+    "batch": "B-ENR-CHN-31",
+    "expiry": "2028-01-18",
+    "status": "In Stock",
+    "origin": "China (Shandong Import)",
+    "supplierName": "Shandong Animal Health Corp",
+    "stockBreakdown": [
+      { "warehouse": "WH3", "qty": 1900 }
+    ],
+    "batches": [
+      { "batchNo": "B-ENR-CHN-31", "qty": 1900, "expiry": "2028-01-18", "status": "Released" }
+    ]
+  },
+  {
+    "id": "P-304",
+    "name": "Newcastle + IB Combined Live Poultry Vaccine (1000 Doses)",
+    "sku": "VET-VAC-NCIB",
+    "category": "Veterinary Poultry Vaccines (China Import)",
+    "warehouse": "WH3",
+    "warehouseName": "WH3 - Veterinary Import Hub (China)",
+    "quantity": 160,
+    "unit": "vials (1000d)",
+    "unitCost": 750.0,
+    "sellingPrice": 1100.0,
+    "batch": "B-VAC-CHN-05",
+    "expiry": "2026-11-30",
+    "status": "Low Stock",
+    "origin": "China (Shanghai Cold-Chain Import)",
+    "supplierName": "Shanghai BioVet Vaccines Co.",
+    "stockBreakdown": [
+      { "warehouse": "WH3", "qty": 160 }
+    ],
+    "batches": [
+      { "batchNo": "B-VAC-CHN-05", "qty": 160, "expiry": "2026-11-30", "status": "Pending QA" }
+    ]
+  }
+]

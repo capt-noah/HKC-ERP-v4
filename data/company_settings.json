@@ -1,0 +1,14 @@
+{
+  "company_name": "HKC Trading ERP",
+  "base_currency": "ETB",
+  "exchange_rates": {
+    "USD": 58.50,
+    "EUR": 63.20,
+    "GBP": 74.10,
+    "ETB": 1.00
+  },
+  "unrealized_exchange_gain_loss_account_id": "acc-5995",
+  "payroll_expense_account_id": "acc-5010",
+  "payroll_payable_account_id": "acc-2100",
+  "tax_payable_account_id": "acc-2210"
+}

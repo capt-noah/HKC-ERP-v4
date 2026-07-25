@@ -1,0 +1,93 @@
+[
+  {
+    "id": "PO-2026-089",
+    "poNumber": "PO-2026-089",
+    "supplier": "Oromia Coffee Farmers Cooperative Union",
+    "supplierId": "SUPP-001",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "status": "IN TRANSIT",
+    "statusColor": "bg-green-700 text-white",
+    "date": "2026-07-14",
+    "eta": "Expected in 2 days at Modjo Terminal",
+    "amount": 2100000.0,
+    "currency": "ETB",
+    "category": "Local Agricultural Sourcing",
+    "items": [
+      { "productId": "P-101", "name": "Grade 1 Yirgacheffe Arabica Coffee Beans", "sku": "AGR-COF-YRG1", "qty": 200, "unit": "bags (60kg)", "unitPrice": 10500.0, "total": 2100000.0 }
+    ]
+  },
+  {
+    "id": "PO-2026-088",
+    "poNumber": "PO-2026-088",
+    "supplier": "Indian Vet Bio Pharma Ltd (Mumbai, India)",
+    "supplierId": "SUPP-004",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "status": "IN TRANSIT",
+    "statusColor": "bg-blue-700 text-white",
+    "date": "2026-07-10",
+    "eta": "Sea Freight in Transit to Djibouti / Kaliti Depot",
+    "amount": 1280000.0,
+    "currency": "ETB",
+    "category": "Veterinary Import (India)",
+    "items": [
+      { "productId": "P-201", "name": "Oxytetracycline 20% LA Injectable (100ml)", "sku": "VET-OXY-20LA", "qty": 3000, "unit": "vials", "unitPrice": 320.0, "total": 960000.0 },
+      { "productId": "P-203", "name": "Albendazole 2500mg Dewormer Bolus", "sku": "VET-ALB-2500", "qty": 400, "unit": "boxes", "unitPrice": 800.0, "total": 320000.0 }
+    ]
+  },
+  {
+    "id": "PO-2026-087",
+    "poNumber": "PO-2026-087",
+    "supplier": "Shandong Animal Health Corp (China)",
+    "supplierId": "SUPP-006",
+    "warehouse": "WH3",
+    "warehouseName": "WH3 - Veterinary Import Hub (China)",
+    "status": "RECEIVED",
+    "statusColor": "bg-emerald-600 text-white",
+    "date": "2026-07-02",
+    "eta": "Arrived at Bishoftu Warehouse",
+    "amount": 980000.0,
+    "currency": "ETB",
+    "category": "Veterinary Import (China)",
+    "items": [
+      { "productId": "P-301", "name": "Amoxicillin Trihydrate 50% Soluble Powder", "sku": "VET-AMX-50SP", "qty": 1000, "unit": "tins (1kg)", "unitPrice": 980.0, "total": 980000.0 }
+    ]
+  },
+  {
+    "id": "PO-2026-086",
+    "poNumber": "PO-2026-086",
+    "supplier": "Gondar Sesame Farmers Union",
+    "supplierId": "SUPP-002",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "status": "DRAFT",
+    "statusColor": "bg-zinc-600 text-white",
+    "date": "2026-07-21",
+    "eta": "Draft PO under review",
+    "amount": 720000.0,
+    "currency": "ETB",
+    "category": "Local Agricultural Sourcing",
+    "items": [
+      { "productId": "P-102", "name": "Humera White Sesame Seeds", "sku": "AGR-SES-HUM1", "qty": 10, "unit": "Metric Tons", "unitPrice": 72000.0, "total": 720000.0 }
+    ]
+  },
+  {
+    "id": "PO-2026-085",
+    "poNumber": "PO-2026-085",
+    "supplier": "SunVet Healthcare Ltd (Gujarat, India)",
+    "supplierId": "SUPP-005",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "status": "DRAFT",
+    "statusColor": "bg-zinc-600 text-white",
+    "date": "2026-07-22",
+    "eta": "Draft PO pending Proforma confirmation",
+    "amount": 440000.0,
+    "currency": "ETB",
+    "category": "Veterinary Import (India)",
+    "items": [
+      { "productId": "P-202", "name": "Ivermectin 1% Injectable Solution", "sku": "VET-IVM-01IN", "qty": 2000, "unit": "vials", "unitPrice": 220.0, "total": 440000.0 }
+    ]
+  }
+]

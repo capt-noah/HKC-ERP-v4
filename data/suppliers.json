@@ -1,0 +1,86 @@
+[
+  {
+    "id": "SUPP-001",
+    "name": "Oromia Coffee Farmers Cooperative Union",
+    "country": "Ethiopia",
+    "city": "Addis Ababa",
+    "category": "Local Agricultural Supplier (Coffee)",
+    "warehouseTarget": "WH1",
+    "contactPerson": "Tadesse Meskela",
+    "email": "info@oromiacoffeeunion.org",
+    "rating": "4.9",
+    "status": "Active"
+  },
+  {
+    "id": "SUPP-002",
+    "name": "Gondar Sesame Farmers Union",
+    "country": "Ethiopia",
+    "city": "Gondar",
+    "category": "Local Agricultural Supplier (Oilseeds)",
+    "warehouseTarget": "WH1",
+    "contactPerson": "Mulugeta Assefa",
+    "email": "supply@gondarsesame.org",
+    "rating": "4.8",
+    "status": "Active"
+  },
+  {
+    "id": "SUPP-003",
+    "name": "Ethiopian Grain Trade Enterprise",
+    "country": "Ethiopia",
+    "city": "Debre Markos",
+    "category": "Local Agricultural Supplier (Grains & Teff)",
+    "warehouseTarget": "WH1",
+    "contactPerson": "Kassahun Desta",
+    "email": "trade@egte.gov.et",
+    "rating": "4.7",
+    "status": "Active"
+  },
+  {
+    "id": "SUPP-004",
+    "name": "Indian Vet Bio Pharma Ltd",
+    "country": "India",
+    "city": "Mumbai",
+    "category": "International Veterinary Manufacturer (Injectables & Boluses)",
+    "warehouseTarget": "WH2",
+    "contactPerson": "Dr. Rajesh Sharma",
+    "email": "export@indianvetpharma.in",
+    "rating": "4.9",
+    "status": "Active"
+  },
+  {
+    "id": "SUPP-005",
+    "name": "SunVet Healthcare Ltd",
+    "country": "India",
+    "city": "Gujarat",
+    "category": "International Veterinary Manufacturer (Anti-parasitics & Vitamins)",
+    "warehouseTarget": "WH2",
+    "contactPerson": "Amit Patel",
+    "email": "global@sunvethealth.com",
+    "rating": "4.8",
+    "status": "Active"
+  },
+  {
+    "id": "SUPP-006",
+    "name": "Shandong Animal Health Corp",
+    "country": "China",
+    "city": "Shandong",
+    "category": "International Veterinary Manufacturer (Soluble Powders & Oral)",
+    "warehouseTarget": "WH3",
+    "contactPerson": "Chen Wei",
+    "email": "export@shandongvet.cn",
+    "rating": "4.9",
+    "status": "Active"
+  },
+  {
+    "id": "SUPP-007",
+    "name": "Hebei Vet Chem Ltd",
+    "country": "China",
+    "city": "Shijiazhuang",
+    "category": "International Veterinary Manufacturer (Specialty Antibiotics)",
+    "warehouseTarget": "WH3",
+    "contactPerson": "Li Na",
+    "email": "sales@hebeivetchem.cn",
+    "rating": "4.7",
+    "status": "Active"
+  }
+]

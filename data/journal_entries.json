@@ -1,0 +1,101 @@
+[
+  {
+    "id": "JE-2026-001",
+    "entry_date": "2026-07-01",
+    "description": "Sales Invoice #INV-2026-102 dispatched to Stark Medical Supplies",
+    "source_type": "Sales Invoice",
+    "source_id": "INV-2026-102",
+    "created_by": "Billing Clerk",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-002",
+    "entry_date": "2026-07-02",
+    "description": "Payment receipt from Apex Healthcare Ltd for Invoice #INV-2026-101",
+    "source_type": "Payment",
+    "source_id": "PAY-2026-001",
+    "created_by": "Accounts Receivable",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-003",
+    "entry_date": "2026-07-04",
+    "description": "Monthly Office & Warehouse Lease Settlement",
+    "source_type": "Recurring Expense",
+    "source_id": "REC-001",
+    "created_by": "Automated Scheduler",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-004",
+    "entry_date": "2026-07-05",
+    "description": "Acquisition of active pharmaceutical raw materials",
+    "source_type": "Purchase Invoice",
+    "source_id": "PO-4091",
+    "created_by": "Procurement Officer",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-005",
+    "entry_date": "2026-07-06",
+    "description": "Bi-weekly warehouse operational payroll run",
+    "source_type": "Payroll Run",
+    "source_id": "PAYROLL-2026-14",
+    "created_by": "HR Payroll Admin",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-006",
+    "entry_date": "2026-07-08",
+    "description": "Manual Adjustment for lab reagent depreciation",
+    "source_type": "Manual Adjustment",
+    "source_id": "JV-088",
+    "created_by": "Senior Auditor",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-009",
+    "entry_date": "2026-06-30",
+    "description": "Multi-Currency Exchange Revaluation for USD Cash Account (Rate 57.50 ETB/USD)",
+    "source_type": "Exchange Revaluation",
+    "source_id": "REV-2026-001",
+    "created_by": "Finance Manager",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-010",
+    "entry_date": "2026-06-30",
+    "description": "Payroll Accrual for June 2026 (Gross: 97,000 ETB)",
+    "source_type": "Payroll Accrual",
+    "source_id": "PR-2026-06",
+    "created_by": "HR Payroll System",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  },
+  {
+    "id": "JE-2026-011",
+    "entry_date": "2026-07-02",
+    "description": "Payroll Payment Disbursement for June 2026 (Net: 70,810 ETB)",
+    "source_type": "Payroll Payment",
+    "source_id": "PR-2026-06",
+    "created_by": "Cashier",
+    "currency": "ETB",
+    "exchange_rate": 1.0,
+    "is_reversal_of": null
+  }
+]

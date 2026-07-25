@@ -1,0 +1,98 @@
+[
+  {
+    "id": "CUST-001",
+    "name": "Hamburg Coffee Importers GmbH",
+    "country": "Germany",
+    "region": "Europe",
+    "contactPerson": "Lars Weber",
+    "email": "orders@hamburg-coffee.de",
+    "category": "International Buyer (Export)",
+    "warehouseTarget": "WH1",
+    "creditLimit": 500000.0,
+    "status": "Active"
+  },
+  {
+    "id": "CUST-002",
+    "name": "Tokyo Specialty Commodities Corp",
+    "country": "Japan",
+    "region": "Asia",
+    "contactPerson": "Kenji Sato",
+    "email": "procurement@tokyocommodities.jp",
+    "category": "International Buyer (Export)",
+    "warehouseTarget": "WH1",
+    "creditLimit": 400000.0,
+    "status": "Active"
+  },
+  {
+    "id": "CUST-003",
+    "name": "California Organic Agri Foods Inc",
+    "country": "USA",
+    "region": "USA",
+    "contactPerson": "Sarah Jenkins",
+    "email": "s.jenkins@cal-organics.com",
+    "category": "International Buyer (Export)",
+    "warehouseTarget": "WH1",
+    "creditLimit": 350000.0,
+    "status": "Active"
+  },
+  {
+    "id": "CUST-004",
+    "name": "Bishoftu Commercial Poultry Farms",
+    "country": "Ethiopia",
+    "region": "Bishoftu / Oromia",
+    "contactPerson": "Dr. Girma Tadesse",
+    "email": "girma@bishoftupoultry.com",
+    "category": "Domestic Customer (Veterinary)",
+    "warehouseTarget": "WH3",
+    "creditLimit": 250000.0,
+    "status": "Active"
+  },
+  {
+    "id": "CUST-005",
+    "name": "Mekelle Agro-Vet Supplies Union",
+    "country": "Ethiopia",
+    "region": "Mekelle / Tigray",
+    "contactPerson": "Abreha Kahsay",
+    "email": "abreha@mekelleagrovet.et",
+    "category": "Domestic Customer (Veterinary)",
+    "warehouseTarget": "WH2",
+    "creditLimit": 200000.0,
+    "status": "Active"
+  },
+  {
+    "id": "CUST-006",
+    "name": "Selam Dairy Farmers Cooperative",
+    "country": "Ethiopia",
+    "region": "Hawassa / Sidama",
+    "contactPerson": "Aster Bekele",
+    "email": "aster@selamdairy.org",
+    "category": "Domestic Customer (Veterinary)",
+    "warehouseTarget": "WH2",
+    "creditLimit": 150000.0,
+    "status": "Active"
+  },
+  {
+    "id": "CUST-007",
+    "name": "Oromia Livestock Development Bureau",
+    "country": "Ethiopia",
+    "region": "Addis Ababa / Oromia",
+    "contactPerson": "Dr. Worku Alemayehu",
+    "email": "worku@oromialivestock.gov.et",
+    "category": "Government Agency / Bureau",
+    "warehouseTarget": "WH2",
+    "creditLimit": 600000.0,
+    "status": "Active"
+  },
+  {
+    "id": "CUST-008",
+    "name": "Ethio Chicken Parent Stock Farms",
+    "country": "Ethiopia",
+    "region": "Debre Zeit / Oromia",
+    "contactPerson": "Yonas Mulugeta",
+    "email": "yonas@ethiochicken.com",
+    "category": "Domestic Customer (Veterinary)",
+    "warehouseTarget": "WH3",
+    "creditLimit": 300000.0,
+    "status": "Active"
+  }
+]

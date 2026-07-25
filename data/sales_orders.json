@@ -1,0 +1,123 @@
+[
+  {
+    "id": "SO-1101",
+    "customer": "Hamburg Coffee Importers GmbH",
+    "customerId": "CUST-001",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "date": "2026-07-18",
+    "amount": 710000.0,
+    "currency": "ETB",
+    "stage": "Shipped",
+    "desc": "Export Batch: 50 Metric Tons Grade 1 Yirgacheffe Arabica Coffee (Port of Djibouti Shipping)",
+    "initials": "LW",
+    "label": "L. Weber",
+    "avatarBg": "bg-emerald-100 text-emerald-800",
+    "urgent": false,
+    "attachment": true,
+    "items": [
+      { "productId": "P-101", "name": "Grade 1 Yirgacheffe Arabica Coffee Beans", "qty": 50, "unit": "bags (60kg)", "unitPrice": 14200.0, "total": 710000.0 }
+    ]
+  },
+  {
+    "id": "SO-1102",
+    "customer": "Tokyo Specialty Commodities Corp",
+    "customerId": "CUST-002",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "date": "2026-07-19",
+    "amount": 462500.0,
+    "currency": "ETB",
+    "stage": "Confirmed",
+    "desc": "Export Batch: 5 Metric Tons Humera White Sesame Seeds (Grade A, Purity 99.5%)",
+    "initials": "KS",
+    "label": "K. Sato",
+    "avatarBg": "bg-blue-100 text-blue-800",
+    "urgent": true,
+    "attachment": true,
+    "items": [
+      { "productId": "P-102", "name": "Humera White Sesame Seeds", "qty": 5, "unit": "Metric Tons", "unitPrice": 92500.0, "total": 462500.0 }
+    ]
+  },
+  {
+    "id": "SO-1103",
+    "customer": "Bishoftu Commercial Poultry Farms",
+    "customerId": "CUST-004",
+    "warehouse": "WH3",
+    "warehouseName": "WH3 - Veterinary Import Hub (China)",
+    "date": "2026-07-20",
+    "amount": 145000.0,
+    "currency": "ETB",
+    "stage": "Picking",
+    "progress": 75,
+    "desc": "Domestic Order: Amoxicillin Trihydrate 50% Soluble Powder (100 Tins 1kg) for Bishoftu Farm",
+    "initials": "GT",
+    "label": "Dr. Girma",
+    "avatarBg": "bg-amber-100 text-amber-800",
+    "urgent": false,
+    "attachment": false,
+    "items": [
+      { "productId": "P-301", "name": "Amoxicillin Trihydrate 50% Soluble Powder", "qty": 100, "unit": "tins (1kg)", "unitPrice": 1450.0, "total": 145000.0 }
+    ]
+  },
+  {
+    "id": "SO-1104",
+    "customer": "Mekelle Agro-Vet Supplies Union",
+    "customerId": "CUST-005",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "date": "2026-07-21",
+    "amount": 96000.0,
+    "currency": "ETB",
+    "stage": "Quote",
+    "desc": "Domestic Order: Oxytetracycline 20% LA Injectable (200 Vials 100ml) for Mekelle Clinic",
+    "initials": "AK",
+    "label": "A. Kahsay",
+    "avatarBg": "bg-purple-100 text-purple-800",
+    "urgent": false,
+    "attachment": true,
+    "items": [
+      { "productId": "P-201", "name": "Oxytetracycline 20% LA Injectable (100ml)", "qty": 200, "unit": "vials (100ml)", "unitPrice": 480.0, "total": 96000.0 }
+    ]
+  },
+  {
+    "id": "SO-1105",
+    "customer": "California Organic Agri Foods Inc",
+    "customerId": "CUST-003",
+    "warehouse": "WH1",
+    "warehouseName": "WH1 - Agricultural Export Hub",
+    "date": "2026-07-15",
+    "amount": 230000.0,
+    "currency": "ETB",
+    "stage": "Shipped",
+    "desc": "Export Order: 50 Bags White Ethiopian Teff Grain (Gluten-Free Organic Certified)",
+    "initials": "SJ",
+    "label": "S. Jenkins",
+    "avatarBg": "bg-emerald-100 text-emerald-800",
+    "urgent": false,
+    "attachment": true,
+    "items": [
+      { "productId": "P-103", "name": "Export Quality White Ethiopian Teff Grain", "qty": 50, "unit": "bags (50kg)", "unitPrice": 4600.0, "total": 230000.0 }
+    ]
+  },
+  {
+    "id": "SO-1106",
+    "customer": "Selam Dairy Farmers Cooperative",
+    "customerId": "CUST-006",
+    "warehouse": "WH2",
+    "warehouseName": "WH2 - Veterinary Import Hub (India)",
+    "date": "2026-07-22",
+    "amount": 60000.0,
+    "currency": "ETB",
+    "stage": "Quote",
+    "desc": "Domestic Order: Albendazole 2500mg Dewormer Bolus (50 Boxes) for Hawassa Dairy Cattle",
+    "initials": "AB",
+    "label": "A. Bekele",
+    "avatarBg": "bg-zinc-100 text-zinc-800",
+    "urgent": false,
+    "attachment": false,
+    "items": [
+      { "productId": "P-203", "name": "Albendazole 2500mg Dewormer Bolus", "qty": 50, "unit": "boxes", "unitPrice": 1200.0, "total": 60000.0 }
+    ]
+  }
+]

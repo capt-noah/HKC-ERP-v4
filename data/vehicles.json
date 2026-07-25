@@ -1,0 +1,37 @@
+[
+  {
+    "id": "VEH-001",
+    "registration_number": "ET-3-88492",
+    "type": "Refrigerated Medical Van",
+    "assigned_warehouse": "Central Distribution Hub",
+    "driver_name": "Tadesse Bekele",
+    "maintenance_cost_history": [
+      { "date": "2026-05-10", "description": "Compressor Re-gas & Calibration", "amount": 8500.0 },
+      { "date": "2026-06-22", "description": "Brake Pad Replacement & Oil Change", "amount": 4200.0 }
+    ],
+    "status": "Active"
+  },
+  {
+    "id": "VEH-002",
+    "registration_number": "ET-3-90112",
+    "type": "Heavy Freight Truck (10 Ton)",
+    "assigned_warehouse": "Bole Cargo Terminal",
+    "driver_name": "Getachew Molla",
+    "maintenance_cost_history": [
+      { "date": "2026-04-15", "description": "Engine Overhaul & Injection Nozzle", "amount": 28000.0 },
+      { "date": "2026-07-02", "description": "Tire Set Replacement (6 Wheel)", "amount": 34000.0 }
+    ],
+    "status": "In Repair"
+  },
+  {
+    "id": "VEH-003",
+    "registration_number": "ET-3-45120",
+    "type": "Light Utility Dispatch Van",
+    "assigned_warehouse": "North Hub Warehouse",
+    "driver_name": "Aman Yilma",
+    "maintenance_cost_history": [
+      { "date": "2026-03-01", "description": "Standard Routine Service", "amount": 2500.0 }
+    ],
+    "status": "Active"
+  }
+]

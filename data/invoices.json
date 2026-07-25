@@ -1,0 +1,55 @@
+[
+  {
+    "id": "inv-101",
+    "invoice_number": "INV-2026-101",
+    "customer_name": "Hamburg Coffee Importers GmbH",
+    "issue_date": "2026-06-24",
+    "due_date": "2026-07-24",
+    "currency": "ETB",
+    "line_items": [
+      { "description": "Grade 1 Yirgacheffe Arabica Coffee Beans (50 Bags x 60kg)", "quantity": 50, "unit_price": 14200.0, "line_total": 710000.0 }
+    ],
+    "subtotal": 710000.0,
+    "tax_amount": 0.0,
+    "total": 710000.0,
+    "amount_paid": 710000.0,
+    "balance_due": 0.0,
+    "status": "Paid"
+  },
+  {
+    "id": "inv-102",
+    "invoice_number": "INV-2026-102",
+    "customer_name": "Bishoftu Commercial Poultry Farms",
+    "issue_date": "2026-07-01",
+    "due_date": "2026-07-31",
+    "currency": "ETB",
+    "line_items": [
+      { "description": "Amoxicillin Trihydrate 50% Soluble Powder (100 Tins 1kg)", "quantity": 100, "unit_price": 1450.0, "line_total": 145000.0 },
+      { "description": "Newcastle & IB Poultry Vaccine (20 Vials 1000d)", "quantity": 20, "unit_price": 1100.0, "line_total": 22000.0 }
+    ],
+    "subtotal": 167000.0,
+    "tax_amount": 0.0,
+    "total": 167000.0,
+    "amount_paid": 0.0,
+    "balance_due": 167000.0,
+    "status": "Sent"
+  },
+  {
+    "id": "inv-100",
+    "invoice_number": "INV-2026-100",
+    "customer_name": "Mekelle Agro-Vet Supplies Union",
+    "issue_date": "2026-06-18",
+    "due_date": "2026-06-30",
+    "currency": "ETB",
+    "line_items": [
+      { "description": "Oxytetracycline 20% LA Injectable (200 Vials 100ml)", "quantity": 200, "unit_price": 480.0, "line_total": 96000.0 },
+      { "description": "Ivermectin 1% Injectable Solution (100 Vials)", "quantity": 100, "unit_price": 350.0, "line_total": 35000.0 }
+    ],
+    "subtotal": 131000.0,
+    "tax_amount": 0.0,
+    "total": 131000.0,
+    "amount_paid": 0.0,
+    "balance_due": 131000.0,
+    "status": "Overdue"
+  }
+]

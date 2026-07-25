@@ -1,0 +1,30 @@
+[
+  {
+    "id": "PER-2026-Q1",
+    "period_label": "2026 Q1 (Jan - Mar)",
+    "start_date": "2026-01-01",
+    "end_date": "2026-03-31",
+    "is_closed": true
+  },
+  {
+    "id": "PER-2026-Q2",
+    "period_label": "2026 Q2 (Apr - Jun)",
+    "start_date": "2026-04-01",
+    "end_date": "2026-06-30",
+    "is_closed": true
+  },
+  {
+    "id": "PER-2026-Q3",
+    "period_label": "2026 Q3 (Jul - Sep)",
+    "start_date": "2026-07-01",
+    "end_date": "2026-09-30",
+    "is_closed": false
+  },
+  {
+    "id": "PER-2026-Q4",
+    "period_label": "2026 Q4 (Oct - Dec)",
+    "start_date": "2026-10-01",
+    "end_date": "2026-12-31",
+    "is_closed": false
+  }
+]

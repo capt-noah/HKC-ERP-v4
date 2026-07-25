@@ -1,0 +1,26 @@
+[
+  {
+    "id": "REV-2026-001",
+    "revaluation_date": "2026-06-30",
+    "currency": "USD",
+    "target_account_id": "acc-1000",
+    "original_balance": 10000.00,
+    "current_rate": 57.50,
+    "new_balance_in_base": 575000.00,
+    "unrealized_gain_loss": 25000.00,
+    "journal_entry_id": "JE-2026-009",
+    "status": "Posted"
+  },
+  {
+    "id": "REV-2026-002",
+    "revaluation_date": "2026-07-15",
+    "currency": "EUR",
+    "target_account_id": "acc-1000",
+    "original_balance": 5000.00,
+    "current_rate": 63.20,
+    "new_balance_in_base": 316000.00,
+    "unrealized_gain_loss": 6000.00,
+    "journal_entry_id": null,
+    "status": "Draft"
+  }
+]
