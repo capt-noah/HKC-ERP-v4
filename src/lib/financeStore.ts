@@ -12,6 +12,7 @@ import accountingPeriodsData from "../../data/accounting_periods.json"
 import companySettingsData from "../../data/company_settings.json"
 import payrollRunsData from "../../data/payroll_runs.json"
 import revaluationsData from "../../data/revaluations.json"
+import { loadResource, persistResources } from "./apiPersistence"
 
 export interface AccountItem {
   id: string
@@ -310,7 +311,7 @@ class FinanceStore {
   private listeners = new Set<() => void>()
 
   constructor() {
-    this.loadFromLocalStorage()
+    this.loadFromApi()
     this.ensureStandardAccountsAndSchedules()
   }
 
@@ -368,55 +369,79 @@ class FinanceStore {
     })
   }
 
-  private loadFromLocalStorage() {
+  private async loadFromApi() {
     try {
-      const stored = localStorage.getItem("hkc_finance_store_v3") || localStorage.getItem("lumina_finance_store_v3")
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (parsed.accounts) this.accounts = parsed.accounts
-        if (parsed.entries) this.entries = parsed.entries
-        if (parsed.lines) this.lines = parsed.lines
-        if (parsed.invoices) this.invoices = parsed.invoices
-        if (parsed.payments) this.payments = parsed.payments
-        if (parsed.recurringSchedules) this.recurringSchedules = parsed.recurringSchedules
-        if (parsed.expenses) this.expenses = parsed.expenses
-        if (parsed.vehicles) this.vehicles = parsed.vehicles
-        if (parsed.periods) this.periods = parsed.periods
-        if (parsed.companySettings) this.companySettings = parsed.companySettings
-        if (parsed.payrollRuns) this.payrollRuns = parsed.payrollRuns
-        if (parsed.revaluations) this.revaluations = parsed.revaluations
-        if (parsed.fixedAssets) this.fixedAssets = parsed.fixedAssets
-        if (parsed.taxRules) this.taxRules = parsed.taxRules
-      }
-    } catch {
-      // Ignore storage errors
+      const [
+        accounts,
+        entries,
+        lines,
+        invoices,
+        payments,
+        recurringSchedules,
+        expenses,
+        vehicles,
+        periods,
+        companySettingsRows,
+        payrollRuns,
+        revaluations,
+        fixedAssets,
+        taxRules,
+      ] = await Promise.all([
+        loadResource<AccountItem>("chart_of_accounts", this.accounts),
+        loadResource<JournalEntry>("journal_entries", this.entries),
+        loadResource<JournalEntryLine>("journal_entry_lines", this.lines),
+        loadResource<Invoice>("invoices", this.invoices),
+        loadResource<Payment>("payments", this.payments),
+        loadResource<RecurringExpenseSchedule>("recurring_expense_schedules", this.recurringSchedules),
+        loadResource<OneOffExpense>("expenses", this.expenses),
+        loadResource<Vehicle>("vehicles", this.vehicles),
+        loadResource<AccountingPeriod>("accounting_periods", this.periods),
+        loadResource<CompanySettings & { id?: string }>("company_settings", [{ id: "default", ...this.companySettings }]),
+        loadResource<PayrollRun>("payroll_runs", this.payrollRuns),
+        loadResource<Revaluation>("revaluations", this.revaluations),
+        loadResource<FixedAsset>("fixed_assets", this.fixedAssets),
+        loadResource<TaxRule>("tax_rules", this.taxRules),
+      ])
+
+      this.accounts = accounts
+      this.entries = entries
+      this.lines = lines
+      this.invoices = invoices
+      this.payments = payments
+      this.recurringSchedules = recurringSchedules
+      this.expenses = expenses
+      this.vehicles = vehicles
+      this.periods = periods
+      const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...this.companySettings }
+      this.companySettings = companySettings
+      this.payrollRuns = payrollRuns
+      this.revaluations = revaluations
+      this.fixedAssets = fixedAssets
+      this.taxRules = taxRules
+      this.ensureStandardAccountsAndSchedules()
+      this.listeners.forEach((l) => l())
+    } catch (error) {
+      console.error("Failed to load finance data from Supabase.", error)
     }
   }
 
-  private saveToLocalStorage() {
-    try {
-      localStorage.setItem(
-        "hkc_finance_store_v3",
-        JSON.stringify({
-          accounts: this.accounts,
-          entries: this.entries,
-          lines: this.lines,
-          invoices: this.invoices,
-          payments: this.payments,
-          recurringSchedules: this.recurringSchedules,
-          expenses: this.expenses,
-          vehicles: this.vehicles,
-          periods: this.periods,
-          companySettings: this.companySettings,
-          payrollRuns: this.payrollRuns,
-          revaluations: this.revaluations,
-          fixedAssets: this.fixedAssets,
-          taxRules: this.taxRules,
-        })
-      )
-    } catch {
-      // Ignore storage errors
-    }
+  private saveToApi() {
+    return persistResources([
+      { resource: "chart_of_accounts", items: this.accounts },
+      { resource: "journal_entries", items: this.entries },
+      { resource: "journal_entry_lines", items: this.lines },
+      { resource: "invoices", items: this.invoices },
+      { resource: "payments", items: this.payments },
+      { resource: "recurring_expense_schedules", items: this.recurringSchedules },
+      { resource: "expenses", items: this.expenses },
+      { resource: "vehicles", items: this.vehicles },
+      { resource: "accounting_periods", items: this.periods },
+      { resource: "company_settings", items: [{ id: "default", ...this.companySettings }] },
+      { resource: "payroll_runs", items: this.payrollRuns },
+      { resource: "revaluations", items: this.revaluations },
+      { resource: "fixed_assets", items: this.fixedAssets },
+      { resource: "tax_rules", items: this.taxRules },
+    ])
   }
 
   public subscribe(listener: () => void) {
@@ -427,7 +452,9 @@ class FinanceStore {
   }
 
   private notify() {
-    this.saveToLocalStorage()
+    void this.saveToApi().catch((error) => {
+      console.error("Failed to persist finance data to Supabase.", error)
+    })
     this.listeners.forEach((l) => l())
   }
 

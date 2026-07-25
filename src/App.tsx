@@ -1,9 +1,11 @@
 import { Routes, Route, Navigate } from "react-router-dom"
 import SalesDashboard from "@/pages/sales/SalesDashboard"
+import SalesIssued from "@/pages/sales/SalesIssued"
 import PurchaseOrders from "@/pages/PurchaseOrders"
 import SalesOrders from "@/pages/SalesOrders"
 import InventoryDashboard from "@/pages/inventory/InventoryDashboard"
 import StockProducts from "@/pages/inventory/StockProducts"
+import AddStockItem from "@/pages/inventory/AddStockItem"
 import Reports from "@/pages/inventory/Reports"
 import HRDashboard from "@/pages/HRDashboard"
 import ControlCenter from "@/pages/ControlCenter"
@@ -30,6 +32,7 @@ export function App() {
 
       {/* Sales section */}
       <Route path="/sales" element={<SalesDashboard />} />
+      <Route path="/sales/sales-issued" element={<SalesIssued />} />
       <Route path="/sales/sales-orders" element={<SalesOrders initialTab="sales-orders" />} />
       <Route path="/sales/quotations" element={<SalesOrders initialTab="quotations" />} />
       <Route path="/sales/delivery-notes" element={<SalesOrders initialTab="delivery-notes" />} />
@@ -38,6 +41,7 @@ export function App() {
       {/* Inventory section */}
       <Route path="/inventory" element={<InventoryDashboard />} />
       <Route path="/inventory/stock" element={<StockProducts />} />
+      <Route path="/inventory/stock/add-item" element={<AddStockItem />} />
       <Route path="/inventory/reports" element={<Reports />} />
 
       {/* Finance section */}

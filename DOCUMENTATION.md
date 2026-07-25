@@ -100,7 +100,7 @@ Navigation labels and child routes are defined in `src/lib/nav-config.ts`. All r
 
 **Stack:** React 19, TypeScript, Vite, React Router 7, Tailwind CSS v4, Framer Motion, Recharts, shadcn/ui primitives.
 
-**Current persistence model:** Frontend-only. Business logic and state live in TypeScript stores seeded from JSON files in `/data/`. A backend API is planned after all module logic is finalized.
+**Current persistence model:** Frontend-first with a prototype backend. Business logic and state still live in TypeScript stores seeded from JSON files in `/data/`, while the initial Node/Supabase backend lives in `/server/` and exposes REST-style resource routes for the documented ERP modules.
 
 | Store / Context | Path | Scope |
 | :--- | :--- | :--- |
@@ -108,6 +108,20 @@ Navigation labels and child routes are defined in `src/lib/nav-config.ts`. All r
 | `useErpStore()` | `src/lib/erpStore.ts` | Sales & Inventory module — products, multi-warehouse tracking, stock movements audit log, inter-warehouse transfers, sales orders, purchase orders with GL accruals, customers, suppliers |
 | `useFeedback()` | `src/context/FeedbackContext.tsx` | Global toasts and confirmation dialogs (wraps the app in `main.tsx`) |
 | Static HR seed | `src/lib/hrData.ts` | HR dashboard and employee roster mock data |
+
+### Supabase Testing Configuration
+
+The current testing Supabase project is wired through the prototype backend in `/server/`.
+
+| Setting | Value |
+| :--- | :--- |
+| Supabase REST URL | `https://hutzzxwkzfnwiafnnwpl.supabase.co/rest/v1/` |
+| Supabase Project Ref | `hutzzxwkzfnwiafnnwpl` |
+| Supabase Publishable Key | `sb_publishable_qQtl8eY08iX_MSOfWQXXcQ_97nZYK-N` |
+| Backend route registry | `/api` |
+| Backend health check | `/health` |
+
+**Security note:** This is a publishable client key for testing and low-privilege Data API access. Do not place Supabase service-role keys, database passwords, or any other secret credentials in this documentation.
 
 **Design intent:** Module workflows and GL posting rules are modeled after ERPNext concepts (double-entry vouchers, COA hierarchy, AR/AP aging, etc.) but implemented as original code — not a fork or copy of ERPNext — so the system can be licensed and sold as a standalone product.
 

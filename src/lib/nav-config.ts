@@ -6,6 +6,7 @@ export const navSections: NavSection[] = [
     path: "/sales",
     children: [
       { label: "Dashboard", path: "/sales" },
+      { label: "Sales Issued", path: "/sales/sales-issued" },
       { label: "Sales Orders", path: "/sales/sales-orders" },
       { label: "Quotations", path: "/sales/quotations" },
       { label: "Delivery Notes", path: "/sales/delivery-notes" },
@@ -17,8 +18,14 @@ export const navSections: NavSection[] = [
     path: "/inventory",
     children: [
       { label: "Dashboard", path: "/inventory" },
-      { label: "Stock", path: "/inventory/stock" },
-      { label: "Reports", path: "/inventory/reports" },
+      { label: "Stock Registration", path: "/inventory/stock" },
+      { label: "Add Item", path: "/inventory/stock/add-item" },
+      { label: "Stock In", path: "/inventory/stock" },
+      { label: "Stock Out", path: "/inventory/stock" },
+      { label: "Stock Transfer", path: "/inventory/stock" },
+      { label: "Stock Adjustment", path: "/inventory/stock" },
+      { label: "Damage / Loss", path: "/inventory/stock" },
+      { label: "Inventory Reports", path: "/inventory/reports" },
     ],
   },
   {

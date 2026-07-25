@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { loadResource, persistResources } from "./apiPersistence"
 import { financeStore } from "./financeStore"
 
 export interface Employee {
@@ -760,54 +761,72 @@ class HRStore {
   private listeners: Set<() => void> = new Set()
 
   constructor() {
-    this.loadFromLocalStorage()
+    this.loadFromApi()
   }
 
-  private loadFromLocalStorage() {
+  private async loadFromApi() {
     try {
-      const stored = localStorage.getItem("hkc_hr_store_v1")
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (parsed.employees) this.employees = parsed.employees
-        if (parsed.departments) this.departments = parsed.departments
-        if (parsed.designations) this.designations = parsed.designations
-        if (parsed.jobOpenings) this.jobOpenings = parsed.jobOpenings
-        if (parsed.jobApplicants) this.jobApplicants = parsed.jobApplicants
-        if (parsed.onboardings) this.onboardings = parsed.onboardings
-        if (parsed.separations) this.separations = parsed.separations
-        if (parsed.leaveTypes) this.leaveTypes = parsed.leaveTypes
-        if (parsed.leaveRequests) this.leaveRequests = parsed.leaveRequests
-        if (parsed.expenseClaims) this.expenseClaims = parsed.expenseClaims
-        if (parsed.appraisals) this.appraisals = parsed.appraisals
-        if (parsed.trainingPrograms) this.trainingPrograms = parsed.trainingPrograms
-      }
-    } catch {
-      // Use initial defaults if parse fails
+      const [
+        employees,
+        departments,
+        designations,
+        jobOpenings,
+        jobApplicants,
+        onboardings,
+        separations,
+        leaveTypes,
+        leaveRequests,
+        expenseClaims,
+        appraisals,
+        trainingPrograms,
+      ] = await Promise.all([
+        loadResource<Employee>("employees", this.employees),
+        loadResource<Department>("departments", this.departments),
+        loadResource<Designation>("designations", this.designations),
+        loadResource<JobOpening>("job_openings", this.jobOpenings),
+        loadResource<JobApplicant>("job_applicants", this.jobApplicants),
+        loadResource<OnboardingProcess>("onboardings", this.onboardings),
+        loadResource<SeparationProcess>("separations", this.separations),
+        loadResource<LeaveType>("leave_types", this.leaveTypes),
+        loadResource<LeaveRequest>("leave_requests", this.leaveRequests),
+        loadResource<HRExpenseClaim>("expense_claims", this.expenseClaims),
+        loadResource<PerformanceAppraisal>("appraisals", this.appraisals),
+        loadResource<TrainingProgram>("training_programs", this.trainingPrograms),
+      ])
+
+      this.employees = employees
+      this.departments = departments
+      this.designations = designations
+      this.jobOpenings = jobOpenings
+      this.jobApplicants = jobApplicants
+      this.onboardings = onboardings
+      this.separations = separations
+      this.leaveTypes = leaveTypes
+      this.leaveRequests = leaveRequests
+      this.expenseClaims = expenseClaims
+      this.appraisals = appraisals
+      this.trainingPrograms = trainingPrograms
+      this.listeners.forEach((l) => l())
+    } catch (error) {
+      console.error("Failed to load HR data from Supabase.", error)
     }
   }
 
-  private saveToLocalStorage() {
-    try {
-      localStorage.setItem(
-        "hkc_hr_store_v1",
-        JSON.stringify({
-          employees: this.employees,
-          departments: this.departments,
-          designations: this.designations,
-          jobOpenings: this.jobOpenings,
-          jobApplicants: this.jobApplicants,
-          onboardings: this.onboardings,
-          separations: this.separations,
-          leaveTypes: this.leaveTypes,
-          leaveRequests: this.leaveRequests,
-          expenseClaims: this.expenseClaims,
-          appraisals: this.appraisals,
-          trainingPrograms: this.trainingPrograms,
-        })
-      )
-    } catch {
-      // Ignore
-    }
+  private saveToApi() {
+    return persistResources([
+      { resource: "employees", items: this.employees },
+      { resource: "departments", items: this.departments },
+      { resource: "designations", items: this.designations },
+      { resource: "job_openings", items: this.jobOpenings },
+      { resource: "job_applicants", items: this.jobApplicants },
+      { resource: "onboardings", items: this.onboardings },
+      { resource: "separations", items: this.separations },
+      { resource: "leave_types", items: this.leaveTypes },
+      { resource: "leave_requests", items: this.leaveRequests },
+      { resource: "expense_claims", items: this.expenseClaims },
+      { resource: "appraisals", items: this.appraisals },
+      { resource: "training_programs", items: this.trainingPrograms },
+    ])
   }
 
   public subscribe(listener: () => void) {
@@ -816,7 +835,9 @@ class HRStore {
   }
 
   private notify() {
-    this.saveToLocalStorage()
+    void this.saveToApi().catch((error) => {
+      console.error("Failed to persist HR data to Supabase.", error)
+    })
     this.listeners.forEach((l) => l())
   }
 

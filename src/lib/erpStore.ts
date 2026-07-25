@@ -5,6 +5,7 @@ import salesOrdersData from "../../data/sales_orders.json"
 import purchaseOrdersData from "../../data/purchase_orders.json"
 import customersData from "../../data/customers.json"
 import suppliersData from "../../data/suppliers.json"
+import { loadResource, persistResources } from "./apiPersistence"
 import { financeStore } from "./financeStore"
 
 export interface Warehouse {
@@ -36,21 +37,53 @@ export interface Product {
   name: string
   sku: string
   category: string
+  itemType?: string
+  description?: string
   warehouse: string
   warehouseName?: string
   quantity: number
+  quantityPerPack?: number
+  numberOfCartons?: number
+  totalQuantity?: number
+  quantitySold?: number
+  openingBalance?: number
   reorderLevel?: number
+  reorderQuantity?: number
   valuationRate?: number
   unit: string
   unitCost: number
+  totalStockValue?: number
   sellingPrice: number
   batch: string
+  manufacturingDate?: string
   expiry: string
+  shelfLifeMonths?: number
+  expiryAlertEnabled?: boolean
+  expiryAlertPeriod?: string
   status: "In Stock" | "Low Stock" | "Quarantined" | "Out of Stock" | "Pending QA"
   stockBreakdown: StockBreakdown[]
   batches: BatchInfo[]
   origin: string
   supplierName: string
+  inventoryAssetAccount?: string
+  cogsAccount?: string
+  revenueAccount?: string
+  damageExpenseAccount?: string
+  taxCategory?: string
+  trackBatchNumber?: boolean
+  trackManufacturingDate?: boolean
+  trackExpiryDate?: boolean
+  trackSerialNumber?: boolean
+  allowDecimalCartons?: boolean
+  preventNegativeStock?: boolean
+  requireApprovalBeforeActivation?: boolean
+  productImageName?: string
+  supportingDocumentName?: string
+  internalNotes?: string
+  itemRegistrationStatus?: "Draft" | "Submitted" | "Active"
+  approvalStatus?: "Not Submitted" | "Submitted" | "Approved"
+  createdBy?: string
+  createdDate?: string
 }
 
 export type TransferStatus = "Issued" | "Received" | "Discrepancy"
@@ -84,7 +117,7 @@ export interface Transfer {
 export interface StockMovementLog {
   id: string
   date: string
-  type: "TRANSFER" | "ADJUSTMENT" | "RECEIPT" | "FULFILLMENT"
+  type: "TRANSFER" | "ADJUSTMENT" | "RECEIPT" | "FULFILLMENT" | "SALES_OUT"
   productId?: string
   productName: string
   sku?: string
@@ -388,50 +421,64 @@ class ErpStore {
   private listeners = new Set<() => void>()
 
   constructor() {
-    this.loadFromLocalStorage()
+    this.loadFromApi()
   }
 
-  private loadFromLocalStorage() {
+  private async loadFromApi() {
     try {
-      const stored = localStorage.getItem("hkc_trading_erp_store_v2")
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (parsed.products) this.products = parsed.products
-        if (parsed.salesOrders) this.salesOrders = parsed.salesOrders
-        if (parsed.purchaseOrders) this.purchaseOrders = parsed.purchaseOrders
-        if (parsed.warehouses) this.warehouses = parsed.warehouses
-        if (parsed.customers) this.customers = parsed.customers
-        if (parsed.suppliers) this.suppliers = parsed.suppliers
-        if (parsed.quotations) this.quotations = parsed.quotations
-        if (parsed.deliveryNotes) this.deliveryNotes = parsed.deliveryNotes
-        if (parsed.transfers) this.transfers = parsed.transfers
-        if (parsed.stockMovements) this.stockMovements = parsed.stockMovements
-      }
-    } catch {
-      // Ignore
+      const [
+        warehouses,
+        products,
+        salesOrders,
+        purchaseOrders,
+        customers,
+        suppliers,
+        quotations,
+        deliveryNotes,
+        transfers,
+        stockMovements,
+      ] = await Promise.all([
+        loadResource<Warehouse>("warehouses", this.warehouses),
+        loadResource<Product>("inventory_products", this.products),
+        loadResource<SalesOrder>("sales_orders", this.salesOrders),
+        loadResource<PurchaseOrder>("purchase_orders", this.purchaseOrders),
+        loadResource<Customer>("customers", this.customers),
+        loadResource<Supplier>("suppliers", this.suppliers),
+        loadResource<Quotation>("quotations", this.quotations),
+        loadResource<DeliveryNote>("delivery_notes", this.deliveryNotes),
+        loadResource<Transfer>("store_transfers", this.transfers.map((transfer) => ({ id: transfer.reference_number, ...transfer }))),
+        loadResource<StockMovementLog>("stock_movements", this.stockMovements),
+      ])
+
+      this.warehouses = warehouses
+      this.products = products
+      this.salesOrders = salesOrders
+      this.purchaseOrders = purchaseOrders
+      this.customers = customers
+      this.suppliers = suppliers
+      this.quotations = quotations
+      this.deliveryNotes = deliveryNotes
+      this.transfers = transfers.map(({ id: _id, ...transfer }) => transfer as Transfer)
+      this.stockMovements = stockMovements
+      this.listeners.forEach((l) => l())
+    } catch (error) {
+      console.error("Failed to load ERP data from Supabase.", error)
     }
   }
 
-  private saveToLocalStorage() {
-    try {
-      localStorage.setItem(
-        "hkc_trading_erp_store_v2",
-        JSON.stringify({
-          products: this.products,
-          salesOrders: this.salesOrders,
-          purchaseOrders: this.purchaseOrders,
-          warehouses: this.warehouses,
-          customers: this.customers,
-          suppliers: this.suppliers,
-          quotations: this.quotations,
-          deliveryNotes: this.deliveryNotes,
-          transfers: this.transfers,
-          stockMovements: this.stockMovements,
-        })
-      )
-    } catch {
-      // Ignore
-    }
+  private saveToApi() {
+    return persistResources([
+      { resource: "warehouses", items: this.warehouses },
+      { resource: "inventory_products", items: this.products },
+      { resource: "sales_orders", items: this.salesOrders },
+      { resource: "purchase_orders", items: this.purchaseOrders },
+      { resource: "customers", items: this.customers },
+      { resource: "suppliers", items: this.suppliers },
+      { resource: "quotations", items: this.quotations },
+      { resource: "delivery_notes", items: this.deliveryNotes },
+      { resource: "store_transfers", items: this.transfers.map((transfer) => ({ id: transfer.reference_number, ...transfer })) },
+      { resource: "stock_movements", items: this.stockMovements },
+    ])
   }
 
   public subscribe(listener: () => void) {
@@ -440,7 +487,9 @@ class ErpStore {
   }
 
   private notify() {
-    this.saveToLocalStorage()
+    void this.saveToApi().catch((error) => {
+      console.error("Failed to persist ERP data to Supabase.", error)
+    })
     this.listeners.forEach((l) => l())
   }
 
@@ -685,9 +734,17 @@ class ErpStore {
   }
 
   // Actions - Products
-  public addProduct(product: Product) {
+  public async addProduct(product: Product) {
+    const previousProducts = this.products
     this.products.unshift(product)
-    this.notify()
+    this.listeners.forEach((l) => l())
+    try {
+      await this.saveToApi()
+    } catch (error) {
+      this.products = previousProducts
+      this.listeners.forEach((l) => l())
+      throw error
+    }
   }
 
   public updateProduct(id: string, partial: Partial<Product>) {
@@ -1154,4 +1211,3 @@ export function useErpStore() {
 
   return erpStore
 }
-

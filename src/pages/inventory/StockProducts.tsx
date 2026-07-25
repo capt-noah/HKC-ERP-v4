@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
@@ -96,6 +97,7 @@ const docColumns: TableColumn[] = [
 
 export default function StockProducts() {
   const { showToast } = useFeedback()
+  const navigate = useNavigate()
   const erp = useErpStore()
   const products = erp.getProducts()
   const [activeTab, setActiveTab] = useState<"Products" | "Transfers" | "Stock Movements" | "Regulatory Docs">("Products")
@@ -226,7 +228,9 @@ export default function StockProducts() {
       batches: newBatchNo ? [{ batchNo: newBatchNo, qty: qtyNum, expiry: newExpiry, status: "Released" }] : []
     }
 
-    erp.addProduct(freshProduct)
+    void erp.addProduct(freshProduct).catch((error) => {
+      showToast("Supabase save failed", "warning", error instanceof Error ? error.message : "The item could not be saved.")
+    })
 
     // Create a regulatory document if attached
     if (newHasDoc && newDocName) {
@@ -383,9 +387,7 @@ export default function StockProducts() {
                       {
                         label: "Add Item",
                         onClick: () => {
-                          setNewCategory("Agricultural Export (Coffee)")
-                          setNewWarehouse("WH1")
-                          setIsAddOpen(true)
+                          navigate("/inventory/stock/add-item")
                         },
                         icon: <Plus className="size-4" />,
                         variant: "primary",
@@ -595,6 +597,7 @@ export default function StockProducts() {
                             <td className="py-4 px-4">
                               <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border tracking-wider ${
                                 m.type === "RECEIPT" ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
+                                m.type === "SALES_OUT" ? "bg-rose-50 text-rose-800 border-rose-200" :
                                 m.type === "TRANSFER" ? "bg-blue-50 text-blue-800 border-blue-200" :
                                 m.type === "FULFILLMENT" ? "bg-purple-50 text-purple-800 border-purple-200" :
                                 "bg-amber-50 text-amber-800 border-amber-200"
