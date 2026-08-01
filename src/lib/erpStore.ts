@@ -114,6 +114,8 @@ export interface Transfer {
   journalEntryId?: string
 }
 
+type PersistedTransfer = Transfer & { id?: string }
+
 export interface StockMovementLog {
   id: string
   date: string
@@ -446,7 +448,7 @@ class ErpStore {
         loadResource<Supplier>("suppliers", this.suppliers),
         loadResource<Quotation>("quotations", this.quotations),
         loadResource<DeliveryNote>("delivery_notes", this.deliveryNotes),
-        loadResource<Transfer>("store_transfers", this.transfers.map((transfer) => ({ id: transfer.reference_number, ...transfer }))),
+        loadResource<PersistedTransfer>("store_transfers", this.transfers.map((transfer) => ({ id: transfer.reference_number, ...transfer }))),
         loadResource<StockMovementLog>("stock_movements", this.stockMovements),
       ])
 

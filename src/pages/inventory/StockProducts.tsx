@@ -100,7 +100,7 @@ export default function StockProducts() {
   const navigate = useNavigate()
   const erp = useErpStore()
   const products = erp.getProducts()
-  const [activeTab, setActiveTab] = useState<"Products" | "Transfers" | "Stock Movements" | "Regulatory Docs">("Products")
+  const [activeTab, setActiveTab] = useState<"Register" | "Transfer Entries" | "Movement Ledger" | "Regulatory Docs">("Register")
   const [docs, setDocs] = useState<RegulatoryDoc[]>(initialRegulatoryDocs)
 
   // Filters for Products tab
@@ -303,9 +303,9 @@ export default function StockProducts() {
         {/* Header Section */}
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">Stock & Products</h1>
+            <h1 className="text-3xl font-black text-black tracking-tight">Stock Register</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
-              Manage product inventory across all warehouses, store transfers, movement audit logs, and compliance certificates.
+              Manage product inventory, warehouse movement entries, stock adjustments, and compliance certificates from one register.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
@@ -316,9 +316,9 @@ export default function StockProducts() {
         {/* Tab Selection Row */}
         <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200/60 mb-6 overflow-x-auto no-scrollbar pb-1">
           {[
-            { id: "Products", label: "Active Products" },
-            { id: "Transfers", label: "Store Transfers" },
-            { id: "Stock Movements", label: "Stock Movements Log" },
+            { id: "Register", label: "Stock Register" },
+            { id: "Transfer Entries", label: "Transfer Entries" },
+            { id: "Movement Ledger", label: "Movement Ledger" },
             { id: "Regulatory Docs", label: "Regulatory Docs" }
           ].map((tab) => {
             const isActive = activeTab === tab.id
@@ -347,7 +347,7 @@ export default function StockProducts() {
         {/* Tab Contents */}
         <AnimatePresence mode="wait">
           {/* TAB 1: ACTIVE PRODUCTS TABLE */}
-          {activeTab === "Products" && (
+          {activeTab === "Register" && (
             <motion.div
               key="products-tab"
               initial={{ opacity: 0, y: 8 }}
@@ -358,7 +358,7 @@ export default function StockProducts() {
               <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
                 <div className="px-6 pt-6">
                   <FinanceTableToolbar
-                    title="Active Stock Products"
+                    title="Stock Register"
                     subtitle={`Total: ${productsTable.sorted().length} inventory SKUs across warehouses`}
                     searchValue={searchQuery}
                     onSearchChange={setSearchQuery}
@@ -515,8 +515,8 @@ export default function StockProducts() {
             </motion.div>
           )}
 
-          {/* TAB 2: STORE TRANSFERS */}
-          {activeTab === "Transfers" && (
+          {/* TAB 2: TRANSFER ENTRIES */}
+          {activeTab === "Transfer Entries" && (
             <motion.div
               key="transfers-tab"
               initial={{ opacity: 0, y: 8 }}
@@ -528,8 +528,8 @@ export default function StockProducts() {
             </motion.div>
           )}
 
-          {/* TAB 3: STOCK MOVEMENTS LOG */}
-          {activeTab === "Stock Movements" && (
+          {/* TAB 3: MOVEMENT LEDGER */}
+          {activeTab === "Movement Ledger" && (
             <motion.div
               key="movements-tab"
               initial={{ opacity: 0, y: 8 }}
@@ -540,7 +540,7 @@ export default function StockProducts() {
               <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
                 <div className="px-6 pt-6">
                   <FinanceTableToolbar
-                    title="Stock Movement Audit Log"
+                    title="Stock Movement Ledger"
                     subtitle={`Total: ${movementsTable.sorted().length} inventory ledger events recorded`}
                     searchValue={movementsSearch}
                     onSearchChange={setMovementsSearch}

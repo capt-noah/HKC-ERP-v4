@@ -186,10 +186,8 @@
   content: "";
   position: absolute;
   inset: 0;
-  opacity: 0.15;
-  background-image: 
-    radial-gradient(circle, #27272a 1px, transparent 1px);
-  background-size: 24px 24px;
+  opacity: 0.18;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(244, 244, 245, 0.12));
   pointer-events: none;
   z-index: -1;
 }
@@ -225,10 +223,8 @@
   content: "";
   position: absolute;
   inset: 0;
-  opacity: 0.08;
-  background-image: 
-    radial-gradient(circle, #ffffff 1px, transparent 1px);
-  background-size: 24px 24px;
+  opacity: 0.1;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(24, 24, 27, 0.14));
   pointer-events: none;
   z-index: -1;
 }
@@ -255,5 +251,311 @@
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+.credit-attachment-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 16mm 14mm;
+  font-family: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  color: #18181b;
+}
+
+.credit-attachment-header {
+  display: grid;
+  grid-template-columns: 1fr 0.72fr;
+  gap: 16mm;
+  border-bottom: 2px solid #18181b;
+  padding-bottom: 7mm;
+}
+
+.credit-attachment-header h2 {
+  font-size: 16pt;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.credit-attachment-header p {
+  margin-top: 1.5mm;
+  font-size: 9pt;
+  font-weight: 700;
+  color: #3f3f46;
+}
+
+.credit-attachment-label {
+  font-size: 7.5pt;
+  font-weight: 900;
+  color: #71717a;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.credit-attachment-docno {
+  margin-top: 1mm;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11pt;
+  font-weight: 900;
+  color: #18181b;
+}
+
+.credit-attachment-title {
+  margin: 8mm 0 7mm;
+  border: 1.5px solid #18181b;
+  background: #f4f4f5;
+  padding: 3mm;
+  text-align: center;
+}
+
+.credit-attachment-title h1 {
+  font-size: 18pt;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.credit-attachment-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8mm;
+  margin-bottom: 8mm;
+}
+
+.credit-attachment-info-grid > div {
+  border: 1px solid #d4d4d8;
+  padding: 4mm;
+}
+
+.credit-attachment-section-title {
+  margin-bottom: 3mm;
+  font-size: 8pt;
+  font-weight: 900;
+  color: #166534;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.credit-attachment-info-grid dl {
+  display: grid;
+  gap: 2.5mm;
+}
+
+.credit-attachment-info-grid dl div {
+  display: grid;
+  grid-template-columns: 28mm 1fr;
+  gap: 4mm;
+}
+
+.credit-attachment-info-grid dt {
+  font-size: 8pt;
+  font-weight: 900;
+  color: #52525b;
+}
+
+.credit-attachment-info-grid dd {
+  min-height: 14px;
+  border-bottom: 1px solid #d4d4d8;
+  font-size: 9pt;
+  font-weight: 800;
+  color: #18181b;
+}
+
+.credit-attachment-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.credit-attachment-table th,
+.credit-attachment-table td {
+  border: 1px solid #a1a1aa;
+  padding: 2.6mm 2.4mm;
+  vertical-align: top;
+  font-size: 8.5pt;
+}
+
+.credit-attachment-table th {
+  background: #18181b;
+  color: white;
+  font-size: 7.5pt;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.credit-attachment-table th:nth-child(1) {
+  width: 10mm;
+}
+
+.credit-attachment-table th:nth-child(2) {
+  width: auto;
+}
+
+.credit-attachment-table th:nth-child(3) {
+  width: 20mm;
+}
+
+.credit-attachment-table th:nth-child(4),
+.credit-attachment-table th:nth-child(5),
+.credit-attachment-table th:nth-child(6) {
+  width: 26mm;
+}
+
+.credit-attachment-table td strong,
+.credit-attachment-table td span {
+  display: block;
+}
+
+.credit-attachment-table td strong {
+  font-weight: 900;
+  color: #18181b;
+}
+
+.credit-attachment-table td span {
+  margin-top: 1mm;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 7.5pt;
+  font-weight: 700;
+  color: #52525b;
+}
+
+.credit-attachment-lower {
+  display: grid;
+  grid-template-columns: 1fr 62mm;
+  gap: 8mm;
+  margin-top: 8mm;
+  align-items: start;
+}
+
+.credit-attachment-payment {
+  border: 1px solid #d4d4d8;
+  padding: 4mm;
+  min-height: 34mm;
+}
+
+.credit-attachment-payment-method {
+  display: flex;
+  gap: 3mm;
+}
+
+.credit-attachment-payment-method span {
+  min-width: 25mm;
+  border: 1px solid #a1a1aa;
+  padding: 2mm 4mm;
+  text-align: center;
+  font-size: 8pt;
+  font-weight: 900;
+}
+
+.credit-attachment-payment-method .active {
+  background: #dcfce7;
+  border-color: #166534;
+  color: #14532d;
+}
+
+.credit-attachment-words {
+  margin-top: 1.5mm;
+  font-size: 10pt;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.credit-attachment-totals {
+  border: 1px solid #18181b;
+}
+
+.credit-attachment-totals div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8mm;
+  border-bottom: 1px solid #d4d4d8;
+  padding: 2.8mm 3.2mm;
+  font-size: 9pt;
+}
+
+.credit-attachment-totals div:last-child {
+  border-bottom: 0;
+}
+
+.credit-attachment-totals span {
+  font-weight: 800;
+  color: #52525b;
+}
+
+.credit-attachment-totals strong {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 900;
+}
+
+.credit-attachment-totals .grand {
+  background: #18181b;
+  color: white;
+}
+
+.credit-attachment-totals .grand span {
+  color: white;
+}
+
+.credit-attachment-footer {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5mm;
+  margin-top: 16mm;
+  page-break-inside: avoid;
+}
+
+.credit-attachment-footer div {
+  min-height: 24mm;
+  border-bottom: 1.5px solid #18181b;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  padding-bottom: 2mm;
+}
+
+.credit-attachment-footer span,
+.credit-attachment-footer p {
+  font-size: 8pt;
+  font-weight: 900;
+  color: #3f3f46;
+}
+
+.credit-attachment-footer p {
+  grid-column: 1 / -1;
+  margin-top: 2mm;
+  text-align: right;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body,
+  #root {
+    width: 210mm;
+    min-height: 297mm;
+    background: white !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .credit-attachment-sheet {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    padding: 14mm 12mm;
+    box-shadow: none !important;
+  }
+
+  .credit-attachment-sheet * {
+    break-inside: avoid;
   }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Edit3, Eye, FileText, Plus, Printer, Send, Trash2, X } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -37,6 +38,7 @@ function blankItem(): SalesIssueItem {
 }
 
 export default function SalesIssued() {
+  const navigate = useNavigate()
   const erp = useErpStore()
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
@@ -251,6 +253,10 @@ export default function SalesIssued() {
     })
   }
 
+  const openAttachment = (issue: SalesIssue) => {
+    navigate(`/sales/sales-issued/${encodeURIComponent(issue.id)}/attachment`, { state: { issue } })
+  }
+
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
@@ -322,7 +328,7 @@ export default function SalesIssued() {
                       <div className="flex items-center gap-1">
                         <button onClick={() => setSelected(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="View"><Eye className="size-3.5" /></button>
                         <button disabled={row.status !== "Draft"} onClick={() => void openEdit(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-35" title="Edit"><Edit3 className="size-3.5" /></button>
-                        <button onClick={() => window.print()} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Print"><Printer className="size-3.5" /></button>
+                        <button onClick={() => openAttachment(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Print Attachment"><Printer className="size-3.5" /></button>
                         {row.status === "Draft" && <button onClick={() => doPost(row)} className="rounded-lg border border-emerald-200 p-1.5 text-emerald-700 hover:bg-emerald-50" title="Post"><Send className="size-3.5" /></button>}
                         {row.status === "Draft" && <button onClick={() => doDelete(row)} className="rounded-lg border border-rose-200 p-1.5 text-rose-700 hover:bg-rose-50" title="Delete"><Trash2 className="size-3.5" /></button>}
                         {row.status === "Draft" && <button onClick={() => doCancel(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Cancel"><X className="size-3.5" /></button>}
@@ -420,7 +426,11 @@ export default function SalesIssued() {
           <div className="flex items-start justify-between"><h3 className="font-black">{selected.fs_no}</h3><button onClick={() => setSelected(null)}><X className="size-4" /></button></div>
           <p className="mt-2 text-xs font-bold text-zinc-500">{selected.reference_no} · {selected.customer_name}</p>
           <div className="mt-4 rounded-xl bg-zinc-50 p-4 text-sm font-black">Total: ETB {money(selected.total_amount)}</div>
-          <button onClick={() => window.print()} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-zinc-950 px-4 text-xs font-black text-white"><FileText className="size-4" /> Print Sales Issue</button>
+          <div className="mt-4 grid gap-2">
+            <button onClick={() => openAttachment(selected)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 text-xs font-black text-white"><FileText className="size-4" /> View Attachment</button>
+            <button onClick={() => openAttachment(selected)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-800"><Printer className="size-4" /> Print Attachment</button>
+            <button onClick={() => openAttachment(selected)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-800"><FileText className="size-4" /> Generate Attachment</button>
+          </div>
         </div>
       )}
     </div>

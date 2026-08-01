@@ -415,20 +415,20 @@ export default function StoreTransfersTab() {
       </GlassCard>
 
       {/* =========================================================================
-          2. TRANSFERS LIST SCREEN (SCREEN 1)
+          2. TRANSFER ENTRIES LIST SCREEN (SCREEN 1)
           ========================================================================= */}
       <div className="space-y-4">
         {/* Finance Toolbar */}
         <FinanceTableToolbar
-          title="Store Transfers"
-          subtitle={`${filteredTransfers.length} inter-warehouse transfers recorded`}
+          title="Transfer Entries"
+          subtitle={`${filteredTransfers.length} inter-warehouse movements recorded in the stock register`}
           searchValue={searchQuery}
           onSearchChange={setSearchQuery}
           searchPlaceholder="Search TIN, From/To, Item..."
           secondary={
             <div className="flex bg-black/[0.03] p-1 rounded-2xl gap-1 w-fit">
               {[
-                { id: "ALL", label: "All Transfers" },
+                { id: "ALL", label: "All Entries" },
                 { id: "Issued", label: "Issued / In Transit" },
                 { id: "Received", label: "Received & Posted" },
                 { id: "Discrepancy", label: "Discrepancy Flagged" },
@@ -452,7 +452,7 @@ export default function StoreTransfersTab() {
             currentRole === "Store Manager"
               ? [
                   {
-                    label: "New Transfer",
+                    label: "New Entry",
                     onClick: handleInitiateNew,
                     icon: <Plus className="size-4" />,
                   },
@@ -480,7 +480,7 @@ export default function StoreTransfersTab() {
                 {transferTable.sorted().length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center py-16 text-zinc-400 text-xs font-medium">
-                      No Material Transfers match the selected status or filters.
+                      No transfer entries match the selected status or filters.
                     </td>
                   </tr>
                 ) : (
@@ -635,10 +635,10 @@ export default function StoreTransfersTab() {
               <div className="p-6 border-b border-zinc-200/60 shrink-0 flex items-center justify-between">
                 <div className="flex flex-col">
                   <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">
-                    Store Transfers
+                    Stock Register
                   </span>
                   <h2 className="text-xl font-black text-zinc-950 tracking-tight leading-none">
-                    {formMode === "create" ? "New Store Transfer" : "Edit Store Transfer"}
+                    {formMode === "create" ? "New Transfer Entry" : "Edit Transfer Entry"}
                   </h2>
                 </div>
                 <button

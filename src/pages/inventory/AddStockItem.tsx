@@ -260,7 +260,7 @@ export default function AddStockItem() {
       stockBreakdown: [{ warehouse, qty: openingBalance }],
       batches: [{ batchNo: batchNumber, qty: openingBalance, expiry: expiryDate, status: "Released" }],
       origin: warehouse,
-      supplierName: "Opening Stock Registration",
+      supplierName: "Opening Stock Register Entry",
       inventoryAssetAccount,
       cogsAccount,
       revenueAccount,
@@ -335,7 +335,7 @@ export default function AddStockItem() {
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <h1 className="text-3xl font-black tracking-tight text-black">Add New Stock Item</h1>
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-800">
-                New Stock Registration
+                New Stock Register Entry
               </span>
             </div>
             <p className="mt-1 max-w-3xl text-xs font-semibold leading-relaxed text-zinc-500">

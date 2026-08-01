@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom"
 import SalesDashboard from "@/pages/sales/SalesDashboard"
 import SalesIssued from "@/pages/sales/SalesIssued"
+import CreditSalesAttachment from "@/pages/sales/CreditSalesAttachment"
 import PurchaseOrders from "@/pages/PurchaseOrders"
 import SalesOrders from "@/pages/SalesOrders"
 import InventoryDashboard from "@/pages/inventory/InventoryDashboard"
@@ -33,6 +34,7 @@ export function App() {
       {/* Sales section */}
       <Route path="/sales" element={<SalesDashboard />} />
       <Route path="/sales/sales-issued" element={<SalesIssued />} />
+      <Route path="/sales/sales-issued/:id/attachment" element={<CreditSalesAttachment />} />
       <Route path="/sales/sales-orders" element={<SalesOrders initialTab="sales-orders" />} />
       <Route path="/sales/quotations" element={<SalesOrders initialTab="quotations" />} />
       <Route path="/sales/delivery-notes" element={<SalesOrders initialTab="delivery-notes" />} />
