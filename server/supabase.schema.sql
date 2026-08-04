@@ -157,6 +157,10 @@ create unique index if not exists payroll_record_period_employee_unique
   on public.payroll_records ((payload->>'payroll_period_id'), (payload->>'employee_id'))
   where payload ? 'payroll_period_id' and payload ? 'employee_id';
 
+create unique index if not exists payroll_period_month_year_unique
+  on public.payroll_periods ((payload->>'month'), (payload->>'year'))
+  where payload ? 'month' and payload ? 'year' and coalesce(payload->>'status', '') <> 'Cancelled';
+
 create index if not exists leave_requests_employee_status_idx
   on public.leave_requests ((payload->>'employee_id'), (payload->>'status'));
 

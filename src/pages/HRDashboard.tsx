@@ -63,7 +63,9 @@ export default function HRDashboard() {
       onLeaveToday: approvedLeavesToday.length + todayAttendance.filter((record) => record.status === "On Leave").length,
       pendingLeave: hr.leaves.filter((request) => request.status === "Pending").length,
       payrollTotal: currentPayroll.reduce((sum, record) => sum + Number(record.net_pay || 0), 0),
-      pendingPayroll: hr.payrollRecords.filter((record) => record.payment_status !== "Paid").length,
+      pendingPayroll: hr.payrollRecords.filter((record) => record.payment_status === "Pending").length,
+      approvedPayroll: hr.payrollRecords.filter((record) => record.payment_status === "Approved").length,
+      paidPayroll: hr.payrollRecords.filter((record) => record.payment_status === "Paid").length,
       attendanceByStatus: countBy(todayAttendance, (record) => record.status),
       employeesByWarehouse: countBy(hr.employees, (employee) => employee.warehouse_id),
       employeesByStatus: countBy(hr.employees, (employee) => employee.status),
@@ -95,8 +97,9 @@ export default function HRDashboard() {
     ["Absent Today", summary.absentToday, Activity],
     ["On Leave Today", summary.onLeaveToday, CalendarClock],
     ["Pending Leave Requests", summary.pendingLeave, CalendarClock],
-    ["Current Payroll Total", `ETB ${money(summary.payrollTotal)}`, DollarSign],
-    ["Pending Payroll Records", summary.pendingPayroll, DollarSign],
+    ["Pending Payroll", summary.pendingPayroll, DollarSign],
+    ["Approved Payroll", summary.approvedPayroll, DollarSign],
+    ["Paid Payroll", summary.paidPayroll, DollarSign],
   ] as const
 
   return (
@@ -113,11 +116,11 @@ export default function HRDashboard() {
 
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
         {!data && !error ? (
-          <HRPageSkeleton rows={5} cards={8} />
+          <HRPageSkeleton rows={5} cards={9} />
         ) : (
           <>
 
-        <motion.div variants={fade} className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <motion.div variants={fade} className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
           {cards.map(([label, value, Icon]) => (
             <GlassCard key={label} className="p-5">
               <div className="flex items-center justify-between gap-3">
@@ -133,7 +136,7 @@ export default function HRDashboard() {
           <SummaryCard title="Attendance Summary" rows={["Present", "Absent", "Late", "On Leave"].map((key) => [key, summary.attendanceByStatus[key] || 0])} empty="No attendance has been recorded for today." />
           <SummaryCard title="Employee Summary" rows={[...Object.entries(summary.employeesByWarehouse), ...Object.entries(summary.employeesByStatus)]} empty="No employees have been registered yet." />
           <SummaryCard title="Leave Summary" rows={["Pending", "Approved", "Rejected"].map((key) => [key, summary.leaveByStatus[key] || 0])} empty="No leave requests have been recorded yet." />
-          <SummaryCard title="Payroll Summary" rows={[["Current payroll period", summary.payroll.period], ["Total gross salary", `ETB ${money(summary.payroll.gross)}`], ["Total deductions", `ETB ${money(summary.payroll.deductions)}`], ["Total net salary", `ETB ${money(summary.payroll.net)}`], ["Payroll status", summary.payroll.status]]} empty="No payroll period has been created yet." />
+          <SummaryCard title="Payroll Summary" rows={[["Current payroll period", summary.payroll.period], ["Total gross salary", `ETB ${money(summary.payroll.gross)}`], ["Total deductions", `ETB ${money(summary.payroll.deductions)}`], ["Total net salary", `ETB ${money(summary.payroll.net)}`], ["Pending payroll", summary.pendingPayroll], ["Approved payroll", summary.approvedPayroll], ["Paid payroll", summary.paidPayroll], ["Payroll status", summary.payroll.status]]} empty="No payroll period has been created yet." />
         </div>
 
         <ActivityGraph

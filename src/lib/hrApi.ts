@@ -7,7 +7,7 @@ export const ATTENDANCE_STATUSES = ["Present", "Absent", "Late", "Half Day", "On
 export const LEAVE_TYPES = ["Annual Leave", "Sick Leave", "Emergency Leave", "Maternity Leave", "Paternity Leave", "Unpaid Leave", "Other"] as const
 export const LEAVE_STATUSES = ["Draft", "Pending", "Approved", "Rejected", "Cancelled"] as const
 export const PAYROLL_PERIOD_STATUSES = ["Draft", "Prepared", "Approved", "Paid", "Cancelled"] as const
-export const PAYMENT_STATUSES = ["Pending", "Paid"] as const
+export const PAYMENT_STATUSES = ["Pending", "Approved", "Paid", "Cancelled"] as const
 
 export interface Employee {
   id: string
