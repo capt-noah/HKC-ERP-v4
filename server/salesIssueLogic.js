@@ -6,7 +6,7 @@ export function calculateAmount(quantity, unitPrice) {
 }
 
 export function parseExpiryDate(value) {
-  if (!value || value === "N/A") return null
+  if (!value) return null
   if (/^\d{4}-\d{2}$/.test(value)) {
     const [year, month] = value.split("-").map(Number)
     return new Date(Date.UTC(year, month, 0))
@@ -27,6 +27,7 @@ export function isExpiredBatch(expiry, today = new Date()) {
 export function availableBatchesForProduct(product, warehouseId, today = new Date()) {
   const warehouseQty = new Map((product.stockBreakdown || []).map((row) => [row.warehouse, Number(row.qty || 0)]))
   if (!warehouseQty.has(warehouseId)) return []
+  const warehouseAvailable = Number(warehouseQty.get(warehouseId) || 0)
 
   return (product.batches || [])
     .map((batch) => ({
@@ -35,12 +36,16 @@ export function availableBatchesForProduct(product, warehouseId, today = new Dat
       item_id: product.id,
       item_name: product.name,
       warehouse_id: warehouseId,
-      available_quantity: Number(batch.qty || 0),
+      available_quantity: Math.min(Number(batch.qty || 0), warehouseAvailable),
+      manufacturing_date: batch.manufacturingDate || batch.manufacturing_date || product.manufacturingDate || "",
       expiry: batch.expiry,
+      expiry_date: batch.expiry,
+      status: batch.status,
+      packaging_unit: product.unit,
       unit_price: Number(product.sellingPrice || product.unitCost || 0),
       unit_cost: Number(product.unitCost || 0),
     }))
-    .filter((batch) => batch.available_quantity > 0 && !isExpiredBatch(batch.expiry, today))
+    .filter((batch) => batch.available_quantity > 0 && batch.status !== "Pending QA" && batch.status !== "Quarantined" && !isExpiredBatch(batch.expiry, today))
     .sort((a, b) => {
       const aDate = parseExpiryDate(a.expiry)?.getTime() ?? Number.MAX_SAFE_INTEGER
       const bDate = parseExpiryDate(b.expiry)?.getTime() ?? Number.MAX_SAFE_INTEGER

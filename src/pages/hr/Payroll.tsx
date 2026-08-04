@@ -1,314 +1,290 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { CheckCircle2, CreditCard, Eye, FileCheck } from "lucide-react"
+import { CheckCircle2, Eye, Pencil, Printer, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
+import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
-import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useHRStore } from "@/lib/hrStore"
-import { useFinanceStore } from "@/lib/financeStore"
+import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
 import { useFeedback } from "@/context/FeedbackContext"
-import { 
-  HRTableToolbar, 
-  ResizableTableHeader, 
-  useTableSort, 
-  useColumnWidths, 
-  type TableColumn 
-} from "@/components/HRTable"
+import { getSectionChildren, navSections } from "@/lib/nav-config"
+import { PAYMENT_STATUSES, PAYROLL_PERIOD_STATUSES, calculatePayroll, hrApi, loadHRData, makeId, money, type Employee, type PayrollPeriod, type PayrollRecord } from "@/lib/hrApi"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
+const now = new Date()
+const blankPeriod = (): Omit<PayrollPeriod, "id"> => ({
+  name: "",
+  month: now.getMonth() + 1,
+  year: now.getFullYear(),
+  start_date: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
+  end_date: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10),
+  status: "Draft",
+})
+
+function blankRecord(employee: Employee, periodId: string): PayrollRecord {
+  return calculatePayroll({
+    id: makeId("PAY"),
+    payroll_period_id: periodId,
+    employee_id: employee.id,
+    basic_salary: Number(employee.basic_salary || 0),
+    allowances: 0,
+    overtime_pay: 0,
+    bonus: 0,
+    other_earnings: 0,
+    tax: 0,
+    pension: 0,
+    absence_deduction: 0,
+    loan_deduction: 0,
+    other_deductions: 0,
+    payment_status: "Pending",
+    notes: "",
+  })
+}
 
 export default function Payroll() {
   const { showToast } = useFeedback()
-  const hr = useHRStore()
-  const finStore = useFinanceStore()
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [periods, setPeriods] = useState<PayrollPeriod[]>([])
+  const [records, setRecords] = useState<PayrollRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [selectedPeriod, setSelectedPeriod] = useState("")
+  const [search, setSearch] = useState("")
+  const [paymentStatus, setPaymentStatus] = useState("All")
+  const [showPeriodForm, setShowPeriodForm] = useState(false)
+  const [periodForm, setPeriodForm] = useState<Omit<PayrollPeriod, "id">>(blankPeriod())
+  const [editing, setEditing] = useState<PayrollRecord | null>(null)
+  const [payslip, setPayslip] = useState<PayrollRecord | null>(null)
 
-  const payrollRuns = finStore.getPayrollRuns()
-  const employees = hr.getEmployees()
+  const refresh = async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const data = await loadHRData()
+      setEmployees(data.employees)
+      setPeriods(data.payrollPeriods)
+      setRecords(data.payrollRecords)
+      setSelectedPeriod((current) => current || data.payrollPeriods[0]?.id || "")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load payroll.")
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedDept, setSelectedDept] = useState("All")
+  useEffect(() => {
+    void refresh()
+  }, [])
 
-  const departments = ["All", ...Array.from(new Set(employees.map(e => e.department)))]
+  const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees])
+  const currentPeriod = periods.find((period) => period.id === selectedPeriod)
+  const currentRecords = useMemo(() => records.filter((record) => !selectedPeriod || record.payroll_period_id === selectedPeriod), [records, selectedPeriod])
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return currentRecords.filter((record) => {
+      const employee = employeeById.get(record.employee_id)
+      const matchesSearch = !query || [employee?.full_name, employee?.employee_number, currentPeriod?.name].some((value) => String(value || "").toLowerCase().includes(query))
+      return matchesSearch && (paymentStatus === "All" || record.payment_status === paymentStatus)
+    })
+  }, [currentPeriod?.name, currentRecords, employeeById, paymentStatus, search])
 
-  const filteredEmployees = employees.filter(emp => {
-    const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          emp.role.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesDept = selectedDept === "All" || emp.department === selectedDept
-    return matchesSearch && matchesDept
-  })
+  const totals = {
+    employees: currentRecords.length,
+    gross: currentRecords.reduce((sum, record) => sum + Number(record.gross_pay || 0), 0),
+    deductions: currentRecords.reduce((sum, record) => sum + Number(record.total_deductions || 0), 0),
+    net: currentRecords.reduce((sum, record) => sum + Number(record.net_pay || 0), 0),
+    paid: currentRecords.filter((record) => record.payment_status === "Paid").length,
+    pending: currentRecords.filter((record) => record.payment_status !== "Paid").length,
+  }
 
   const { sortKey, sortDir, handleSort, handleClearSort, sortItems } = useTableSort()
-  const sortedEmployees = sortItems(filteredEmployees)
-
+  const sorted = sortItems(filtered)
   const columns: TableColumn[] = [
-    { key: "name", label: "Employee", initialWidth: 200 },
-    { key: "department", label: "Department", initialWidth: 150 },
-    { key: "id", label: "Account ID", initialWidth: 140 },
-    { key: "salary", label: "Monthly Base", align: "right", initialWidth: 150 },
-    { key: "paymentStatus", label: "Disbursement Status", align: "center", initialWidth: 170 },
-    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 130 },
+    { key: "employee", label: "Employee", initialWidth: 220 },
+    { key: "basic_salary", label: "Basic Salary", align: "right", initialWidth: 140 },
+    { key: "gross_pay", label: "Gross Pay", align: "right", initialWidth: 140 },
+    { key: "total_deductions", label: "Total Deductions", align: "right", initialWidth: 160 },
+    { key: "net_pay", label: "Net Pay", align: "right", initialWidth: 140 },
+    { key: "payment_status", label: "Payment Status", align: "center", initialWidth: 150 },
+    { key: "payroll_period_id", label: "Payroll Period", initialWidth: 180 },
+    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 170 },
   ]
+  const { colWidths, handleResizeStart } = useColumnWidths(Object.fromEntries(columns.map((col) => [col.key, col.initialWidth || 130])))
 
-  const { colWidths, handleResizeStart } = useColumnWidths({
-    name: 200,
-    department: 150,
-    id: 140,
-    salary: 150,
-    paymentStatus: 170,
-    actions: 130,
-  })
-
-  // Action: Post Payroll Accrual to Ledger
-  const handlePostAccrual = (runId: string) => {
-    const res = finStore.postPayrollAccrual(runId)
-    if (res.success) {
-      showToast(
-        "Payroll Accrued in General Ledger",
-        "success",
-        `Created Journal Entry ${res.entryId}. Salary Expense debited and individual employee payable credits posted.`
-      )
-    } else {
-      showToast("Accrual Blocked", "warning", res.error || "Failed to post payroll accrual.")
+  const createPeriod = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!periodForm.name.trim()) return showToast("Period Not Saved", "warning", "Period name is required.")
+    try {
+      const period = await hrApi.createPayrollPeriod({ id: makeId("PER"), ...periodForm })
+      setShowPeriodForm(false)
+      setSelectedPeriod(period.id)
+      showToast("Payroll Period Created", "success", `${period.name} was saved to Supabase.`)
+      await refresh()
+    } catch (err) {
+      showToast("Period Save Failed", "warning", err instanceof Error ? err.message : "Supabase rejected the payroll period.")
     }
   }
 
-  // Action: Disburse Payroll Payment to Ledger
-  const handleDisbursePayment = (runId: string) => {
-    const res = finStore.postPayrollPayment(runId)
-    if (res.success) {
-      showToast(
-        "Payroll Disbursed in General Ledger",
-        "success",
-        `Created Journal Entry ${res.entryId}. Accrued Payroll debited and Cash account credited.`
-      )
-    } else {
-      showToast("Disbursement Blocked", "warning", res.error || "Failed to post payroll disbursement.")
+  const loadActiveEmployees = async () => {
+    if (!currentPeriod) return showToast("Payroll Period Required", "warning", "Create or select a payroll period first.")
+    const activeEmployees = employees.filter((employee) => employee.status === "Active")
+    const missing = activeEmployees.filter((employee) => !records.some((record) => record.payroll_period_id === currentPeriod.id && record.employee_id === employee.id))
+    try {
+      await Promise.all(missing.map((employee) => hrApi.createPayrollRecord(blankRecord(employee, currentPeriod.id))))
+      showToast("Payroll Records Loaded", "success", `${missing.length} active employee records saved for payroll.`)
+      await refresh()
+    } catch (err) {
+      showToast("Payroll Load Failed", "warning", err instanceof Error ? err.message : "Supabase rejected payroll records.")
     }
   }
 
-  const handlePayEmployee = (_id: string) => {
-    showToast("Disbursement Recorded", "success", "Employee payout updated.")
+  const updatePeriodStatus = async (nextStatus: string) => {
+    if (!currentPeriod) return
+    try {
+      await hrApi.updatePayrollPeriod(currentPeriod.id, { status: nextStatus })
+      showToast("Payroll Status Updated", "success", `Payroll period marked ${nextStatus}.`)
+      await refresh()
+    } catch (err) {
+      showToast("Status Update Failed", "warning", err instanceof Error ? err.message : "Could not update payroll status.")
+    }
   }
 
-  // Action: Pay specific employee
+  const updateRecord = async (record: PayrollRecord, changes: Partial<PayrollRecord>) => {
+    if (currentPeriod && ["Approved", "Paid"].includes(currentPeriod.status) && !("payment_status" in changes)) return showToast("Payroll Locked", "warning", "Approved or paid payroll records are not directly editable.")
+    const calculated = calculatePayroll({ ...record, ...changes })
+    try {
+      await hrApi.updatePayrollRecord(record.id, calculated)
+      showToast("Payroll Record Updated", "success", "Payroll record was recalculated and saved.")
+      setEditing(null)
+      await refresh()
+    } catch (err) {
+      showToast("Payroll Update Failed", "warning", err instanceof Error ? err.message : "Could not update payroll record.")
+    }
+  }
+
+  const printPayslip = (record: PayrollRecord) => {
+    setPayslip(record)
+    window.setTimeout(() => window.print(), 100)
+  }
 
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        {/* Header Block */}
+      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12 print:hidden">
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-black text-black tracking-tight mt-1">Payroll Hub</h1>
-            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
-              Monthly base salary register, disbursement status, and ledger posting controls.
-            </p>
+          <div><h1 className="text-3xl font-black text-black tracking-tight mt-1">Payroll</h1><p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Manual earnings, deductions, totals, workflow, and payslips from Supabase payroll data.</p></div>
+          <SubPageNav items={getSectionChildren("/hr")} />
+        </motion.div>
+        {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
+        {loading ? (
+          <HRPageSkeleton rows={7} cards={6} />
+        ) : (
+          <>
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-5">
+          {[["Total Employees in Payroll", totals.employees], ["Total Gross Pay", `ETB ${money(totals.gross)}`], ["Total Deductions", `ETB ${money(totals.deductions)}`], ["Total Net Pay", `ETB ${money(totals.net)}`], ["Paid Records", totals.paid], ["Pending Records", totals.pending]].map(([label, value]) => <GlassCard key={label} className="p-4"><span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">{label}</span><div className="text-lg font-black text-zinc-950 mt-1">{value}</div></GlassCard>)}
+        </div>
+        <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
+          <HRTableToolbar
+            title="Payroll Records"
+            subtitle={currentPeriod ? `${currentPeriod.name} - ${currentPeriod.status}` : "No payroll period has been created yet."}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search employee or period..."
+            filters={[
+              { value: selectedPeriod, onChange: setSelectedPeriod, options: periods.length ? periods.map((period) => ({ value: period.id, label: period.name })) : [{ value: "", label: "No Periods" }] },
+              { value: paymentStatus, onChange: setPaymentStatus, options: ["All", ...PAYMENT_STATUSES].map((item) => ({ value: item, label: item })) },
+            ]}
+            actions={[{ label: "Create Period", onClick: () => setShowPeriodForm(true), variant: "secondary" }, { label: "Load Active Employees", onClick: loadActiveEmployees }]}
+            secondary={currentPeriod && <div className="flex flex-wrap gap-2">{PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => <button key={item} onClick={() => updatePeriodStatus(item)} className="rounded-full bg-black/[0.04] px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700">{item}</button>)}</div>}
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse table-fixed">
+              <ResizableTableHeader columns={columns} colWidths={colWidths} onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} onClearSort={handleClearSort} />
+              <tbody className="divide-y divide-black/5 text-xs">
+                {!loading && sorted.length === 0 ? <tr><td colSpan={8} className="py-12 text-center text-zinc-400 font-medium">No payroll records have been created yet.</td></tr> : sorted.map((record) => {
+                  const employee = employeeById.get(record.employee_id)
+                  return <tr key={record.id} className="hover:bg-black/[0.02] transition-colors">
+                    <Cell width={colWidths.employee}>{employee ? `${employee.full_name} (${employee.employee_number})` : "Unknown employee"}</Cell>
+                    <Cell width={colWidths.basic_salary} align="right">ETB {money(record.basic_salary)}</Cell>
+                    <Cell width={colWidths.gross_pay} align="right">ETB {money(record.gross_pay)}</Cell>
+                    <Cell width={colWidths.total_deductions} align="right">ETB {money(record.total_deductions)}</Cell>
+                    <Cell width={colWidths.net_pay} align="right">ETB {money(record.net_pay)}</Cell>
+                    <Cell width={colWidths.payment_status} align="center">{record.payment_status}</Cell>
+                    <Cell width={colWidths.payroll_period_id}>{currentPeriod?.name || record.payroll_period_id}</Cell>
+                    <Cell width={colWidths.actions} align="right">
+                      <button onClick={() => setPayslip(record)} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500" title="View"><Eye className="size-4" /></button>
+                      <button onClick={() => setEditing(record)} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500" title="Edit Draft"><Pencil className="size-4" /></button>
+                      <button onClick={() => updateRecord(record, { payment_status: "Paid" })} className="p-1.5 hover:bg-emerald-50 rounded-lg text-emerald-700" title="Mark Paid"><CheckCircle2 className="size-4" /></button>
+                      <button onClick={() => printPayslip(record)} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500" title="Print Payslip"><Printer className="size-4" /></button>
+                    </Cell>
+                  </tr>
+                })}
+              </tbody>
+            </table>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
-            <SubPageNav items={getSectionChildren("/hr")} />
-          </div>
-        </motion.div>
-
-        {/* Section: Finance Ledger Payroll Run Postings */}
-        <motion.div variants={fade} className="mb-8">
-          <GlassCard className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-xs font-black uppercase text-zinc-900 tracking-tight">Active Payroll Cycles & Ledger Postings</h3>
-                <p className="text-[10px] text-zinc-500 font-medium mt-0.5">
-                  Process two-phase accounting: Accrue payroll expenses, then disburse payments to employee accounts.
-                </p>
-              </div>
-              <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase">
-                2-Phase Accounting Engine
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {payrollRuns.map((run) => (
-                <div key={run.id} className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/80 flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-zinc-900">{run.period_label}</span>
-                      <span className={`text-[9px] font-extrabold px-2.5 py-0.5 rounded-full ${
-                        run.status === "Paid"
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                          : run.status === "Accrued"
-                          ? "bg-blue-100 text-blue-800 border border-blue-200"
-                          : "bg-amber-100 text-amber-800 border border-amber-200"
-                      }`}>
-                        {run.status === "Draft" ? "Draft (Unposted)" : run.status === "Accrued" ? "Accrued (Payable Created)" : "Paid & Disbursed"}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-zinc-400 font-mono mt-1">
-                      Period: {run.period_start} to {run.period_end} • {run.employees.length} Employees
-                    </p>
-
-                    <div className="grid grid-cols-3 gap-2 mt-3 p-2.5 rounded-xl bg-white border border-zinc-100 font-mono text-[11px]">
-                      <div>
-                        <span className="text-[9px] text-zinc-400 block font-sans uppercase">Gross Pay</span>
-                        <span className="font-bold text-zinc-900">ETB {run.total_gross.toLocaleString()}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 block font-sans uppercase">Deductions</span>
-                        <span className="font-bold text-amber-800">ETB {run.total_deductions.toLocaleString()}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-zinc-400 block font-sans uppercase">Net Payout</span>
-                        <span className="font-bold text-emerald-800">ETB {run.total_net.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-zinc-200/60 pt-3 text-xs">
-                    <div className="text-[10px] font-mono text-zinc-400">
-                      {run.accrual_journal_entry_id && (
-                        <span className="block">Accrual JE: {run.accrual_journal_entry_id}</span>
-                      )}
-                      {run.payment_journal_entry_id && (
-                        <span className="block">Payment JE: {run.payment_journal_entry_id}</span>
-                      )}
-                    </div>
-
-                    <div>
-                      {run.status === "Draft" && (
-                        <button
-                          onClick={() => handlePostAccrual(run.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm"
-                        >
-                          <FileCheck className="size-3.5" /> Post Accrual
-                        </button>
-                      )}
-                      {run.status === "Accrued" && (
-                        <button
-                          onClick={() => handleDisbursePayment(run.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-sm"
-                        >
-                          <CreditCard className="size-3.5" /> Disburse Payment
-                        </button>
-                      )}
-                      {run.status === "Paid" && (
-                        <span className="text-xs text-emerald-700 font-extrabold flex items-center gap-1">
-                          <CheckCircle2 className="size-4" /> Fully Settled in GL
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
-        </motion.div>
-
-        {/* Payroll Records List */}
-        <motion.div variants={fade}>
-          <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
-            <HRTableToolbar
-              title="Payroll Disbursement Register"
-              subtitle={`${sortedEmployees.length} monthly base salary records`}
-              searchValue={searchQuery}
-              onSearchChange={setSearchQuery}
-              searchPlaceholder="Search employee, role..."
-              filters={[
-                {
-                  value: selectedDept,
-                  onChange: setSelectedDept,
-                  ariaLabel: "Department Filter",
-                  options: departments.map((d) => ({ value: d, label: d === "All" ? "All Departments" : d })),
-                },
-              ]}
-              actions={[
-                {
-                  label: "Run Payroll Cycle",
-                  onClick: () => showToast("Payroll Cycle Initiated", "info", "Preparing monthly disbursement calculations..."),
-                },
-              ]}
-            />
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse table-fixed">
-                <ResizableTableHeader
-                  columns={columns}
-                  colWidths={colWidths}
-                  onResizeStart={handleResizeStart}
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSort}
-                  onClearSort={handleClearSort}
-                />
-                <tbody className="divide-y divide-black/5 text-xs">
-                  {sortedEmployees.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-12 text-center text-zinc-400 font-medium">
-                        No payroll sheets match your search.
-                      </td>
-                    </tr>
-                  ) : (
-                    sortedEmployees.map((emp) => (
-                      <tr key={emp.id} className="hover:bg-black/[0.02] transition-colors">
-                        <td style={{ width: `${colWidths.name}px` }} className="py-3.5 px-3.5 truncate">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className={`size-8 rounded-full ${emp.avatarBg} flex items-center justify-center text-xs font-black text-zinc-800 shadow-2xs shrink-0`}>
-                              {emp.initials}
-                            </div>
-                            <div className="truncate">
-                              <p className="text-xs font-bold text-black truncate">{emp.name}</p>
-                              <p className="text-[10px] text-zinc-500 truncate">{emp.role}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td style={{ width: `${colWidths.department}px` }} className="py-3.5 px-3.5 truncate">
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-black/5 text-zinc-800 inline-block truncate">
-                            {emp.department}
-                          </span>
-                        </td>
-                        <td style={{ width: `${colWidths.id}px` }} className="py-3.5 px-3.5 font-mono text-xs font-bold text-zinc-500 truncate">
-                          {emp.id.replace("EMP", "ACC")}
-                        </td>
-                        <td style={{ width: `${colWidths.salary}px` }} className="py-3.5 px-3.5 text-xs font-black text-black font-mono text-right truncate">
-                          ETB {emp.salary.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ width: `${colWidths.paymentStatus}px` }} className="py-3.5 px-3.5 text-center">
-                          <div className="flex justify-center">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide border ${emp.paymentStatusColor}`}>
-                              <span className={`size-1.5 rounded-full ${emp.paymentStatus === "Paid" ? "bg-emerald-500" : "bg-amber-500"}`} />
-                              {emp.paymentStatus}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={{ width: `${colWidths.actions}px` }} className="py-3.5 px-3.5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-400 hover:text-black transition-all active:scale-90" title="View details">
-                              <Eye className="size-3.5" />
-                            </button>
-                            {emp.paymentStatus !== "Paid" ? (
-                              <button
-                                onClick={() => handlePayEmployee(emp.id)}
-                                className="flex items-center gap-1 bg-black hover:bg-zinc-800 text-white text-[10px] font-bold px-2.5 py-1 rounded-full transition-all shadow-xs active:scale-95"
-                              >
-                                <CreditCard className="size-3" />
-                                Disburse
-                              </button>
-                            ) : (
-                              <span className="text-[10px] text-emerald-700 font-extrabold px-2 py-1 flex items-center gap-1">
-                                <CheckCircle2 className="size-3 text-emerald-600" /> Fully Paid
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-        </motion.div>
+        </GlassCard>
+          </>
+        )}
       </motion.div>
+      {showPeriodForm && <PeriodForm form={periodForm} setForm={setPeriodForm} onClose={() => setShowPeriodForm(false)} onSubmit={createPeriod} />}
+      {editing && <PayrollRecordForm record={editing} onClose={() => setEditing(null)} onSubmit={(changes) => updateRecord(editing, changes)} />}
+      {payslip && <Payslip record={payslip} employee={employeeById.get(payslip.employee_id)} period={periods.find((period) => period.id === payslip.payroll_period_id)} onClose={() => setPayslip(null)} />}
     </div>
   )
+}
+
+function Cell({ width, align = "left", children }: { width: number; align?: "left" | "right" | "center"; children: React.ReactNode }) {
+  return <td style={{ width }} className={`py-3.5 px-3.5 truncate font-medium text-zinc-700 ${align === "right" ? "text-right" : align === "center" ? "text-center" : ""}`}>{children}</td>
+}
+
+function PeriodForm({ form, setForm, onClose, onSubmit }: { form: Omit<PayrollPeriod, "id">; setForm: (form: Omit<PayrollPeriod, "id">) => void; onClose: () => void; onSubmit: (event: React.FormEvent) => void }) {
+  const set = (key: keyof Omit<PayrollPeriod, "id">, value: string | number) => setForm({ ...form, [key]: value })
+  return <Modal title="Create Payroll Period" onClose={onClose}><form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4"><Input label="Period Name" value={form.name} onChange={(value) => set("name", value)} required /><Input label="Month" type="number" value={form.month} onChange={(value) => set("month", Number(value))} required /><Input label="Year" type="number" value={form.year} onChange={(value) => set("year", Number(value))} required /><Input label="Start Date" type="date" value={form.start_date} onChange={(value) => set("start_date", value)} required /><Input label="End Date" type="date" value={form.end_date} onChange={(value) => set("end_date", value)} required /><Select label="Status" value={form.status} options={PAYROLL_PERIOD_STATUSES} onChange={(value) => set("status", value)} /><Actions onClose={onClose} label="Save Period" /></form></Modal>
+}
+
+function PayrollRecordForm({ record, onClose, onSubmit }: { record: PayrollRecord; onClose: () => void; onSubmit: (changes: Partial<PayrollRecord>) => void }) {
+  const [form, setForm] = useState(record)
+  const set = (key: keyof PayrollRecord, value: string | number) => setForm(calculatePayroll({ ...form, [key]: value }))
+  return <Modal title="Edit Payroll Record" onClose={onClose}><form onSubmit={(event) => { event.preventDefault(); onSubmit(form) }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    {(["basic_salary", "allowances", "overtime_pay", "bonus", "other_earnings", "tax", "pension", "absence_deduction", "loan_deduction", "other_deductions"] as const).map((key) => <Input key={key} label={key.replaceAll("_", " ")} type="number" value={form[key]} onChange={(value) => set(key, Number(value))} />)}
+    <Input label="Gross Pay" type="number" value={form.gross_pay} onChange={() => undefined} />
+    <Input label="Total Deductions" type="number" value={form.total_deductions} onChange={() => undefined} />
+    <Input label="Net Pay" type="number" value={form.net_pay} onChange={() => undefined} />
+    <Select label="Payment Status" value={form.payment_status} options={PAYMENT_STATUSES} onChange={(value) => set("payment_status", value)} />
+    <Input label="Notes" value={form.notes} onChange={(value) => set("notes", value)} />
+    <Actions onClose={onClose} label="Save Payroll Record" />
+  </form></Modal>
+}
+
+function Payslip({ record, employee, period, onClose }: { record: PayrollRecord; employee?: Employee; period?: PayrollPeriod; onClose: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm print:static print:bg-white print:p-0"><motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10 print:shadow-none print:border-0 print:rounded-none"><div className="flex items-center justify-between mb-5 print:hidden"><h3 className="text-lg font-black">Payslip</h3><div className="flex gap-2"><button onClick={() => window.print()} className="px-3 py-1.5 rounded-full bg-black text-white text-xs font-bold flex items-center gap-1"><Printer className="size-3.5" />Print</button><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div></div>
+    <div className="text-center border-b border-black/10 pb-4 mb-4"><h2 className="text-xl font-black">HKC Trading ERP</h2><p className="text-xs font-bold text-zinc-500">{period?.name || "Payroll period"} Payslip</p></div>
+    <div className="grid grid-cols-2 gap-3 text-xs">
+      <Line label="Employee Number" value={employee?.employee_number || "-"} /><Line label="Employee Name" value={employee?.full_name || "-"} /><Line label="Warehouse" value={employee?.warehouse_id || "-"} /><Line label="Payment Status" value={record.payment_status} />
+      <Line label="Basic Salary" value={`ETB ${money(record.basic_salary)}`} /><Line label="Allowances" value={`ETB ${money(record.allowances)}`} /><Line label="Overtime Pay" value={`ETB ${money(record.overtime_pay)}`} /><Line label="Bonus" value={`ETB ${money(record.bonus)}`} /><Line label="Other Earnings" value={`ETB ${money(record.other_earnings)}`} /><Line label="Gross Pay" value={`ETB ${money(record.gross_pay)}`} />
+      <Line label="Tax" value={`ETB ${money(record.tax)}`} /><Line label="Pension" value={`ETB ${money(record.pension)}`} /><Line label="Absence Deduction" value={`ETB ${money(record.absence_deduction)}`} /><Line label="Loan Deduction" value={`ETB ${money(record.loan_deduction)}`} /><Line label="Other Deductions" value={`ETB ${money(record.other_deductions)}`} /><Line label="Total Deductions" value={`ETB ${money(record.total_deductions)}`} />
+      <div className="col-span-2 rounded-2xl bg-black text-white p-4 flex items-center justify-between"><span className="text-sm font-black">Net Pay</span><span className="text-xl font-black">ETB {money(record.net_pay)}</span></div>
+    </div>
+  </motion.div></div>
+}
+
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"><motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-black/10"><div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black">{title}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>{children}</motion.div></div>
+}
+
+function Actions({ onClose, label }: { onClose: () => void; label: string }) {
+  return <div className="md:col-span-3 flex justify-end gap-3 pt-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold">Cancel</button><button type="submit" className="px-5 py-2 rounded-full bg-black text-white text-xs font-bold">{label}</button></div>
+}
+
+function Input({ label, value, onChange, type = "text", required = false }: { label: string; value: string | number; onChange: (value: string) => void; type?: string; required?: boolean }) {
+  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}<input type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} readOnly={onChange.toString().includes("undefined")} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none read-only:bg-zinc-100" /></label>
+}
+
+function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
+  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+}
+
+function Line({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl bg-black/[0.03] px-3 py-2 flex justify-between gap-3"><span className="font-bold text-zinc-500">{label}</span><span className="font-black text-zinc-900 text-right">{value}</span></div>
 }

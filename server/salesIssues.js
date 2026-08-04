@@ -67,6 +67,19 @@ async function loadProductPayload(itemId) {
   return rows?.[0]?.payload || null
 }
 
+async function enrichItemsWithInventory(items) {
+  const cache = new Map()
+  const enriched = []
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!cache.has(item.item_id)) {
+      cache.set(item.item_id, await loadProductPayload(item.item_id).catch(() => null))
+    }
+    const product = cache.get(item.item_id)
+    enriched.push({ ...item, packaging_unit: item.packaging_unit || product?.unit || "" })
+  }
+  return enriched
+}
+
 async function validateSalesIssueInventory(issue, items) {
   const errors = []
   for (const [index, item] of items.entries()) {
@@ -121,7 +134,7 @@ function normalizeIssueBody(body) {
       status: body.status || "Draft",
       total_quantity: totalQuantity,
       total_amount: totalAmount,
-      created_by: body.created_by || "Current User",
+      created_by: body.created_by,
     },
     items,
   }
@@ -171,14 +184,17 @@ export async function listSalesIssues(requestUrl) {
   if (batchNo && batchNo !== "ALL") rows = rows.filter((row) => (itemsByIssue.get(row.id) || []).some((item) => item.batch_no === batchNo))
 
   const total = rows.length
-  const paged = rows.slice((page - 1) * pageSize, page * pageSize).map((row) => ({ ...row, items: itemsByIssue.get(row.id) || [] }))
+  const paged = []
+  for (const row of rows.slice((page - 1) * pageSize, page * pageSize)) {
+    paged.push({ ...row, items: await enrichItemsWithInventory(itemsByIssue.get(row.id) || []) })
+  }
   return jsonResult(200, { rows: paged, total, page, pageSize })
 }
 
 export async function getSalesIssue(id) {
   const issue = await request(`sales_issues?id=eq.${encodeURIComponent(id)}&select=*`)
   const items = await request(`sales_issue_items?sales_issue_id=eq.${encodeURIComponent(id)}&select=*`)
-  return jsonResult(issue?.[0] ? 200 : 404, issue?.[0] ? { ...issue[0], items } : { error: "Sales issue not found." })
+  return jsonResult(issue?.[0] ? 200 : 404, issue?.[0] ? { ...issue[0], items: await enrichItemsWithInventory(items) } : { error: "Sales issue not found." })
 }
 
 export async function createSalesIssue(req) {
@@ -226,10 +242,11 @@ export async function deleteSalesIssue(id) {
   return jsonResult(200, { ok: true })
 }
 
-export async function postSalesIssue(id) {
+export async function postSalesIssue(req, id) {
+  const body = await readBody(req).catch(() => ({}))
   const result = await request("rpc/hkc_post_sales_issue", {
     method: "POST",
-    body: JSON.stringify({ p_sales_issue_id: id, p_posted_by: "Current User" }),
+    body: JSON.stringify({ p_sales_issue_id: id, ...(body?.posted_by ? { p_posted_by: body.posted_by } : {}) }),
   })
   return jsonResult(200, result)
 }

@@ -8,6 +8,7 @@ export interface SalesIssueItem {
   item_name: string
   batch_id: string
   batch_no: string
+  packaging_unit?: string
   available_quantity?: number
   quantity: number
   unit_price: number
@@ -39,8 +40,12 @@ export interface AvailableBatch {
   item_name: string
   warehouse_id: string
   available_quantity: number
+  manufacturing_date?: string
   expiry: string
+  expiry_date?: string
+  packaging_unit: string
   unit_price: number
+  unit_cost?: number
 }
 
 async function parseResponse(response: Response) {

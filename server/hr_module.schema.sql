@@ -1,23 +1,6 @@
--- HKC ERP backend schema for Supabase Data API.
--- Run this in the Supabase SQL editor for the project before using the server routes.
---
--- This first backend stores each ERP record as a JSONB document:
---   id text primary key
---   payload jsonb not null
---   created_at / updated_at timestamps
---
--- It keeps the current frontend object shapes intact while the module logic is
--- still evolving. Once workflows settle, high-value finance tables can be
--- normalized with migrations without changing the public route names.
---
--- Access model:
---   - anon gets no table access.
---   - authenticated users get CRUD access through permissive prototype RLS.
---   - service_role gets CRUD access for server-side administrative jobs.
---
--- Tighten the authenticated policies before storing production or user-specific
--- data. Good next steps are tenant/company ownership columns and policies that
--- compare those columns to authorization data in auth.jwt()->'app_metadata'.
+-- HR module schema patch for the JSONB-backed HKC ERP API.
+-- Run this in the Supabase SQL editor if HR endpoints return PGRST205
+-- for attendance_records, payroll_periods, or payroll_records.
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -55,10 +38,6 @@ begin
     table_name
   );
 
-  execute format('drop policy if exists "%s anon read" on public.%I', table_name, table_name);
-  execute format('drop policy if exists "%s anon insert" on public.%I', table_name, table_name);
-  execute format('drop policy if exists "%s anon update" on public.%I', table_name, table_name);
-  execute format('drop policy if exists "%s anon delete" on public.%I', table_name, table_name);
   execute format('drop policy if exists "%s authenticated read" on public.%I', table_name, table_name);
   execute format('drop policy if exists "%s authenticated insert" on public.%I', table_name, table_name);
   execute format('drop policy if exists "%s authenticated update" on public.%I', table_name, table_name);
@@ -80,52 +59,11 @@ $$;
 select public.create_hkc_document_table(table_name)
 from (
   values
-    ('warehouses'),
-    ('inventory'),
-    ('inventory_products'),
-    ('inventory_batches'),
-    ('warehouse_stock'),
-    ('stock_movements'),
-    ('store_transfers'),
-    ('sales_orders'),
-    ('quotations'),
-    ('delivery_notes'),
-    ('purchase_orders'),
-    ('customers'),
-    ('suppliers'),
-    ('chart_of_accounts'),
-    ('journal_entries'),
-    ('journal_entry_lines'),
-    ('invoices'),
-    ('payments'),
-    ('cash_accounts'),
-    ('accounts_receivable'),
-    ('customer_balances'),
-    ('expenses'),
-    ('recurring_expense_schedules'),
-    ('vehicles'),
-    ('accounting_periods'),
-    ('company_settings'),
-    ('payroll_runs'),
-    ('revaluations'),
-    ('fixed_assets'),
-    ('tax_rules'),
     ('employees'),
     ('attendance_records'),
-    ('payroll_periods'),
-    ('payroll_records'),
-    ('departments'),
-    ('designations'),
-    ('job_openings'),
-    ('job_applicants'),
-    ('onboardings'),
-    ('separations'),
-    ('leave_types'),
     ('leave_requests'),
-    ('expense_claims'),
-    ('appraisals'),
-    ('training_programs'),
-    ('cost_center_budgets')
+    ('payroll_periods'),
+    ('payroll_records')
 ) as tables(table_name);
 
 create unique index if not exists employees_employee_number_unique
@@ -162,6 +100,10 @@ create index if not exists leave_requests_employee_status_idx
 
 create index if not exists payroll_records_period_status_idx
   on public.payroll_records ((payload->>'payroll_period_id'), (payload->>'payment_status'));
+
+update public.employees
+set payload = jsonb_set(payload, '{national_id_image}', '""'::jsonb, true)
+where length(coalesce(payload->>'national_id_image', '')) > 250000;
 
 drop function public.create_hkc_document_table(text);
 

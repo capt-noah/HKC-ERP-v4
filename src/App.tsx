@@ -20,9 +20,8 @@ import Taxes from "@/pages/finance/Taxes"
 import FinancialReports from "@/pages/finance/FinancialReports"
 import Employees from "@/pages/hr/Employees"
 import Payroll from "@/pages/hr/Payroll"
-import AttendanceLeave from "@/pages/hr/AttendanceLeave"
-import Recruitment from "@/pages/hr/Recruitment"
-import OnboardingSeparation from "@/pages/hr/OnboardingSeparation"
+import Attendance from "@/pages/hr/Attendance"
+import Leave from "@/pages/hr/Leave"
 import UserManagement from "@/pages/admin/UserManagement"
 import AdminSettings from "@/pages/admin/AdminSettings"
 
@@ -59,10 +58,12 @@ export function App() {
       {/* HR section */}
       <Route path="/hr" element={<HRDashboard />} />
       <Route path="/hr/employees" element={<Employees />} />
+      <Route path="/hr/attendance" element={<Attendance />} />
+      <Route path="/hr/leave" element={<Leave />} />
       <Route path="/hr/payroll" element={<Payroll />} />
-      <Route path="/hr/attendance-leave" element={<AttendanceLeave />} />
-      <Route path="/hr/recruitment" element={<Recruitment />} />
-      <Route path="/hr/onboarding-separation" element={<OnboardingSeparation />} />
+      <Route path="/hr/attendance-leave" element={<Navigate to="/hr/attendance" replace />} />
+      <Route path="/hr/recruitment" element={<Navigate to="/hr" replace />} />
+      <Route path="/hr/onboarding-separation" element={<Navigate to="/hr" replace />} />
 
       {/* Admin section */}
       <Route path="/admin" element={<ControlCenter />} />

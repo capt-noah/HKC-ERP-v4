@@ -1,341 +1,359 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { X, UserMinus } from "lucide-react"
+import { Eye, ImagePlus, Pencil, UserMinus, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
+import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
-import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useHRStore } from "@/lib/hrStore"
-import { 
-  HRTableToolbar, 
-  ResizableTableHeader, 
-  useTableSort, 
-  useColumnWidths, 
-  type TableColumn 
-} from "@/components/HRTable"
+import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
+import { useFeedback } from "@/context/FeedbackContext"
+import { getSectionChildren, navSections } from "@/lib/nav-config"
+import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
+type FormState = Omit<Employee, "id">
+
 export default function Employees() {
-  const store = useHRStore()
-  const employees = store.getEmployees()
+  const { showToast } = useFeedback()
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([])
+  const [payroll, setPayroll] = useState<PayrollRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [search, setSearch] = useState("")
+  const [status, setStatus] = useState("All")
+  const [warehouse, setWarehouse] = useState("All")
+  const [employmentType, setEmploymentType] = useState("All")
+  const [editing, setEditing] = useState<Employee | null>(null)
+  const [viewing, setViewing] = useState<Employee | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState<FormState>(emptyEmployee)
+  const [saving, setSaving] = useState(false)
 
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedDept, setSelectedDept] = useState("All")
-  const [showAddModal, setShowAddModal] = useState(false)
-  
-  // New Employee Form State
-  const [newEmp, setNewEmp] = useState({
-    name: "",
-    role: "",
-    department: "Tech",
-    email: "",
-    salary: "",
-    status: "Active" as const,
-  })
+  const refresh = async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const data = await loadHRData()
+      setEmployees(data.employees)
+      setAttendance(data.attendance)
+      setLeaves(data.leaves)
+      setPayroll(data.payrollRecords)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load employees.")
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const departments = ["All", ...Array.from(new Set(employees.map(e => e.department)))]
+  useEffect(() => {
+    void refresh()
+  }, [])
 
-  const filteredEmployees = employees.filter(emp => {
-    const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          emp.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          emp.email.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesDept = selectedDept === "All" || emp.department === selectedDept
-    return matchesSearch && matchesDept
-  })
+  const filteredEmployees = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return employees.filter((employee) => {
+      const matchesSearch = !query || [employee.employee_number, employee.full_name, employee.phone, employee.email].some((value) => String(value || "").toLowerCase().includes(query))
+      const matchesStatus = status === "All" || employee.status === status
+      const matchesWarehouse = warehouse === "All" || employee.warehouse_id === warehouse
+      const matchesType = employmentType === "All" || employee.employment_type === employmentType
+      return matchesSearch && matchesStatus && matchesWarehouse && matchesType
+    })
+  }, [employees, employmentType, search, status, warehouse])
 
   const { sortKey, sortDir, handleSort, handleClearSort, sortItems } = useTableSort()
   const sortedEmployees = sortItems(filteredEmployees)
-
   const columns: TableColumn[] = [
-    { key: "name", label: "Employee", initialWidth: 200 },
-    { key: "department", label: "Department", initialWidth: 150 },
-    { key: "email", label: "Contact & ID", initialWidth: 200 },
-    { key: "joinDate", label: "Join Date", initialWidth: 130 },
-    { key: "salary", label: "Salary", align: "right", initialWidth: 140 },
-    { key: "status", label: "Status", align: "center", initialWidth: 120 },
-    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 90 },
+    { key: "employee_number", label: "Employee Number", initialWidth: 150 },
+    { key: "full_name", label: "Full Name", initialWidth: 200 },
+    { key: "phone", label: "Phone", initialWidth: 140 },
+    { key: "email", label: "Email", initialWidth: 200 },
+    { key: "warehouse_id", label: "Warehouse", initialWidth: 150 },
+    { key: "employment_type", label: "Employment Type", initialWidth: 150 },
+    { key: "start_date", label: "Start Date", initialWidth: 130 },
+    { key: "basic_salary", label: "Basic Salary", align: "right", initialWidth: 140 },
+    { key: "status", label: "Status", align: "center", initialWidth: 130 },
+    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 130 },
   ]
+  const { colWidths, handleResizeStart } = useColumnWidths(Object.fromEntries(columns.map((col) => [col.key, col.initialWidth || 130])))
 
-  const { colWidths, handleResizeStart } = useColumnWidths({
-    name: 200,
-    department: 150,
-    email: 200,
-    joinDate: 130,
-    salary: 140,
-    status: 120,
-    actions: 90,
-  })
-
-  const handleAddEmployee = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newEmp.name || !newEmp.role || !newEmp.email || !newEmp.salary) return
-
-    store.addEmployee({
-      name: newEmp.name,
-      role: newEmp.role,
-      department: newEmp.department,
-      email: newEmp.email,
-      status: newEmp.status,
-      statusColor: newEmp.status === "Active" 
-        ? "bg-green-100 text-green-700 border border-green-200" 
-        : "bg-zinc-100 text-zinc-700 border border-zinc-200",
-      joinDate: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      employmentType: "Full-Time",
-      salary: parseFloat(newEmp.salary) || 50000,
-      presentToday: newEmp.status === "Active",
-    })
-
-    setShowAddModal(false)
-    setNewEmp({
-      name: "",
-      role: "",
-      department: "Tech",
-      email: "",
-      salary: "",
-      status: "Active",
-    })
+  const openAdd = () => {
+    setEditing(null)
+    setForm(emptyEmployee)
+    setShowForm(true)
   }
 
-  const handleDeleteEmployee = (id: string) => {
-    store.deleteEmployee(id)
+  const openEdit = (employee: Employee) => {
+    setEditing(employee)
+    setForm({ ...employee })
+    setShowForm(true)
   }
 
+  const closeForm = () => {
+    if (saving) return
+    setEditing(null)
+    setForm(emptyEmployee)
+    setShowForm(false)
+  }
+
+  const validate = () => {
+    if (!form.employee_number.trim()) return "Employee number is required."
+    if (!form.full_name.trim()) return "Full name is required."
+    if (!form.start_date) return "Start date is required."
+    if (!form.warehouse_id) return "Warehouse is required."
+    if (!form.employment_type) return "Employment type is required."
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return "Email must be valid when provided."
+    if (Number(form.basic_salary) < 0) return "Basic salary cannot be negative."
+    const duplicateNumber = employees.find((employee) => employee.employee_number.toLowerCase() === form.employee_number.toLowerCase() && employee.id !== editing?.id)
+    if (duplicateNumber) return "Employee number must be unique."
+    const duplicateDetails = employees.find((employee) => employeeDuplicateKey(employee) === employeeDuplicateKey(form) && employee.id !== editing?.id)
+    if (duplicateDetails) return `Duplicate employee details match ${duplicateDetails.full_name} (${duplicateDetails.employee_number}).`
+    return ""
+  }
+
+  const saveEmployee = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const validationError = validate()
+    if (validationError) {
+      showToast("Employee Not Saved", "warning", validationError)
+      return
+    }
+    const payload = { ...form, basic_salary: Number(form.basic_salary || 0) }
+    setSaving(true)
+    try {
+      let savedEmployee: Employee
+      if (editing) {
+        savedEmployee = await hrApi.updateEmployee(editing.id, payload)
+        setEmployees((prev) => prev.map((employee) => employee.id === editing.id ? { ...employee, ...savedEmployee, ...payload, id: editing.id } : employee))
+        showToast("Employee Updated", "success", `${payload.full_name} was updated.`)
+      } else {
+        savedEmployee = await hrApi.createEmployee({ id: payload.employee_number, ...payload })
+        setEmployees((prev) => [{ ...payload, ...savedEmployee, id: savedEmployee.id || payload.employee_number }, ...prev])
+        showToast("Employee Registered", "success", `${payload.full_name} was saved to Supabase.`)
+      }
+      setEditing(null)
+      setForm(emptyEmployee)
+      setShowForm(false)
+      void refresh()
+    } catch (err) {
+      showToast("Employee Save Failed", "warning", err instanceof Error ? err.message : "Supabase rejected the employee record.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deactivate = async (employee: Employee) => {
+    try {
+      await hrApi.updateEmployee(employee.id, { status: "Inactive" })
+      showToast("Employee Deactivated", "success", `${employee.full_name} is now inactive.`)
+      await refresh()
+    } catch (err) {
+      showToast("Deactivate Failed", "warning", err instanceof Error ? err.message : "Could not update employee status.")
+    }
+  }
 
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        {/* Header Block */}
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight mt-1">Employee Directory</h1>
-            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
-              Staff records, department allocations, role assignments, and active employment statuses.
-            </p>
+            <h1 className="text-3xl font-black text-black tracking-tight mt-1">Employees</h1>
+            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Employee registration and employment records loaded from Supabase.</p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
-            <SubPageNav items={getSectionChildren("/hr")} />
-          </div>
+          <SubPageNav items={getSectionChildren("/hr")} />
         </motion.div>
 
-        {/* Directory Grid/List */}
+        {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
+
+        {loading ? (
+          <HRPageSkeleton rows={7} cards={4} />
+        ) : (
         <motion.div variants={fade}>
           <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
             <HRTableToolbar
-              title="Employee Roster"
-              subtitle={`${sortedEmployees.length} active staff across departments`}
-              searchValue={searchQuery}
-              onSearchChange={setSearchQuery}
-              searchPlaceholder="Search employee, role, email..."
+              title="Employees"
+              subtitle={`${sortedEmployees.length} employee records`}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search number, name, phone, email..."
               filters={[
-                {
-                  value: selectedDept,
-                  onChange: setSelectedDept,
-                  ariaLabel: "Department Filter",
-                  options: departments.map((d) => ({ value: d, label: d === "All" ? "All Departments" : d })),
-                },
+                { value: status, onChange: setStatus, options: ["All", ...EMPLOYEE_STATUSES].map((item) => ({ value: item, label: item })) },
+                { value: warehouse, onChange: setWarehouse, options: ["All", ...WAREHOUSE_OPTIONS].map((item) => ({ value: item, label: item })) },
+                { value: employmentType, onChange: setEmploymentType, options: ["All", ...EMPLOYMENT_TYPES].map((item) => ({ value: item, label: item })) },
               ]}
-              actions={[
-                {
-                  label: "Add Employee",
-                  onClick: () => setShowAddModal(true),
-                },
-              ]}
+              actions={[{ label: "Add Employee", onClick: openAdd }]}
             />
-
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse table-fixed">
-                <ResizableTableHeader
-                  columns={columns}
-                  colWidths={colWidths}
-                  onResizeStart={handleResizeStart}
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSort}
-                  onClearSort={handleClearSort}
-                />
+                <ResizableTableHeader columns={columns} colWidths={colWidths} onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} onClearSort={handleClearSort} />
                 <tbody className="divide-y divide-black/5 text-xs">
-                  {sortedEmployees.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-12 text-center text-zinc-400 font-medium">
-                        No employees match your search or filter.
-                      </td>
+                  {!loading && sortedEmployees.length === 0 ? (
+                    <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No employees have been registered yet.</td></tr>
+                  ) : sortedEmployees.map((employee) => (
+                    <tr key={employee.id} className="hover:bg-black/[0.02] transition-colors">
+                      <Cell width={colWidths.employee_number}>{employee.employee_number}</Cell>
+                      <Cell width={colWidths.full_name}><div className="flex items-center gap-2"><span className="size-7 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[10px] font-black">{initials(employee.full_name)}</span><span className="truncate">{employee.full_name}</span></div></Cell>
+                      <Cell width={colWidths.phone}>{employee.phone || "-"}</Cell>
+                      <Cell width={colWidths.email}>{employee.email || "-"}</Cell>
+                      <Cell width={colWidths.warehouse_id}>{employee.warehouse_id}</Cell>
+                      <Cell width={colWidths.employment_type}>{employee.employment_type}</Cell>
+                      <Cell width={colWidths.start_date}>{employee.start_date}</Cell>
+                      <Cell width={colWidths.basic_salary} align="right">ETB {money(employee.basic_salary)}</Cell>
+                      <Cell width={colWidths.status} align="center"><StatusPill status={employee.status} /></Cell>
+                      <Cell width={colWidths.actions} align="right">
+                        <button onClick={() => setViewing(employee)} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500" title="View"><Eye className="size-4" /></button>
+                        <button onClick={() => openEdit(employee)} className="inline-flex items-center gap-1 rounded-full bg-black px-2.5 py-1 text-[10px] font-black text-white transition-all hover:bg-zinc-800" title="Edit employee details"><Pencil className="size-3" />Edit</button>
+                        <button onClick={() => deactivate(employee)} className="p-1.5 hover:bg-black/5 hover:text-rose-700 rounded-lg text-zinc-500" title="Deactivate"><UserMinus className="size-4" /></button>
+                      </Cell>
                     </tr>
-                  ) : (
-                    sortedEmployees.map((emp) => (
-                      <tr key={emp.id} className="hover:bg-black/[0.02] transition-colors">
-                        <td style={{ width: `${colWidths.name}px` }} className="py-3.5 px-3.5 truncate">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className={`size-8 rounded-full ${emp.avatarBg} flex items-center justify-center text-xs font-black text-zinc-800 shadow-2xs shrink-0`}>
-                              {emp.initials}
-                            </div>
-                            <div className="truncate">
-                              <p className="text-xs font-bold text-black truncate">{emp.name}</p>
-                              <p className="text-[10px] text-zinc-500 truncate">{emp.role}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td style={{ width: `${colWidths.department}px` }} className="py-3.5 px-3.5 truncate">
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-black/5 text-zinc-800 inline-block truncate">
-                            {emp.department}
-                          </span>
-                        </td>
-                        <td style={{ width: `${colWidths.email}px` }} className="py-3.5 px-3.5 truncate">
-                          <p className="text-xs font-medium text-zinc-900 truncate">{emp.email}</p>
-                          <p className="text-[10px] text-zinc-400 font-mono font-bold truncate">{emp.id}</p>
-                        </td>
-                        <td style={{ width: `${colWidths.joinDate}px` }} className="py-3.5 px-3.5 text-xs font-medium text-zinc-600 font-mono truncate">
-                          {emp.joinDate}
-                        </td>
-                        <td style={{ width: `${colWidths.salary}px` }} className="py-3.5 px-3.5 text-xs font-black text-black font-mono text-right truncate">
-                          ETB {emp.salary.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ width: `${colWidths.status}px` }} className="py-3.5 px-3.5">
-                          <div className="flex justify-center">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide border ${emp.statusColor}`}>
-                              <span className={`size-1.5 rounded-full ${emp.status === "Active" ? "bg-emerald-500" : "bg-zinc-400"}`} />
-                              {emp.status}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={{ width: `${colWidths.actions}px` }} className="py-3.5 px-3.5 text-right">
-                          <button
-                            onClick={() => handleDeleteEmployee(emp.id)}
-                            className="p-1.5 hover:bg-rose-50 hover:text-rose-600 rounded-lg text-zinc-400 transition-all active:scale-90"
-                            title="Remove profile"
-                          >
-                            <UserMinus className="size-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
           </GlassCard>
         </motion.div>
+        )}
       </motion.div>
 
-      {/* Add Employee Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative"
-          >
-            <button
-              onClick={() => setShowAddModal(false)}
-              className="absolute right-5 top-5 p-1 text-gray-400 hover:text-black rounded-lg transition-colors"
-            >
-              <X className="size-5" />
-            </button>
-            
-            <h3 className="text-xl font-black text-black tracking-tight mb-4">Add Employee Profile</h3>
-            
-            <form onSubmit={handleAddEmployee} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newEmp.name}
-                  onChange={(e) => setNewEmp({ ...newEmp, name: e.target.value })}
-                  placeholder="e.g. John Doe"
-                  className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Role / Position</label>
-                  <input
-                    type="text"
-                    required
-                    value={newEmp.role}
-                    onChange={(e) => setNewEmp({ ...newEmp, role: e.target.value })}
-                    placeholder="e.g. UX Designer"
-                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Department</label>
-                  <select
-                    value={newEmp.department}
-                    onChange={(e) => setNewEmp({ ...newEmp, department: e.target.value })}
-                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3.5 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
-                  >
-                    <option value="Tech">Tech</option>
-                    <option value="Product">Product</option>
-                    <option value="HR">HR</option>
-                    <option value="Sales">Sales</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Operations">Operations</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Work Email</label>
-                <input
-                  type="email"
-                  required
-                  value={newEmp.email}
-                  onChange={(e) => setNewEmp({ ...newEmp, email: e.target.value })}
-                  placeholder="e.g. john@hkctrading.erp"
-                  className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Monthly Salary (ETB)</label>
-                  <input
-                    type="number"
-                    required
-                    value={newEmp.salary}
-                    onChange={(e) => setNewEmp({ ...newEmp, salary: e.target.value })}
-                    placeholder="e.g. 75000"
-                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Status</label>
-                  <select
-                    value={newEmp.status}
-                    onChange={(e) => setNewEmp({ ...newEmp, status: e.target.value as any })}
-                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3.5 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="On Leave">On Leave</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 border border-black/10 text-black hover:bg-black/5 rounded-2xl py-3 text-sm font-bold transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 bg-[#242427] text-white hover:bg-[#323236] rounded-2xl py-3 text-sm font-bold transition-all shadow-md"
-                >
-                  Save Profile
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
+      {showForm && (
+        <EmployeeForm form={form} setForm={setForm} title={editing ? "Edit Employee" : "Add Employee"} saving={saving} onClose={closeForm} onSubmit={saveEmployee} />
       )}
+      {viewing && <EmployeeDetails employee={viewing} attendance={attendance} leaves={leaves} payroll={payroll} onClose={() => setViewing(null)} />}
     </div>
   )
+}
+
+function Cell({ width, align = "left", children }: { width: number; align?: "left" | "right" | "center"; children: React.ReactNode }) {
+  return <td style={{ width }} className={`py-3.5 px-3.5 truncate font-medium text-zinc-700 ${align === "right" ? "text-right" : align === "center" ? "text-center" : ""}`}>{children}</td>
+}
+
+function StatusPill({ status }: { status: string }) {
+  const tone = status === "Active" ? "bg-white text-zinc-900 border-emerald-200" : status === "On Leave" ? "bg-white text-zinc-900 border-blue-200" : "bg-white text-zinc-900 border-zinc-200"
+  return <span className={`inline-flex px-2.5 py-0.5 rounded-full border text-[10px] font-extrabold uppercase ${tone}`}>{status}</span>
+}
+
+function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { form: FormState; setForm: (form: FormState) => void; title: string; saving: boolean; onClose: () => void; onSubmit: (event: React.FormEvent) => void }) {
+  const field = (key: keyof FormState, value: string | number) => setForm({ ...form, [key]: value })
+  const handleNationalIdImage = (file: File | undefined) => {
+    if (!file) return
+    if (file.size > 5_000_000) {
+      window.alert("National ID image must be 5 MB or smaller.")
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const image = new Image()
+      image.onload = () => {
+        const maxWidth = 640
+        const scale = Math.min(1, maxWidth / image.width)
+        const canvas = document.createElement("canvas")
+        canvas.width = Math.max(1, Math.round(image.width * scale))
+        canvas.height = Math.max(1, Math.round(image.height * scale))
+        const ctx = canvas.getContext("2d")
+        if (!ctx) return
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.72)
+        if (dataUrl.length > 250_000) {
+          window.alert("National ID image is still too large after compression. Please upload a smaller image.")
+          return
+        }
+        field("national_id_image", dataUrl)
+      }
+      image.src = String(reader.result || "")
+    }
+    reader.readAsDataURL(file)
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-black text-black">{title}</h3>
+          <button onClick={onClose} disabled={saving} className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-40"><X className="size-5" /></button>
+        </div>
+        <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input label="Employee Number" required value={form.employee_number} onChange={(v) => field("employee_number", v)} />
+          <Input label="Full Name" required value={form.full_name} onChange={(v) => field("full_name", v)} />
+          <Input label="Phone" required value={form.phone} onChange={(v) => field("phone", v)} />
+          <Input label="Email" type="email" value={form.email} onChange={(v) => field("email", v)} />
+          <Input label="Address" required value={form.address} onChange={(v) => field("address", v)} />
+          <Input label="Date of Birth" type="date" required value={form.date_of_birth} onChange={(v) => field("date_of_birth", v)} />
+          <Input label="Gender" required value={form.gender} onChange={(v) => field("gender", v)} />
+          <Select label="Warehouse" value={form.warehouse_id} options={WAREHOUSE_OPTIONS} onChange={(v) => field("warehouse_id", v)} />
+          <Select label="Employment Type" value={form.employment_type} options={EMPLOYMENT_TYPES} onChange={(v) => field("employment_type", v)} />
+          <Input label="Start Date" type="date" required value={form.start_date} onChange={(v) => field("start_date", v)} />
+          <Input label="Basic Salary" type="number" required value={form.basic_salary} onChange={(v) => field("basic_salary", Number(v))} />
+          <Input label="Payment Method" required value={form.payment_method} onChange={(v) => field("payment_method", v)} />
+          <Input label="Bank Account" required value={form.bank_account} onChange={(v) => field("bank_account", v)} />
+          <Input label="Emergency Contact Name" required value={form.emergency_contact_name} onChange={(v) => field("emergency_contact_name", v)} />
+          <Input label="Emergency Contact Phone" required value={form.emergency_contact_phone} onChange={(v) => field("emergency_contact_phone", v)} />
+          <label className="md:col-span-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+            National ID
+            <div className="mt-1 flex min-h-24 items-center gap-3 rounded-xl border border-dashed border-black/15 bg-black/[0.02] p-3">
+              <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white border border-black/10 flex items-center justify-center">
+                {form.national_id_image ? (
+                  <img src={form.national_id_image} alt="National ID preview" className="h-full w-full object-cover" />
+                ) : (
+                  <ImagePlus className="size-6 text-zinc-400" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <span className="block text-xs font-black text-zinc-900">National ID image</span>
+                <span className="block text-[10px] font-semibold text-zinc-500">Upload the employee National ID image.</span>
+                <input type="file" accept="image/*" disabled={saving} onChange={(event) => handleNationalIdImage(event.target.files?.[0])} className="mt-2 w-full text-[10px] font-bold text-zinc-600 file:mr-2 file:rounded-full file:border-0 file:bg-black file:px-3 file:py-1.5 file:text-[10px] file:font-bold file:text-white disabled:opacity-50" />
+              </div>
+            </div>
+          </label>
+          <Select label="Status" value={form.status} options={EMPLOYEE_STATUSES} onChange={(v) => field("status", v)} />
+          <div className="md:col-span-3 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold disabled:opacity-50">Cancel</button>
+            <button type="submit" disabled={saving} className="inline-flex min-w-34 items-center justify-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-bold disabled:cursor-wait disabled:bg-zinc-700">
+              {saving && <span className="size-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />}
+              {saving ? "Saving..." : "Save Employee"}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  )
+}
+
+function Input({ label, value, onChange, type = "text", required = false }: { label: string; value: string | number; onChange: (value: string) => void; type?: string; required?: boolean }) {
+  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}<input type={type} required={required} value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold text-black outline-none focus:border-emerald-700" /></label>
+}
+
+function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
+  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}<select value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold text-black outline-none focus:border-emerald-700">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+}
+
+function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { employee: Employee; attendance: AttendanceRecord[]; leaves: LeaveRequest[]; payroll: PayrollRecord[]; onClose: () => void }) {
+  const employeeAttendance = attendance.filter((record) => record.employee_id === employee.id)
+  const employeeLeaves = leaves.filter((request) => request.employee_id === employee.id)
+  const employeePayroll = payroll.filter((record) => record.employee_id === employee.id)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
+        <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black text-black">{employee.full_name}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Date of Birth", employee.date_of_birth], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />
+          <Detail title="Employment Information" rows={[["Employee Number", employee.employee_number], ["Warehouse", employee.warehouse_id], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
+          <Detail title="Salary Information" rows={[["Basic Salary", `ETB ${money(employee.basic_salary)}`], ["Payment Method", employee.payment_method], ["Bank Account", employee.bank_account], ["Emergency Contact", employee.emergency_contact_name], ["Emergency Phone", employee.emergency_contact_phone]]} />
+        </div>
+        <History title="Attendance History" empty="No attendance records exist for this employee." rows={employeeAttendance.map((record) => `${record.attendance_date} - ${record.status} (${record.hours_worked || 0} hrs)`)} />
+        <History title="Leave History" empty="No leave records exist for this employee." rows={employeeLeaves.map((request) => `${request.leave_type}: ${request.start_date} to ${request.end_date} - ${request.status}`)} />
+        <History title="Payroll History" empty="No payroll records exist for this employee." rows={employeePayroll.map((record) => `Net ETB ${money(record.net_pay)} - ${record.payment_status}`)} />
+      </motion.div>
+    </div>
+  )
+}
+
+function Detail({ title, rows }: { title: string; rows: Array<[string, string]> }) {
+  return <div className="rounded-2xl border border-black/5 bg-black/[0.02] p-4"><h4 className="text-xs font-black uppercase mb-3">{title}</h4>{rows.map(([label, value]) => <div key={label} className="flex justify-between gap-3 py-1.5 text-xs"><span className="font-bold text-zinc-500">{label}</span><span className="font-black text-zinc-900 text-right">{value}</span></div>)}</div>
+}
+
+function History({ title, rows, empty }: { title: string; rows: string[]; empty: string }) {
+  return <div className="mt-5"><h4 className="text-xs font-black uppercase mb-2">{title}</h4>{rows.length ? <div className="space-y-2">{rows.map((row) => <div key={row} className="rounded-xl bg-black/[0.03] px-3 py-2 text-xs font-bold text-zinc-700">{row}</div>)}</div> : <p className="text-xs font-semibold text-zinc-400">{empty}</p>}</div>
 }

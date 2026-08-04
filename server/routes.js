@@ -80,7 +80,7 @@ export async function route(req, res) {
       } else if (req.method === "GET" && id === "batches") {
         result = await getAvailableBatches(requestUrl)
       } else if (req.method === "POST" && id && parts[3] === "post") {
-        result = await postSalesIssue(id)
+        result = await postSalesIssue(req, id)
       } else if (req.method === "POST" && id && parts[3] === "cancel") {
         result = await cancelSalesIssue(id)
       } else if (req.method === "GET" && id && parts[3] === "print") {

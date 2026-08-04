@@ -64,6 +64,16 @@ test("filters expired batches and orders available batches by earliest expiry", 
   assert.deepEqual(batches.map((batch) => batch.batch_no), ["ALL26041"])
 })
 
+test("does not expose pending or quarantined batches for sales issue selection", () => {
+  const current = state()
+  current.products[0].batches.push(
+    { batchNo: "QA26001", qty: 50, expiry: "2028-01-31", status: "Pending QA" },
+    { batchNo: "HOLD26001", qty: 50, expiry: "2028-01-31", status: "Quarantined" },
+  )
+  const batches = availableBatchesForProduct(current.products[0], "WH1", today)
+  assert.deepEqual(batches.map((batch) => batch.batch_no), ["ALL26041"])
+})
+
 test("validates quantity greater than zero", () => {
   const errors = validateSalesIssueDraft(state().salesIssues[0], [{ ...state().salesIssueItems[0], quantity: 0 }])
   assert.match(errors[0], /Quantity must be greater than zero/)

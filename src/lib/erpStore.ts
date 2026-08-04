@@ -1,11 +1,5 @@
 import { useState, useEffect } from "react"
-import warehousesData from "../../data/warehouses.json"
-import inventoryProductsData from "../../data/inventory_products.json"
-import salesOrdersData from "../../data/sales_orders.json"
-import purchaseOrdersData from "../../data/purchase_orders.json"
-import customersData from "../../data/customers.json"
-import suppliersData from "../../data/suppliers.json"
-import { loadResource, persistResources } from "./apiPersistence"
+import { createResource, deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
 import { financeStore } from "./financeStore"
 
 export interface Warehouse {
@@ -84,6 +78,8 @@ export interface Product {
   approvalStatus?: "Not Submitted" | "Submitted" | "Approved"
   createdBy?: string
   createdDate?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type TransferStatus = "Issued" | "Received" | "Discrepancy"
@@ -280,153 +276,28 @@ export interface Supplier {
   status: string
 }
 
-const initialQuotations: Quotation[] = [
-  {
-    id: "QT-2026-001",
-    customer: "Tokyo Specialty Commodities Corp",
-    customerId: "CUST-002",
-    customerGroup: "International Buyer (Export)",
-    warehouse: "WH1",
-    warehouseName: "WH1 - Agricultural Export Hub",
-    date: "2026-07-20",
-    validTill: "2026-08-20",
-    amount: 520000,
-    currency: "ETB",
-    status: "Quoted",
-    desc: "Export Quote: 10 Metric Tons Humera White Sesame Seeds (Grade A)",
-    paymentTerms: "Net 30",
-    salesPerson: "Kenji Sato",
-    items: [
-      { productId: "P-102", name: "Humera White Sesame Seeds", qty: 10, unit: "Metric Tons", unitPrice: 52000, total: 520000 }
-    ]
-  },
-  {
-    id: "QT-2026-002",
-    customer: "Oromia Livestock Development Bureau",
-    customerId: "CUST-007",
-    customerGroup: "Government Agency / Bureau",
-    warehouse: "WH2",
-    warehouseName: "WH2 - Veterinary Import Hub (India)",
-    date: "2026-07-22",
-    validTill: "2026-08-22",
-    amount: 320000,
-    currency: "ETB",
-    status: "Draft",
-    desc: "Government Tender Quote: Oxytetracycline & Multi-Vitamin Soluble Powder",
-    paymentTerms: "Payment on Delivery",
-    salesPerson: "Dr. Worku Alemayehu",
-    items: [
-      { productId: "P-201", name: "Oxytetracycline 20% LA Injectable (100ml)", qty: 500, unit: "vials (100ml)", unitPrice: 480, total: 240000 },
-      { productId: "P-202", name: "Multivitamin Fortified Veterinary Injectable", qty: 200, unit: "vials (100ml)", unitPrice: 400, total: 80000 }
-    ]
-  }
-]
-
-const initialDeliveryNotes: DeliveryNote[] = [
-  {
-    id: "DN-2026-001",
-    salesOrderId: "SO-1101",
-    customer: "Hamburg Coffee Importers GmbH",
-    customerId: "CUST-001",
-    warehouse: "WH1",
-    warehouseName: "WH1 - Agricultural Export Hub",
-    postingDate: "2026-07-18",
-    driverName: "Abebe Bikila",
-    vehicleReg: "ET-3-8821",
-    status: "Submitted",
-    items: [
-      { productId: "P-101", name: "Grade 1 Yirgacheffe Arabica Coffee Beans", qty: 50, unit: "bags (60kg)", unitCost: 11000, unitPrice: 14200, totalValue: 710000 }
-    ],
-    totalValue: 710000,
-    cogsTotal: 550000,
-    journalEntryId: "JE-2026-090"
-  }
-]
-
-const initialTransfers: Transfer[] = [
-  {
-    reference_number: "TR-0001",
-    from_warehouse: "WH1",
-    to_warehouse: "WH2",
-    status: "Received",
-    date: "2026-07-15",
-    line_items: [
-      { line_no: 1, item: "Oxytetracycline 20% LA Injectable (100ml)", UOM: "vials", quantity: 50, remark: "Urgent restocking for batch QA" }
-    ],
-    total_quantity: 50,
-    issued_by: "Noah",
-    issued_at: "2026-07-15 09:30",
-    issued_signature: "Noah T.",
-    received_by: "Sophia",
-    received_at: "2026-07-15 14:45",
-    received_signature: "Sophia R."
-  },
-  {
-    reference_number: "TR-0002",
-    from_warehouse: "WH2",
-    to_warehouse: "WH3",
-    status: "Issued",
-    date: "2026-07-19",
-    line_items: [
-      { line_no: 1, item: "Amoxicillin Trihydrate 50% Soluble Powder", UOM: "tins (1kg)", quantity: 20, remark: "Standard replenishment" }
-    ],
-    total_quantity: 20,
-    issued_by: "Sophia",
-    issued_at: "2026-07-19 11:15",
-    issued_signature: "Sophia R."
-  }
-]
-
-const initialStockMovements: StockMovementLog[] = [
-  {
-    id: "SM-101",
-    date: "2026-07-15",
-    type: "TRANSFER",
-    productName: "Oxytetracycline 20% LA Injectable (100ml)",
-    fromWarehouse: "WH1",
-    toWarehouse: "WH2",
-    qty: 50,
-    unit: "vials",
-    reference: "TR-0001",
-    remarks: "Inter-warehouse Transfer Completed"
-  },
-  {
-    id: "SM-102",
-    date: "2026-07-18",
-    type: "FULFILLMENT",
-    productName: "Grade 1 Yirgacheffe Arabica Coffee Beans",
-    fromWarehouse: "WH1",
-    qty: 50,
-    unit: "bags (60kg)",
-    reference: "DN-2026-001",
-    journalEntryId: "JE-2026-090",
-    remarks: "Sales Dispatch to Hamburg Coffee Importers"
-  }
-]
-
 class ErpStore {
-  private warehouses: Warehouse[] = warehousesData as Warehouse[]
-  private products: Product[] = (inventoryProductsData as any[]).map((p) => ({
-    ...p,
-    reorderLevel: p.reorderLevel || 100,
-    valuationRate: p.unitCost || 1000
-  })) as Product[]
-  private salesOrders: SalesOrder[] = salesOrdersData as SalesOrder[]
-  private purchaseOrders: PurchaseOrder[] = purchaseOrdersData as PurchaseOrder[]
-  private customers: Customer[] = customersData as Customer[]
-  private suppliers: Supplier[] = suppliersData as Supplier[]
-  private quotations: Quotation[] = initialQuotations
-  private deliveryNotes: DeliveryNote[] = initialDeliveryNotes
-  private transfers: Transfer[] = initialTransfers
-  private stockMovements: StockMovementLog[] = initialStockMovements
+  private warehouses: Warehouse[] = []
+  private products: Product[] = []
+  private salesOrders: SalesOrder[] = []
+  private purchaseOrders: PurchaseOrder[] = []
+  private customers: Customer[] = []
+  private suppliers: Supplier[] = []
+  private quotations: Quotation[] = []
+  private deliveryNotes: DeliveryNote[] = []
+  private transfers: Transfer[] = []
+  private stockMovements: StockMovementLog[] = []
 
   private listeners = new Set<() => void>()
+  private loading = true
 
   constructor() {
     this.loadFromApi()
   }
 
   private async loadFromApi() {
+    this.loading = true
+    this.listeners.forEach((l) => l())
     try {
       const [
         warehouses,
@@ -453,7 +324,7 @@ class ErpStore {
       ])
 
       this.warehouses = warehouses
-      this.products = products
+      this.products = products.map((product) => this.withInventoryValue(product))
       this.salesOrders = salesOrders
       this.purchaseOrders = purchaseOrders
       this.customers = customers
@@ -462,9 +333,11 @@ class ErpStore {
       this.deliveryNotes = deliveryNotes
       this.transfers = transfers.map(({ id: _id, ...transfer }) => transfer as Transfer)
       this.stockMovements = stockMovements
-      this.listeners.forEach((l) => l())
     } catch (error) {
       console.error("Failed to load ERP data from Supabase.", error)
+    } finally {
+      this.loading = false
+      this.listeners.forEach((l) => l())
     }
   }
 
@@ -488,11 +361,28 @@ class ErpStore {
     return () => this.listeners.delete(listener)
   }
 
+  public async reloadFromApi() {
+    await this.loadFromApi()
+  }
+
+  public isLoading() {
+    return this.loading
+  }
+
   private notify() {
     void this.saveToApi().catch((error) => {
       console.error("Failed to persist ERP data to Supabase.", error)
     })
     this.listeners.forEach((l) => l())
+  }
+
+  private withInventoryValue(product: Product): Product {
+    const quantity = Number(product.quantity || 0)
+    const unitCost = Number(product.unitCost || 0)
+    return {
+      ...product,
+      totalStockValue: Math.round(quantity * unitCost * 100) / 100,
+    }
   }
 
   // Getters
@@ -550,6 +440,60 @@ class ErpStore {
 
   public getStockMovements(): StockMovementLog[] {
     return [...this.stockMovements]
+  }
+
+  public async addStockMovement(movement: StockMovementLog) {
+    const savedMovement = await createResource<StockMovementLog>("stock_movements", movement)
+    this.stockMovements = [savedMovement, ...this.stockMovements]
+    this.listeners.forEach((l) => l())
+  }
+
+  public async recordStockReceipt(input: { productId: string; warehouse: string; quantity: number; remarks?: string }): Promise<StockMovementLog> {
+    const product = this.products.find((item) => item.id === input.productId)
+    if (!product) throw new Error("Product not found.")
+    if (!input.warehouse) throw new Error("Receiving warehouse is required.")
+    if (!Number.isFinite(input.quantity) || input.quantity <= 0) throw new Error("Receipt quantity must be greater than zero.")
+
+    const existingEntry = product.stockBreakdown.find((entry) => entry.warehouse === input.warehouse)
+    const nextBreakdown = existingEntry
+      ? product.stockBreakdown.map((entry) => entry.warehouse === input.warehouse ? { ...entry, qty: Number(entry.qty || 0) + input.quantity } : entry)
+      : [...product.stockBreakdown, { warehouse: input.warehouse, qty: input.quantity }]
+    const nextQuantity = nextBreakdown.reduce((sum, entry) => sum + Number(entry.qty || 0), 0)
+    const hasQuarantinedBatch = product.batches.some((batch) => batch.status === "Quarantined")
+    const hasPendingBatch = product.batches.some((batch) => batch.status === "Pending QA")
+    const nextStatus: Product["status"] = hasQuarantinedBatch
+      ? "Quarantined"
+      : hasPendingBatch
+        ? "Pending QA"
+        : nextQuantity <= 0
+          ? "Out of Stock"
+          : nextQuantity <= Number(product.reorderLevel || 0)
+            ? "Low Stock"
+            : "In Stock"
+    const timestamp = Date.now()
+    const movement: StockMovementLog = {
+      id: `SM-${timestamp}`,
+      date: new Date().toISOString(),
+      type: "RECEIPT",
+      productId: product.id,
+      productName: product.name,
+      sku: product.sku,
+      toWarehouse: input.warehouse,
+      qty: input.quantity,
+      unit: product.unit,
+      reference: `RECEIPT-${timestamp}`,
+      remarks: input.remarks,
+    }
+
+    const updatedProduct = this.withInventoryValue({ ...product, quantity: nextQuantity, stockBreakdown: nextBreakdown, status: nextStatus })
+    const savedProduct = await updateResource<Product>("inventory_products", product.id, updatedProduct)
+    const savedMovement = await createResource<StockMovementLog>("stock_movements", movement)
+    const nextProducts = this.products.map((item) => item.id === product.id ? savedProduct : item)
+    const nextMovements = [savedMovement, ...this.stockMovements]
+    this.products = nextProducts
+    this.stockMovements = nextMovements
+    this.listeners.forEach((listener) => listener())
+    return movement
   }
 
   // Inter-Warehouse Transfer Execution
@@ -678,6 +622,7 @@ class ErpStore {
     this.updateProduct(productId, {
       quantity: newTotalQty,
       stockBreakdown: updatedBreakdown,
+      totalStockValue: newTotalQty * unitCost,
       status: newStatus,
     })
 
@@ -737,21 +682,43 @@ class ErpStore {
 
   // Actions - Products
   public async addProduct(product: Product) {
-    const previousProducts = this.products
-    this.products.unshift(product)
+    const savedProduct = await createResource<Product>("inventory_products", this.withInventoryValue(product))
+    this.products = [savedProduct, ...this.products]
     this.listeners.forEach((l) => l())
-    try {
-      await this.saveToApi()
-    } catch (error) {
-      this.products = previousProducts
-      this.listeners.forEach((l) => l())
-      throw error
-    }
+  }
+
+  public async deleteProduct(id: string) {
+    const product = this.products.find((item) => item.id === id)
+    const removedMovements = this.stockMovements.filter((movement) => movement.productId === id || movement.productName === product?.name)
+    await Promise.all([
+      deleteResource("inventory_products", id),
+      ...removedMovements.map((movement) => deleteResource("stock_movements", movement.id)),
+    ])
+    const nextProducts = this.products.filter((item) => item.id !== id)
+    const nextMovements = this.stockMovements.filter((movement) => movement.productId !== id && movement.productName !== product?.name)
+    this.products = nextProducts
+    this.stockMovements = nextMovements
+    this.listeners.forEach((l) => l())
   }
 
   public updateProduct(id: string, partial: Partial<Product>) {
-    this.products = this.products.map((p) => (p.id === id ? { ...p, ...partial } : p))
+    this.products = this.products.map((p) => (p.id === id ? this.withInventoryValue({ ...p, ...partial }) : p))
     this.notify()
+  }
+
+  public async updateProductDetails(id: string, partial: Partial<Product>) {
+    const currentProduct = this.products.find((product) => product.id === id)
+    if (!currentProduct) throw new Error("Product not found")
+
+    const updatedProduct = this.withInventoryValue({
+      ...currentProduct,
+      ...partial,
+      updatedAt: new Date().toISOString(),
+    })
+    const savedProduct = await updateResource<Product>("inventory_products", id, updatedProduct)
+    this.products = this.products.map((product) => (product.id === id ? savedProduct : product))
+    this.listeners.forEach((listener) => listener())
+    return savedProduct
   }
 
   // Actions - Quotations

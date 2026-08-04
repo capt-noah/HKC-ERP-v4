@@ -5,13 +5,6 @@ import { GlassCard } from "@/components/GlassCard"
 import { useErpStore } from "@/lib/erpStore"
 import { getSalesIssue, type SalesIssue, type SalesIssueItem } from "@/lib/salesIssuesApi"
 
-const COMPANY = {
-  name: "HKC Trading ERP",
-  address: "Addis Ababa, Ethiopia",
-  telephone: "+251 11 000 0000",
-  tin: "TIN 0000000000",
-}
-
 type AttachmentIssue = SalesIssue & {
   station?: string
   store?: string
@@ -20,6 +13,16 @@ type AttachmentIssue = SalesIssue & {
   discount_amount?: number
   discount?: number
   updated_at?: string
+}
+
+type CompanyProfile = {
+  company_name?: string
+  name?: string
+  address?: string
+  telephone?: string
+  phone?: string
+  tin?: string
+  tin_number?: string
 }
 
 type CustomerRecord = {
@@ -115,12 +118,20 @@ function lineTotal(item: SalesIssueItem) {
   return Number(item.quantity || 0) * Number(item.unit_price || 0)
 }
 
+async function loadCompanyProfile() {
+  const response = await fetch("/api/company_settings")
+  if (!response.ok) return null
+  const body = await response.json()
+  return Array.isArray(body) ? (body[0] as CompanyProfile | undefined) ?? null : null
+}
+
 export default function CreditSalesAttachment() {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
   const erp = useErpStore()
   const [issue, setIssue] = useState<AttachmentIssue | null>(() => (location.state as { issue?: AttachmentIssue } | null)?.issue ?? null)
+  const [company, setCompany] = useState<CompanyProfile | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const generatedAt = useMemo(() => new Date(), [issue?.id, issue?.updated_at, issue?.total_amount])
@@ -146,6 +157,20 @@ export default function CreditSalesAttachment() {
     }
   }, [id])
 
+  useEffect(() => {
+    let cancelled = false
+    loadCompanyProfile()
+      .then((profile) => {
+        if (!cancelled) setCompany(profile)
+      })
+      .catch(() => {
+        if (!cancelled) setCompany(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const customers = erp.getCustomers() as CustomerRecord[]
   const warehouses = erp.getWarehouses()
   const products = erp.getProducts()
@@ -153,6 +178,9 @@ export default function CreditSalesAttachment() {
   const warehouse = warehouses.find((entry) => entry.id === issue?.warehouse_id || entry.code === issue?.warehouse_id)
 
   const rows = issue?.items ?? []
+  const companyName = company?.company_name || company?.name
+  const companyPhone = company?.telephone || company?.phone
+  const companyTin = company?.tin || company?.tin_number
   const subtotal = rows.reduce((sum, item) => sum + lineTotal(item), 0)
   const vat = Number(issue?.vat_amount ?? issue?.vat ?? 0)
   const discount = Number(issue?.discount_amount ?? issue?.discount ?? 0)
@@ -217,10 +245,10 @@ export default function CreditSalesAttachment() {
           <section className="credit-attachment-sheet bg-white text-zinc-950 shadow-2xl print:shadow-none">
             <header className="credit-attachment-header">
               <div>
-                <h2>{COMPANY.name}</h2>
-                <p>{COMPANY.address}</p>
-                <p>Telephone: {COMPANY.telephone}</p>
-                <p>TIN Number: {COMPANY.tin}</p>
+                {companyName && <h2>{companyName}</h2>}
+                {company?.address && <p>{company.address}</p>}
+                {companyPhone && <p>Telephone: {companyPhone}</p>}
+                {companyTin && <p>TIN Number: {companyTin}</p>}
               </div>
               <div className="text-right">
                 <p className="credit-attachment-label">Document Number</p>
@@ -277,7 +305,7 @@ export default function CreditSalesAttachment() {
                         <strong>{item.item_name || item.item_id}</strong>
                         <span>Batch No {item.batch_no || item.batch_id || "-"}</span>
                       </td>
-                      <td>{product?.unit || "Unit"}</td>
+                      <td>{item.packaging_unit || product?.unit || ""}</td>
                       <td className="text-right">{Number(item.quantity || 0).toLocaleString()}</td>
                       <td className="text-right">{money(item.unit_price)}</td>
                       <td className="text-right font-black">{money(lineTotal(item))}</td>

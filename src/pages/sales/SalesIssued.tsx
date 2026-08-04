@@ -8,7 +8,10 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore } from "@/lib/erpStore"
+import { financeStore } from "@/lib/financeStore"
+import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   cancelSalesIssue,
   createSalesIssue,
@@ -24,17 +27,40 @@ import {
   type SalesIssueItem,
 } from "@/lib/salesIssuesApi"
 
-const sampleIssues: SalesIssue[] = [
-  { id: "sample-409", fs_no: "FS00000409", reference_no: "CRSI0000153", sale_date: "2026-07-18", customer_id: "CUST-SILANTE", customer_name: "SILANTE", warehouse_id: "WH2", payment_type: "Credit", status: "Draft", total_quantity: 1000, total_amount: 239000, created_by: "Excel Import" },
-  { id: "sample-411", fs_no: "FS00000411", reference_no: "CSI0000259", sale_date: "2026-07-18", customer_id: "CUST-AMANUEL", customer_name: "AMANUEL", warehouse_id: "WH2", payment_type: "Cash", status: "Draft", total_quantity: 600, total_amount: 546600, created_by: "Excel Import" },
-]
-
 function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function blankItem(): SalesIssueItem {
-  return { item_id: "", item_name: "", batch_id: "", batch_no: "", available_quantity: 0, quantity: 1, unit_price: 0, amount: 0 }
+  return { item_id: "", item_name: "", batch_id: "", batch_no: "", packaging_unit: "", available_quantity: 0, quantity: 0, unit_price: 0, amount: 0 }
+}
+
+function displayDate(value?: string) {
+  if (!value) return "-"
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toISOString().slice(0, 10)
+}
+
+function SalesIssuedSkeletonRows() {
+  return (
+    <>
+      {Array.from({ length: 8 }).map((_, index) => (
+        <tr key={index}>
+          <td className="px-4 py-4"><Skeleton className="h-3 w-24 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-3 w-24 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-3 w-20 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-3 w-40 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-3 w-32 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-3 w-24 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="ml-auto h-3 w-16 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="ml-auto h-3 w-20 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="ml-auto h-3 w-24 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><div className="flex items-center gap-1"><Skeleton className="size-7 rounded-lg bg-zinc-200/80" /><Skeleton className="size-7 rounded-lg bg-zinc-200/80" /><Skeleton className="size-7 rounded-lg bg-zinc-200/80" /></div></td>
+        </tr>
+      ))}
+    </>
+  )
 }
 
 export default function SalesIssued() {
@@ -42,8 +68,7 @@ export default function SalesIssued() {
   const erp = useErpStore()
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
-  const customers = erp.getCustomers()
-  const warehouses = erp.getWarehouses()
+  const warehouses = withOperatingWarehouses(erp.getWarehouses())
 
   const [rows, setRows] = useState<SalesIssue[]>([])
   const [total, setTotal] = useState(0)
@@ -53,7 +78,6 @@ export default function SalesIssued() {
   const [search, setSearch] = useState("")
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
-  const [customerFilter, setCustomerFilter] = useState("ALL")
   const [itemFilter, setItemFilter] = useState("ALL")
   const [batchFilter, setBatchFilter] = useState("ALL")
   const [loading, setLoading] = useState(false)
@@ -65,9 +89,9 @@ export default function SalesIssued() {
 
   const [fsNo, setFsNo] = useState("")
   const [referenceNo, setReferenceNo] = useState("")
-  const [saleDate, setSaleDate] = useState(new Date().toISOString().split("T")[0])
-  const [customerId, setCustomerId] = useState(customers[0]?.id || "")
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.code || warehouses[0]?.id || "WH1")
+  const [saleDate, setSaleDate] = useState("")
+  const [customerName, setCustomerName] = useState("")
+  const [warehouseId, setWarehouseId] = useState("")
   const [paymentType, setPaymentType] = useState<PaymentType>("Cash")
   const [items, setItems] = useState<SalesIssueItem[]>([blankItem()])
 
@@ -79,7 +103,6 @@ export default function SalesIssued() {
       if (search) params.set("search", search)
       if (from) params.set("from", from)
       if (to) params.set("to", to)
-      if (customerFilter !== "ALL") params.set("customer_id", customerFilter)
       if (itemFilter !== "ALL") params.set("item_id", itemFilter)
       if (batchFilter !== "ALL") params.set("batch_no", batchFilter)
       const result = await listSalesIssues(params)
@@ -87,8 +110,8 @@ export default function SalesIssued() {
       setTotal(result.total)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sales issued records.")
-      setRows(sampleIssues)
-      setTotal(sampleIssues.length)
+      setRows([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }
@@ -96,9 +119,17 @@ export default function SalesIssued() {
 
   useEffect(() => {
     void load()
-  }, [page, pageSize, sort, search, from, to, customerFilter, itemFilter, batchFilter])
+  }, [page, pageSize, sort, search, from, to, itemFilter, batchFilter])
 
   const batchFilters = useMemo(() => Array.from(new Set(products.flatMap((product) => product.batches.map((batch) => batch.batchNo)))), [products])
+  const selectableProducts = useMemo(() => {
+    if (!warehouseId) return []
+    const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === warehouseId || warehouse.code === warehouseId)
+    const warehouseKeys = new Set([warehouseId, selectedWarehouse?.id, selectedWarehouse?.code].filter(Boolean))
+    return products.filter((product) => {
+      return product.stockBreakdown.some((entry) => warehouseKeys.has(entry.warehouse) && Number(entry.qty || 0) > 0)
+    })
+  }, [products, warehouseId, warehouses])
   const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
   const grandTotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0)
 
@@ -106,9 +137,9 @@ export default function SalesIssued() {
     setEditing(null)
     setFsNo("")
     setReferenceNo("")
-    setSaleDate(new Date().toISOString().split("T")[0])
-    setCustomerId(customers[0]?.id || "")
-    setWarehouseId(warehouses[0]?.code || warehouses[0]?.id || "WH1")
+    setSaleDate("")
+    setCustomerName("")
+    setWarehouseId("")
     setPaymentType("Cash")
     setItems([blankItem()])
     setBatchOptions({})
@@ -127,10 +158,13 @@ export default function SalesIssued() {
       setFsNo(detail.fs_no)
       setReferenceNo(detail.reference_no)
       setSaleDate(detail.sale_date)
-      setCustomerId(detail.customer_id)
+      setCustomerName(detail.customer_name || detail.customer_id)
       setWarehouseId(detail.warehouse_id)
       setPaymentType(detail.payment_type)
-      setItems(detail.items?.length ? detail.items : [blankItem()])
+      setItems(detail.items?.length ? detail.items.map((item) => {
+        const product = products.find((entry) => entry.id === item.item_id)
+        return { ...item, packaging_unit: item.packaging_unit || product?.unit || "" }
+      }) : [blankItem()])
       setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
       setFormOpen(true)
     } catch (err) {
@@ -160,8 +194,14 @@ export default function SalesIssued() {
     }
   }
 
+  const handleWarehouseChange = (value: string) => {
+    setWarehouseId(value)
+    setItems([blankItem()])
+    setBatchOptions({})
+  }
+
   const saveDraft = async () => {
-    if (!fsNo || !referenceNo || !saleDate || !customerId || !warehouseId) {
+    if (!fsNo || !referenceNo || !saleDate || !customerName.trim() || !warehouseId) {
       showToast("Missing details", "warning", "FS No, reference, date, customer, and warehouse are required.")
       return
     }
@@ -170,14 +210,14 @@ export default function SalesIssued() {
       showToast("Check item rows", "warning", "Each row needs an item, batch, valid quantity, and non-negative unit price.")
       return
     }
-    const customer = customers.find((entry) => entry.id === customerId)
+    const enteredCustomer = customerName.trim()
     const payload = {
       id: editing?.id,
       fs_no: fsNo,
       reference_no: referenceNo,
       sale_date: saleDate,
-      customer_id: customerId,
-      customer_name: customer?.name || customerId,
+      customer_id: enteredCustomer,
+      customer_name: enteredCustomer,
       warehouse_id: warehouseId,
       payment_type: paymentType,
       items: items.map((item, index) => ({ ...item, id: item.id || `${editing?.id || fsNo}-ITEM-${index + 1}` })),
@@ -213,6 +253,8 @@ export default function SalesIssued() {
         try {
           await postSalesIssue(issue.id)
           showToast("Sales issue posted", "success", `${issue.fs_no} posted and stock reduced.`)
+          await erp.reloadFromApi()
+          await financeStore.reloadFromApi()
           await load()
         } catch (err) {
           showToast("Posting failed", "warning", err instanceof Error ? err.message : "Could not post sales issue.")
@@ -283,7 +325,6 @@ export default function SalesIssued() {
               onSearchChange={(value) => { setSearch(value); setPage(1) }}
               searchPlaceholder="Search FS, reference, item, customer, batch..."
               filters={[
-                { value: customerFilter, onChange: setCustomerFilter, ariaLabel: "Customer", options: [{ value: "ALL", label: "All Customers" }, ...customers.map((c) => ({ value: c.id, label: c.name }))] },
                 { value: itemFilter, onChange: setItemFilter, ariaLabel: "Item", options: [{ value: "ALL", label: "All Items" }, ...products.map((p) => ({ value: p.id, label: p.name.slice(0, 24) }))] },
                 { value: batchFilter, onChange: setBatchFilter, ariaLabel: "Batch", options: [{ value: "ALL", label: "All Batches" }, ...batchFilters.map((b) => ({ value: b, label: b }))] },
               ]}
@@ -310,7 +351,7 @@ export default function SalesIssued() {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
-                  <tr><td colSpan={10} className="py-16 text-center text-xs font-bold text-zinc-400">Loading sales issued records...</td></tr>
+                  <SalesIssuedSkeletonRows />
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={10} className="py-16 text-center text-xs font-bold text-zinc-400">No sales issued records match your filters.</td></tr>
                 ) : rows.map((row) => (
@@ -329,7 +370,7 @@ export default function SalesIssued() {
                         <button onClick={() => setSelected(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="View"><Eye className="size-3.5" /></button>
                         <button disabled={row.status !== "Draft"} onClick={() => void openEdit(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-35" title="Edit"><Edit3 className="size-3.5" /></button>
                         <button onClick={() => openAttachment(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Print Attachment"><Printer className="size-3.5" /></button>
-                        {row.status === "Draft" && <button onClick={() => doPost(row)} className="rounded-lg border border-emerald-200 p-1.5 text-emerald-700 hover:bg-emerald-50" title="Post"><Send className="size-3.5" /></button>}
+                        {row.status === "Draft" && <button onClick={() => doPost(row)} className="rounded-lg border border-emerald-200 p-1.5 text-emerald-700 hover:bg-emerald-50" title="Post and deduct stock"><Send className="size-3.5" /></button>}
                         {row.status === "Draft" && <button onClick={() => doDelete(row)} className="rounded-lg border border-rose-200 p-1.5 text-rose-700 hover:bg-rose-50" title="Delete"><Trash2 className="size-3.5" /></button>}
                         {row.status === "Draft" && <button onClick={() => doCancel(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Cancel"><X className="size-3.5" /></button>}
                       </div>
@@ -357,12 +398,33 @@ export default function SalesIssued() {
                 <button onClick={() => setFormOpen(false)} className="rounded-xl border border-zinc-200 p-2"><X className="size-4" /></button>
               </div>
               <div className="grid gap-4 md:grid-cols-3">
-                <input value={fsNo} onChange={(e) => setFsNo(e.target.value)} placeholder="FS No" className="h-11 rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
-                <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="Reference" className="h-11 rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
-                <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className="h-11 rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
-                <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="h-11 rounded-xl border border-zinc-200 px-3 text-sm font-semibold">{customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className="h-11 rounded-xl border border-zinc-200 px-3 text-sm font-semibold">{warehouses.map((w) => <option key={w.id} value={w.code || w.id}>{w.name || w.code}</option>)}</select>
-                <select value={paymentType} onChange={(e) => setPaymentType(e.target.value as PaymentType)} className="h-11 rounded-xl border border-zinc-200 px-3 text-sm font-semibold"><option>Cash</option><option>Credit</option></select>
+                <label className="space-y-1">
+                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">FS Number</span>
+                  <input value={fsNo} onChange={(e) => setFsNo(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Ref Number</span>
+                  <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Date</span>
+                  <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Customer</span>
+                  <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Warehouse</span>
+                  <select value={warehouseId} onChange={(e) => handleWarehouseChange(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold">
+                    <option value="">Select warehouse</option>
+                    {warehouses.map((w) => <option key={w.id} value={w.code || w.id}>{w.name || w.code}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Payment Type</span>
+                  <select value={paymentType} onChange={(e) => setPaymentType(e.target.value as PaymentType)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold"><option>Cash</option><option>Credit</option></select>
+                </label>
               </div>
               <div className="mt-6 space-y-3">
                 <div className="flex items-center justify-between">
@@ -376,21 +438,37 @@ export default function SalesIssued() {
                       <button disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35" title="Remove row"><Trash2 className="size-3.5" /></button>
                     </div>
                     <div className="grid gap-3 md:grid-cols-12">
-                      <label className="md:col-span-4">
+                      <label className="md:col-span-3">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Item</span>
-                        <select value={item.item_id} onChange={(e) => { const product = products.find((p) => p.id === e.target.value); void updateItem(index, { item_id: e.target.value, item_name: product?.name || "", unit_price: product?.sellingPrice || 0, batch_id: "", batch_no: "", available_quantity: 0 }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold">
-                          <option value="">Select item</option>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        <select disabled={!warehouseId} value={item.item_id} onChange={(e) => { const product = selectableProducts.find((p) => p.id === e.target.value); void updateItem(index, { item_id: e.target.value, item_name: product?.name || "", packaging_unit: product?.unit || "", unit_price: product?.sellingPrice || 0, batch_id: "", batch_no: "", available_quantity: 0 }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100">
+                          <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>{selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       </label>
                       <label className="md:col-span-3">
+                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Item Name</span>
+                        <input readOnly value={item.item_name || ""} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700" />
+                      </label>
+                      <label className="md:col-span-2">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Batch No</span>
-                        <select value={item.batch_no} onChange={(e) => { const batch = (batchOptions[index] || []).find((b) => b.batch_no === e.target.value); void updateItem(index, { batch_no: e.target.value, batch_id: e.target.value, available_quantity: batch?.available_quantity || 0, unit_price: batch?.unit_price ?? item.unit_price }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold">
+                        <select value={item.batch_no} onChange={(e) => { const batch = (batchOptions[index] || []).find((b) => b.batch_no === e.target.value); void updateItem(index, { batch_no: e.target.value, batch_id: e.target.value, packaging_unit: batch?.packaging_unit || item.packaging_unit, available_quantity: batch?.available_quantity || 0, unit_price: batch?.unit_price ?? item.unit_price }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold">
                           <option value="">Select batch</option>{(batchOptions[index] || []).map((b) => <option key={b.batch_no} value={b.batch_no}>{b.batch_no} | {Number(b.available_quantity).toLocaleString()}</option>)}
                         </select>
                       </label>
                       <label className="md:col-span-2">
+                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Packaging Unit</span>
+                        <input readOnly value={item.packaging_unit || ""} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700" />
+                      </label>
+                      <label className="md:col-span-2">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Available</span>
                         <input readOnly value={Number(item.available_quantity || 0).toLocaleString()} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-black text-zinc-700" />
+                      </label>
+                      <label className="md:col-span-2">
+                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">MFG Date</span>
+                        <input readOnly value={displayDate((batchOptions[index] || []).find((b) => b.batch_no === item.batch_no)?.manufacturing_date)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 font-mono text-xs font-bold text-zinc-700" />
+                      </label>
+                      <label className="md:col-span-2">
+                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Expiry Date</span>
+                        <input readOnly value={displayDate((batchOptions[index] || []).find((b) => b.batch_no === item.batch_no)?.expiry_date || (batchOptions[index] || []).find((b) => b.batch_no === item.batch_no)?.expiry)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 font-mono text-xs font-bold text-zinc-700" />
                       </label>
                       <label className="md:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Qty</span>
@@ -398,7 +476,7 @@ export default function SalesIssued() {
                       </label>
                       <label className="md:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Price</span>
-                        <input type="number" min="0" value={item.unit_price} onChange={(e) => void updateItem(index, { unit_price: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold" />
+                        <input readOnly value={money(item.unit_price)} className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2 text-right font-mono text-xs font-black text-zinc-700" />
                       </label>
                       <label className="md:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Amount</span>
@@ -409,7 +487,7 @@ export default function SalesIssued() {
                 ))}
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs font-bold text-zinc-500">Drafts can be edited until posting. Posting is handled on the server in one transaction.</div>
+                <div className="text-xs font-bold text-zinc-500">Posting deducts the selected batch quantity from inventory in one server transaction.</div>
                 <div className="flex gap-4 text-sm font-black"><span>Total Quantity: {totalQuantity.toLocaleString()}</span><span>Grand Total: {money(grandTotal)}</span></div>
               </div>
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">

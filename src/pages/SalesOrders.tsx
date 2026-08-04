@@ -20,6 +20,7 @@ import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
+import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
@@ -39,7 +40,8 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   const deliveryNotes = erp.getDeliveryNotes()
   const customers = erp.getCustomers()
   const products = erp.getProducts()
-  const warehouses = erp.getWarehouses()
+  const warehouses = withOperatingWarehouses(erp.getWarehouses())
+  const warehouseOptions = warehouses.map((warehouse) => ({ value: warehouse.code || warehouse.id, label: warehouse.name || warehouse.code || warehouse.id }))
 
   const [activeTab, setActiveTab] = useState<"sales-orders" | "quotations" | "delivery-notes">(initialTab)
 
@@ -70,30 +72,26 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
 
   // Dispatch / Fulfillment form state
-  const [driverName, setDriverName] = useState("Abebe Bikila")
-  const [vehicleReg, setVehicleReg] = useState("ET-3-8821")
+  const [driverName, setDriverName] = useState("")
+  const [vehicleReg, setVehicleReg] = useState("")
   const [fulfillQtys, setFulfillQtys] = useState<Record<string, number>>({})
 
   // Billing form state
-  const [taxPercent, setTaxPercent] = useState(15)
-  const [paymentTerms, setPaymentTerms] = useState("Net 30")
+  const [taxPercent, setTaxPercent] = useState(0)
+  const [paymentTerms, setPaymentTerms] = useState("")
 
   // New Sales Order Form State
-  const [newCustomerId, setNewCustomerId] = useState(customers[0]?.id || "CUST-001")
-  const [newWarehouse, setNewWarehouse] = useState("WH1")
+  const [newCustomerId, setNewCustomerId] = useState("")
+  const [newWarehouse, setNewWarehouse] = useState("")
   const [newDesc, setNewDesc] = useState("")
-  const [orderItems] = useState<SalesOrderItem[]>([
-    { productId: products[0]?.id || "P-101", name: products[0]?.name || "Goods", qty: 10, unit: "units", unitPrice: products[0]?.sellingPrice || 1000, total: (products[0]?.sellingPrice || 1000) * 10 }
-  ])
+  const [orderItems] = useState<SalesOrderItem[]>([])
 
   // New Quotation Form State
-  const [quoteCustomerId, setQuoteCustomerId] = useState(customers[0]?.id || "CUST-001")
-  const [quoteWarehouse, setQuoteWarehouse] = useState("WH1")
-  const [quoteValidDays, setQuoteValidDays] = useState(30)
+  const [quoteCustomerId, setQuoteCustomerId] = useState("")
+  const [quoteWarehouse, setQuoteWarehouse] = useState("")
+  const [quoteValidDays, setQuoteValidDays] = useState("")
   const [quoteDesc, setQuoteDesc] = useState("")
-  const [quoteItems] = useState<SalesOrderItem[]>([
-    { productId: products[0]?.id || "P-101", name: products[0]?.name || "Goods", qty: 20, unit: "units", unitPrice: products[0]?.sellingPrice || 1000, total: (products[0]?.sellingPrice || 1000) * 20 }
-  ])
+  const [quoteItems] = useState<SalesOrderItem[]>([])
 
   const stages: Array<SalesOrder["stage"]> = ["Quote", "Confirmed", "Picking", "Shipped"]
 
@@ -216,8 +214,8 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedCust = customers.find((c) => c.id === newCustomerId)
-    if (!selectedCust) {
-      showToast("Validation Error", "warning", "Please select a valid customer.")
+    if (!selectedCust || !newWarehouse || orderItems.length === 0) {
+      showToast("Validation Error", "warning", "Select a customer, warehouse, and at least one stock item.")
       return
     }
 
@@ -235,7 +233,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
       amount: totalAmt,
       currency: "ETB",
       stage: "Quote",
-      desc: newDesc || `${selectedCust.name} Sales Agreement`,
+      desc: newDesc,
       initials: selectedCust.name.slice(0, 2).toUpperCase(),
       label: selectedCust.contactPerson || selectedCust.name,
       avatarBg: "bg-emerald-100 text-emerald-800",
@@ -246,7 +244,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
       billedAmount: 0,
       deliveryStatus: "Not Delivered",
       billingStatus: "Not Billed",
-      paymentTerms: "Net 30",
+      paymentTerms,
     }
 
     erp.addSalesOrder(newSo)
@@ -259,12 +257,15 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   const handleCreateQuotation = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedCust = customers.find((c) => c.id === quoteCustomerId)
-    if (!selectedCust) return
+    if (!selectedCust || !quoteWarehouse || !quoteValidDays || quoteItems.length === 0) {
+      showToast("Validation Error", "warning", "Select a customer, warehouse, valid-until period, and at least one stock item.")
+      return
+    }
 
     const totalAmt = quoteItems.reduce((sum, item) => sum + item.total, 0)
     const wh = warehouses.find((w) => w.code === quoteWarehouse)
     const validTillDate = new Date()
-    validTillDate.setDate(validTillDate.getDate() + quoteValidDays)
+    validTillDate.setDate(validTillDate.getDate() + Number(quoteValidDays))
 
     const newQt: Quotation = {
       id: `QT-${Date.now().toString().slice(-4)}`,
@@ -278,8 +279,8 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
       amount: totalAmt,
       currency: "ETB",
       status: "Quoted",
-      desc: quoteDesc || `Export/Local Sales Pro-Forma Quote for ${selectedCust.name}`,
-      paymentTerms: "Net 30",
+      desc: quoteDesc,
+      paymentTerms,
       items: quoteItems,
     }
 
@@ -428,12 +429,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     value: soWhFilter,
                     onChange: setSoWhFilter,
                     ariaLabel: "Filter by Warehouse",
-                    options: [
-                      { value: "ALL", label: "All Warehouses" },
-                      { value: "WH1", label: "WH1 - Export Hub" },
-                      { value: "WH2", label: "WH2 - Vet Imports" },
-                      { value: "WH3", label: "WH3 - Feed & Vet" },
-                    ],
+                    options: [{ value: "ALL", label: "All Warehouses" }, ...warehouseOptions],
                   },
                 ]}
                 actions={[
@@ -787,12 +783,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     value: dnWhFilter,
                     onChange: setDnWhFilter,
                     ariaLabel: "Filter by Warehouse",
-                    options: [
-                      { value: "ALL", label: "All Warehouses" },
-                      { value: "WH1", label: "WH1 - Export Hub" },
-                      { value: "WH2", label: "WH2 - Vet Imports" },
-                      { value: "WH3", label: "WH3 - Feed & Vet" },
-                    ],
+                    options: [{ value: "ALL", label: "All Warehouses" }, ...warehouseOptions],
                   },
                 ]}
               />
@@ -1108,16 +1099,14 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
 
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Applicable Tax Template</label>
-                  <select 
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Tax Percent</label>
+                  <input
+                    type="number"
+                    min="0"
                     value={taxPercent}
                     onChange={(e) => setTaxPercent(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                  >
-                    <option value={15}>Standard VAT 15% (Domestic)</option>
-                    <option value={0}>Zero-Rated Export 0% (International)</option>
-                    <option value={5}>Withholding Tax Goods 5%</option>
-                  </select>
+                  />
                 </div>
 
                 <div>
@@ -1127,6 +1116,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     onChange={(e) => setPaymentTerms(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                   >
+                    <option value="">Select payment terms</option>
                     <option value="Net 30">Net 30 Days</option>
                     <option value="Net 15">Net 15 Days</option>
                     <option value="Payment on Delivery">Payment on Delivery</option>
@@ -1189,6 +1179,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     onChange={(e) => setNewCustomerId(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                   >
+                    <option value="">Select customer</option>
                     {customers.map(c => (
                       <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
                     ))}
@@ -1203,9 +1194,10 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                       onChange={(e) => setNewWarehouse(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     >
-                      <option value="WH1">WH1 - Agricultural Export Hub</option>
-                      <option value="WH2">WH2 - Vet Import Hub (India)</option>
-                      <option value="WH3">WH3 - Vet Import Hub (China)</option>
+                      <option value="">Select warehouse</option>
+                      {warehouseOptions.map((warehouse) => (
+                        <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -1227,7 +1219,6 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     onChange={(e) => setNewDesc(e.target.value)}
                     rows={2}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
-                    placeholder="Describe contract items or terms..."
                   />
                 </div>
 
@@ -1273,6 +1264,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     onChange={(e) => setQuoteCustomerId(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                   >
+                    <option value="">Select customer</option>
                     {customers.map(c => (
                       <option key={c.id} value={c.id}>{c.name} ({c.category})</option>
                     ))}
@@ -1287,9 +1279,10 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                       onChange={(e) => setQuoteWarehouse(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     >
-                      <option value="WH1">WH1 - Agricultural Export</option>
-                      <option value="WH2">WH2 - Vet Import (India)</option>
-                      <option value="WH3">WH3 - Vet Import (China)</option>
+                      <option value="">Select warehouse</option>
+                      {warehouseOptions.map((warehouse) => (
+                        <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -1297,7 +1290,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     <input 
                       type="number"
                       value={quoteValidDays}
-                      onChange={(e) => setQuoteValidDays(Number(e.target.value))}
+                      onChange={(e) => setQuoteValidDays(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     />
                   </div>
@@ -1310,7 +1303,6 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     onChange={(e) => setQuoteDesc(e.target.value)}
                     rows={2}
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
-                    placeholder="Quotation terms or items..."
                   />
                 </div>
 

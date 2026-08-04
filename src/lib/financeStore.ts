@@ -444,6 +444,10 @@ class FinanceStore {
     ])
   }
 
+  public async reloadFromApi() {
+    await this.loadFromApi()
+  }
+
   public subscribe(listener: () => void) {
     this.listeners.add(listener)
     return () => {

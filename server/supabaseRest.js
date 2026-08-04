@@ -81,6 +81,10 @@ function toDocumentRow(data) {
   return { id: data.id, ...(data.payload || {}) }
 }
 
+function isEmptyObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0
+}
+
 function documentId(body) {
   return body && typeof body === "object" && body.id ? String(body.id) : crypto.randomUUID()
 }
@@ -124,9 +128,13 @@ export async function getRow({ req, resource, id, requestUrl }) {
   return {
     status: response.status,
     headers: response.headers,
-    body: resource.storage === "jsonb_document"
-      ? toDocumentRow(await parseSupabaseResponse(response))
-      : await parseSupabaseResponse(response),
+    body: await (async () => {
+      const parsed = await parseSupabaseResponse(response)
+      if (response.status >= 400 && isEmptyObject(parsed)) {
+        return { error: `Supabase rejected '${resource.table}'. Confirm public.${resource.table} exists, is exposed to the Data API, and has the HR schema grants/policies applied.` }
+      }
+      return resource.storage === "jsonb_document" ? toDocumentRow(parsed) : parsed
+    })(),
   }
 }
 
@@ -138,7 +146,7 @@ export async function createRow({ req, resource }) {
 
   const response = await fetch(new URL(resource.table, config.supabaseRestUrl), {
     method: "POST",
-    headers: buildHeaders(req, "return=representation"),
+    headers: buildHeaders(req, "resolution=merge-duplicates,return=representation"),
     body: JSON.stringify(payload),
   })
 

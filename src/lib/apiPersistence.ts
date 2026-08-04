@@ -17,23 +17,28 @@ async function parseResponse(response: Response) {
   }
 }
 
-export async function loadResource<T>(resource: string, defaults: T[]): Promise<T[]> {
+function normalizeSingle<T>(body: unknown): T {
+  return (Array.isArray(body) ? body[0] : body) as T
+}
+
+function errorMessage(body: unknown, fallback: string) {
+  if (typeof body === "object" && body) {
+    if ("message" in body) return String(body.message)
+    if ("error" in body) return String(body.error)
+  }
+  if (typeof body === "string" && body.trim()) return body
+  return fallback
+}
+
+export async function loadResource<T>(resource: string, _defaults: T[] = []): Promise<T[]> {
   const response = await fetch(`${API_BASE}/api/${resource}`)
   const body = await parseResponse(response)
 
   if (!response.ok) {
-    throw new Error(typeof body === "object" && body && "message" in body ? String(body.message) : `Failed to load ${resource}.`)
+    throw new Error(errorMessage(body, `Failed to load ${resource}.`))
   }
 
-  if (Array.isArray(body) && body.length > 0) {
-    return body as T[]
-  }
-
-  if (defaults.length > 0) {
-    await replaceResource(resource, defaults as Identified[])
-  }
-
-  return defaults
+  return Array.isArray(body) ? body as T[] : []
 }
 
 export async function replaceResource<T extends Identified>(resource: string, items: T[]) {
@@ -47,7 +52,52 @@ export async function replaceResource<T extends Identified>(resource: string, it
   const body = await parseResponse(response)
 
   if (!response.ok) {
-    throw new Error(typeof body === "object" && body && "message" in body ? String(body.message) : `Failed to save ${resource}.`)
+    throw new Error(errorMessage(body, `Failed to save ${resource}.`))
+  }
+}
+
+export async function createResource<T extends Identified>(resource: string, item: T) {
+  const response = await fetch(`${API_BASE}/api/${resource}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(item),
+  })
+  const body = await parseResponse(response)
+
+  if (!response.ok) {
+    throw new Error(errorMessage(body, `Failed to create ${resource}.`))
+  }
+
+  return normalizeSingle<T>(body)
+}
+
+export async function updateResource<T extends Identified>(resource: string, id: string, item: Partial<T>) {
+  const response = await fetch(`${API_BASE}/api/${resource}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(item),
+  })
+  const body = await parseResponse(response)
+
+  if (!response.ok) {
+    throw new Error(errorMessage(body, `Failed to update ${resource}.`))
+  }
+
+  return normalizeSingle<T>(body)
+}
+
+export async function deleteResource(resource: string, id: string) {
+  const response = await fetch(`${API_BASE}/api/${resource}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })
+  const body = await parseResponse(response)
+
+  if (!response.ok) {
+    throw new Error(errorMessage(body, `Failed to delete ${resource}.`))
   }
 }
 
