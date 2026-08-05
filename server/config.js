@@ -14,7 +14,9 @@ function normalizeRestUrl(value) {
 
 export const config = {
   port: Number(process.env.PORT || process.env.SERVER_PORT || 8787),
-  host: process.env.SERVER_HOST || "127.0.0.1",
+  // Bind to all interfaces by default so Render's load balancer can reach the
+  // process. Override to 127.0.0.1 locally if you prefer.
+  host: process.env.SERVER_HOST || "0.0.0.0",
   supabaseRestUrl: normalizeRestUrl(process.env.SUPABASE_REST_URL),
   supabasePublishableKey:
     process.env.SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY,

@@ -1,3 +1,4 @@
+import { Router } from "express"
 import { getResource, listResources } from "./resources.js"
 import { createRow, deleteRow, getRow, listRows, replaceRows, updateRow } from "./supabaseRest.js"
 import {
@@ -11,131 +12,189 @@ import {
   updateSalesIssue,
 } from "./salesIssues.js"
 
-function json(res, status, body, extraHeaders = {}) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    ...extraHeaders,
-  })
+export const router = Router()
 
-  res.end(body === null ? "" : JSON.stringify(body))
-}
+// ── Health & registry ────────────────────────────────────────────────────────
 
-function normalizeSupabaseResult(result) {
-  const headers = {}
-  const contentRange = result.headers.get("content-range")
+router.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "hkc-erp-server" })
+})
 
-  if (contentRange) {
-    headers["Content-Range"] = contentRange
+router.get("/api", (_req, res) => {
+  res.json({ service: "HKC ERP API", resources: listResources() })
+})
+
+// ── Sales Issues ─────────────────────────────────────────────────────────────
+
+router.get("/api/sales-issues/batches", async (req, res, next) => {
+  try {
+    const result = await getAvailableBatches(req.query)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  return {
-    status: result.status,
-    headers,
-    body: result.body,
+router.get("/api/sales-issues", async (req, res, next) => {
+  try {
+    const result = await listSalesIssues(req.query)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
-}
+})
 
-export async function route(req, res) {
-  const requestUrl = new URL(req.url || "/", "http://localhost")
-  const parts = requestUrl.pathname.split("/").filter(Boolean)
-
-  if (req.method === "OPTIONS") {
-    json(res, 204, null)
-    return
+router.post("/api/sales-issues", async (req, res, next) => {
+  try {
+    const result = await createSalesIssue(req.body)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  if (req.method === "GET" && requestUrl.pathname === "/health") {
-    json(res, 200, { ok: true, service: "hkc-erp-server" })
-    return
+router.get("/api/sales-issues/:id", async (req, res, next) => {
+  try {
+    const result = await getSalesIssue(req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  if (req.method === "GET" && requestUrl.pathname === "/api") {
-    json(res, 200, {
-      service: "HKC ERP API",
-      resources: listResources(),
-    })
-    return
+router.patch("/api/sales-issues/:id", async (req, res, next) => {
+  try {
+    const result = await updateSalesIssue(req.body, req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  if (parts[0] !== "api" || !parts[1]) {
-    json(res, 404, {
-      error: "Not found",
-      hint: "Use /api for the resource registry or /api/:resource for table routes.",
-    })
-    return
+router.delete("/api/sales-issues/:id", async (req, res, next) => {
+  try {
+    const result = await deleteSalesIssue(req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  if (parts[1] === "sales-issues") {
-    const id = parts[2] ? decodeURIComponent(parts[2]) : null
-    let result
+router.post("/api/sales-issues/:id/post", async (req, res, next) => {
+  try {
+    const result = await postSalesIssue(req.body, req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
 
-    try {
-      if (req.method === "GET" && !id) {
-        result = await listSalesIssues(requestUrl)
-      } else if (req.method === "POST" && !id) {
-        result = await createSalesIssue(req)
-      } else if (req.method === "GET" && id === "batches") {
-        result = await getAvailableBatches(requestUrl)
-      } else if (req.method === "POST" && id && parts[3] === "post") {
-        result = await postSalesIssue(req, id)
-      } else if (req.method === "POST" && id && parts[3] === "cancel") {
-        result = await cancelSalesIssue(id)
-      } else if (req.method === "GET" && id && parts[3] === "print") {
-        result = await getSalesIssue(id)
-      } else if (req.method === "GET" && id) {
-        result = await getSalesIssue(id)
-      } else if (req.method === "PATCH" && id) {
-        result = await updateSalesIssue(req, id)
-      } else if (req.method === "DELETE" && id) {
-        result = await deleteSalesIssue(id)
-      } else {
-        json(res, 405, { error: "Method not allowed for this sales issue route." })
-        return
-      }
-    } catch (error) {
-      json(res, error.status || 500, {
-        error: error instanceof Error ? error.message : "Sales issue route failed.",
-        details: error.body,
+router.post("/api/sales-issues/:id/cancel", async (req, res, next) => {
+  try {
+    const result = await cancelSalesIssue(req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Generic resource routes ───────────────────────────────────────────────────
+
+router.get("/api/:resource", async (req, res, next) => {
+  try {
+    const resource = getResource(req.params.resource)
+    if (!resource) {
+      res.status(404).json({
+        error: `Unknown resource '${req.params.resource}'.`,
+        availableResources: listResources().map((item) => item.name),
       })
       return
     }
-
-    json(res, result.status, result.body)
-    return
+    const result = await listRows({ resource, query: req.query, headers: req.headers })
+    if (result.headers?.["Content-Range"]) {
+      res.setHeader("Content-Range", result.headers["Content-Range"])
+    }
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  const resource = getResource(parts[1])
-  if (!resource) {
-    json(res, 404, {
-      error: `Unknown resource '${parts[1]}'.`,
-      availableResources: listResources().map((item) => item.name),
-    })
-    return
+router.put("/api/:resource", async (req, res, next) => {
+  try {
+    const resource = getResource(req.params.resource)
+    if (!resource) {
+      res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
+      return
+    }
+    const result = await replaceRows({ resource, body: req.body, headers: req.headers })
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  const id = parts[2] ? decodeURIComponent(parts[2]) : null
-  let result
-
-  if (req.method === "GET" && !id) {
-    result = await listRows({ req, resource, requestUrl })
-  } else if (req.method === "PUT" && !id) {
-    result = await replaceRows({ req, resource })
-  } else if (req.method === "GET" && id) {
-    result = await getRow({ req, resource, id, requestUrl })
-  } else if (req.method === "POST" && !id) {
-    result = await createRow({ req, resource })
-  } else if (req.method === "PATCH" && id) {
-    result = await updateRow({ req, resource, id })
-  } else if (req.method === "DELETE" && id) {
-    result = await deleteRow({ req, resource, id })
-  } else {
-    json(res, 405, { error: "Method not allowed for this route." })
-    return
+router.post("/api/:resource", async (req, res, next) => {
+  try {
+    const resource = getResource(req.params.resource)
+    if (!resource) {
+      res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
+      return
+    }
+    const result = await createRow({ resource, body: req.body, headers: req.headers })
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
   }
+})
 
-  const normalized = normalizeSupabaseResult(result)
-  json(res, normalized.status, normalized.body, normalized.headers)
-}
+router.get("/api/:resource/:id", async (req, res, next) => {
+  try {
+    const resource = getResource(req.params.resource)
+    if (!resource) {
+      res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
+      return
+    }
+    const result = await getRow({ resource, id: req.params.id, query: req.query, headers: req.headers })
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.patch("/api/:resource/:id", async (req, res, next) => {
+  try {
+    const resource = getResource(req.params.resource)
+    if (!resource) {
+      res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
+      return
+    }
+    const result = await updateRow({ resource, id: req.params.id, body: req.body, headers: req.headers })
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.delete("/api/:resource/:id", async (req, res, next) => {
+  try {
+    const resource = getResource(req.params.resource)
+    if (!resource) {
+      res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
+      return
+    }
+    const result = await deleteRow({ resource, id: req.params.id, headers: req.headers })
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Catch-all 404 ─────────────────────────────────────────────────────────────
+
+router.use((_req, res) => {
+  res.status(404).json({
+    error: "Not found",
+    hint: "Use /api for the resource registry or /api/:resource for table routes.",
+  })
+})

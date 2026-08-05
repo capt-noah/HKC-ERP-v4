@@ -3,66 +3,31 @@ import crypto from "node:crypto"
 
 const PASS_THROUGH_QUERY_KEYS = new Set(["select", "order", "limit", "offset", "range", "or", "and"])
 
-function appendQueryParams(target, searchParams) {
-  for (const [key, value] of searchParams.entries()) {
+function appendQueryParams(url, query = {}) {
+  for (const [key, value] of Object.entries(query)) {
     if (PASS_THROUGH_QUERY_KEYS.has(key) || /^[a-zA-Z0-9_]+$/.test(key)) {
-      target.searchParams.append(key, value)
+      url.searchParams.append(key, value)
     }
   }
 }
 
-function buildHeaders(req, prefer) {
-  const authorization = req.headers.authorization || (config.supabaseServiceRoleKey ? `Bearer ${config.supabaseServiceRoleKey}` : "")
+function buildHeaders(incomingHeaders = {}, prefer) {
+  const authorization =
+    incomingHeaders.authorization ||
+    (config.supabaseServiceRoleKey ? `Bearer ${config.supabaseServiceRoleKey}` : "")
   const apiKey = config.supabaseServiceRoleKey || config.supabasePublishableKey
-  const headers = {
+  const result = {
     apikey: apiKey,
     "Content-Type": "application/json",
   }
-
-  if (authorization) {
-    headers.Authorization = authorization
-  }
-
-  if (prefer) {
-    headers.Prefer = prefer
-  }
-
-  return headers
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = ""
-
-    req.on("data", (chunk) => {
-      body += chunk
-      if (body.length > 1_000_000) {
-        reject(new Error("Request body is too large."))
-        req.destroy()
-      }
-    })
-
-    req.on("end", () => {
-      if (!body) {
-        resolve(undefined)
-        return
-      }
-
-      try {
-        resolve(JSON.parse(body))
-      } catch {
-        reject(new Error("Request body must be valid JSON."))
-      }
-    })
-
-    req.on("error", reject)
-  })
+  if (authorization) result.Authorization = authorization
+  if (prefer) result.Prefer = prefer
+  return result
 }
 
 async function parseSupabaseResponse(response) {
   const text = await response.text()
   if (!text) return null
-
   try {
     return JSON.parse(text)
   } catch {
@@ -89,9 +54,13 @@ function documentId(body) {
   return body && typeof body === "object" && body.id ? String(body.id) : crypto.randomUUID()
 }
 
-export async function listRows({ req, resource, requestUrl }) {
+// ── Public API ────────────────────────────────────────────────────────────────
+// All functions accept plain objects from Express (req.query / req.body /
+// req.headers) rather than the raw Node IncomingMessage.
+
+export async function listRows({ resource, query = {}, headers = {} }) {
   const url = new URL(resource.table, config.supabaseRestUrl)
-  appendQueryParams(url, requestUrl.searchParams)
+  appendQueryParams(url, query)
 
   if (!url.searchParams.has("select")) {
     url.searchParams.set("select", resource.storage === "jsonb_document" ? "id,payload" : "*")
@@ -99,21 +68,22 @@ export async function listRows({ req, resource, requestUrl }) {
 
   const response = await fetch(url, {
     method: "GET",
-    headers: buildHeaders(req),
+    headers: buildHeaders(headers),
   })
 
   return {
     status: response.status,
-    headers: response.headers,
-    body: resource.storage === "jsonb_document"
-      ? toDocumentRows(await parseSupabaseResponse(response))
-      : await parseSupabaseResponse(response),
+    headers: { "Content-Range": response.headers.get("content-range") },
+    body:
+      resource.storage === "jsonb_document"
+        ? toDocumentRows(await parseSupabaseResponse(response))
+        : await parseSupabaseResponse(response),
   }
 }
 
-export async function getRow({ req, resource, id, requestUrl }) {
+export async function getRow({ resource, id, query = {}, headers = {} }) {
   const url = new URL(resource.table, config.supabaseRestUrl)
-  appendQueryParams(url, requestUrl.searchParams)
+  appendQueryParams(url, query)
   url.searchParams.set("id", `eq.${id}`)
 
   if (!url.searchParams.has("select")) {
@@ -122,49 +92,51 @@ export async function getRow({ req, resource, id, requestUrl }) {
 
   const response = await fetch(url, {
     method: "GET",
-    headers: buildHeaders(req),
+    headers: buildHeaders(headers),
   })
 
   return {
     status: response.status,
-    headers: response.headers,
+    headers: {},
     body: await (async () => {
       const parsed = await parseSupabaseResponse(response)
       if (response.status >= 400 && isEmptyObject(parsed)) {
-        return { error: `Supabase rejected '${resource.table}'. Confirm public.${resource.table} exists, is exposed to the Data API, and has the HR schema grants/policies applied.` }
+        return {
+          error: `Supabase rejected '${resource.table}'. Confirm public.${resource.table} exists, is exposed to the Data API, and has the correct schema grants/policies applied.`,
+        }
       }
       return resource.storage === "jsonb_document" ? toDocumentRow(parsed) : parsed
     })(),
   }
 }
 
-export async function createRow({ req, resource }) {
-  const body = await readBody(req)
-  const payload = resource.storage === "jsonb_document"
-    ? { id: documentId(body), payload: body }
-    : body
+export async function createRow({ resource, body, headers = {} }) {
+  const payload =
+    resource.storage === "jsonb_document"
+      ? { id: documentId(body), payload: body }
+      : body
 
   const response = await fetch(new URL(resource.table, config.supabaseRestUrl), {
     method: "POST",
-    headers: buildHeaders(req, "resolution=merge-duplicates,return=representation"),
+    headers: buildHeaders(headers, "resolution=merge-duplicates,return=representation"),
     body: JSON.stringify(payload),
   })
 
   return {
     status: response.status,
-    headers: response.headers,
-    body: resource.storage === "jsonb_document"
-      ? toDocumentRow(await parseSupabaseResponse(response))
-      : await parseSupabaseResponse(response),
+    headers: {},
+    body:
+      resource.storage === "jsonb_document"
+        ? toDocumentRow(await parseSupabaseResponse(response))
+        : await parseSupabaseResponse(response),
   }
 }
 
-export async function updateRow({ req, resource, id }) {
-  const body = await readBody(req)
+export async function updateRow({ resource, id, body, headers = {} }) {
   let payload = body
 
   if (resource.storage === "jsonb_document") {
-    const existing = await getRow({ req, resource, id, requestUrl: new URL("/", "http://localhost") })
+    const existing = await getRow({ resource, id, headers })
     const existingBody = Array.isArray(existing.body) ? existing.body[0] : existing.body
     payload = {
       payload: {
@@ -180,86 +152,92 @@ export async function updateRow({ req, resource, id }) {
 
   const response = await fetch(url, {
     method: "PATCH",
-    headers: buildHeaders(req, "return=representation"),
+    headers: buildHeaders(headers, "return=representation"),
     body: JSON.stringify(payload),
   })
 
   return {
     status: response.status,
-    headers: response.headers,
-    body: resource.storage === "jsonb_document"
-      ? toDocumentRow(await parseSupabaseResponse(response))
-      : await parseSupabaseResponse(response),
+    headers: {},
+    body:
+      resource.storage === "jsonb_document"
+        ? toDocumentRow(await parseSupabaseResponse(response))
+        : await parseSupabaseResponse(response),
   }
 }
 
-export async function deleteRow({ req, resource, id }) {
+export async function deleteRow({ resource, id, headers = {} }) {
   const url = new URL(resource.table, config.supabaseRestUrl)
   url.searchParams.set("id", `eq.${id}`)
 
   const response = await fetch(url, {
     method: "DELETE",
-    headers: buildHeaders(req, "return=representation"),
+    headers: buildHeaders(headers, "return=representation"),
   })
 
   return {
     status: response.status,
-    headers: response.headers,
-    body: resource.storage === "jsonb_document"
-      ? toDocumentRow(await parseSupabaseResponse(response))
-      : await parseSupabaseResponse(response),
+    headers: {},
+    body:
+      resource.storage === "jsonb_document"
+        ? toDocumentRow(await parseSupabaseResponse(response))
+        : await parseSupabaseResponse(response),
   }
 }
 
-export async function replaceRows({ req, resource }) {
-  const body = await readBody(req)
+export async function replaceRows({ resource, body, headers = {} }) {
   if (!Array.isArray(body)) {
     return {
       status: 400,
-      headers: new Headers(),
+      headers: {},
       body: { error: "Request body must be an array." },
     }
   }
 
-  const existing = await listRows({ req, resource, requestUrl: new URL("/", "http://localhost") })
-  if (existing.status >= 400) {
-    return existing
-  }
+  const existing = await listRows({ resource, headers })
+  if (existing.status >= 400) return existing
 
   const existingRows = Array.isArray(existing.body) ? existing.body : []
-  const nextIds = new Set(body.map((item, index) => documentId({ ...item, id: item?.id || `row-${index + 1}` })))
+  const nextIds = new Set(
+    body.map((item, index) =>
+      documentId({ ...item, id: item?.id || `row-${index + 1}` }),
+    ),
+  )
 
   for (const row of existingRows) {
     if (row?.id && !nextIds.has(String(row.id))) {
-      await deleteRow({ req, resource, id: String(row.id) })
+      await deleteRow({ resource, id: String(row.id), headers })
     }
   }
 
   for (const item of body) {
     const id = documentId(item)
-    const payload = resource.storage === "jsonb_document"
-      ? { id, payload: { ...item, id } }
-      : { ...item, id }
+    const payload =
+      resource.storage === "jsonb_document"
+        ? { id, payload: { ...item, id } }
+        : { ...item, id }
 
     const url = new URL(resource.table, config.supabaseRestUrl)
     url.searchParams.set("id", `eq.${id}`)
 
     await fetch(url, {
       method: "PATCH",
-      headers: buildHeaders(req, "return=minimal"),
-      body: JSON.stringify(resource.storage === "jsonb_document" ? { payload: payload.payload } : payload),
+      headers: buildHeaders(headers, "return=minimal"),
+      body: JSON.stringify(
+        resource.storage === "jsonb_document" ? { payload: payload.payload } : payload,
+      ),
     })
 
     await fetch(new URL(resource.table, config.supabaseRestUrl), {
       method: "POST",
-      headers: buildHeaders(req, "resolution=merge-duplicates,return=minimal"),
+      headers: buildHeaders(headers, "resolution=merge-duplicates,return=minimal"),
       body: JSON.stringify(payload),
     })
   }
 
   return {
     status: 200,
-    headers: new Headers(),
+    headers: {},
     body: { ok: true, count: body.length },
   }
 }
