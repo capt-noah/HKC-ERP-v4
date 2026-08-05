@@ -119,7 +119,8 @@ function lineTotal(item: SalesIssueItem) {
 }
 
 async function loadCompanyProfile() {
-  const response = await fetch("/api/company_settings")
+  const base = import.meta.env.VITE_API_URL ?? ""
+  const response = await fetch(`${base}/api/company_settings`)
   if (!response.ok) return null
   const body = await response.json()
   return Array.isArray(body) ? (body[0] as CompanyProfile | undefined) ?? null : null
