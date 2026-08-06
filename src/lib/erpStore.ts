@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react"
 import { createResource, deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
 import { financeStore } from "./financeStore"
+import { evaluateStockStatus } from "../core/inventory/stockEngine"
+import { validateTransferNote } from "../core/inventory/transferEngine"
+import { processSalesOrderPipeline } from "../core/sales/orderPipeline"
 
 export interface Warehouse {
   id: string
@@ -1240,6 +1243,18 @@ class ErpStore {
     this.notify()
     return { success: true, invoiceId: pinvId, journalEntryId: jeId }
   }
+
+  public evaluateStock() {
+    return evaluateStockStatus(this.products, this.stockMovements)
+  }
+
+  public validateTransfer(transfer: any) {
+    return validateTransferNote(transfer)
+  }
+
+  public processPipeline(so: any, stage: string) {
+    return processSalesOrderPipeline(so, stage)
+  }
 }
 
 export const erpStore = new ErpStore()
@@ -1252,7 +1267,5 @@ export function useErpStore() {
     return () => { unsub() }
   }, [])
 
-  // Return the store directly — pages call store.isLoading() / store.getLoadError()
-  // for error-state awareness without requiring call-site changes.
   return erpStore
 }

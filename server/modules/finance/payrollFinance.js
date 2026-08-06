@@ -1,4 +1,4 @@
-import { config } from "./config.js"
+import { config } from "../../config.js"
 
 function headers() {
   const key = config.supabaseServiceRoleKey || config.supabasePublishableKey

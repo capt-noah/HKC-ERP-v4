@@ -74,8 +74,17 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-export function listSalesIssues(params: URLSearchParams) {
-  return api<{ rows: SalesIssue[]; total: number; page: number; pageSize: number }>(`/api/sales-issues?${params.toString()}`)
+export async function listSalesIssues(params: URLSearchParams) {
+  const result = await api<any>(`/api/sales-issues?${params.toString()}`)
+  if (Array.isArray(result)) {
+    return { rows: result as SalesIssue[], total: result.length, page: 1, pageSize: result.length }
+  }
+  return {
+    rows: Array.isArray(result?.rows) ? (result.rows as SalesIssue[]) : [],
+    total: typeof result?.total === "number" ? result.total : 0,
+    page: result?.page || 1,
+    pageSize: result?.pageSize || 20,
+  }
 }
 
 export function getSalesIssue(id: string) {

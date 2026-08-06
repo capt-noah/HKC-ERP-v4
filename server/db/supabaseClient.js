@@ -1,4 +1,4 @@
-import { config } from "./config.js"
+import { config } from "../config.js"
 import crypto from "node:crypto"
 
 const PASS_THROUGH_QUERY_KEYS = new Set(["select", "order", "limit", "offset", "range", "or", "and"])
@@ -51,9 +51,7 @@ function documentId(body) {
   return body && typeof body === "object" && body.id ? String(body.id) : crypto.randomUUID()
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
-// All functions accept plain objects from Express (req.query / req.body /
-// req.headers) rather than the raw Node IncomingMessage.
+// ── Public Database Client API ──────────────────────────────────────────
 
 export async function listRows({ resource, query = {}, headers = {} }) {
   const url = new URL(resource.table, config.supabaseRestUrl)

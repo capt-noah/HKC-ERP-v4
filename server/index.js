@@ -1,10 +1,14 @@
 import express from "express"
 import { assertConfig, config } from "./config.js"
-import { router } from "./routes.js"
+import { masterRouter } from "./router/index.js"
+import { logger } from "./logger.js"
 
 assertConfig()
 
 const app = express()
+
+// Request logger middleware — logs every request to stdout (for Render) and server/logs/access.log
+app.use(logger.requestLogger)
 
 // Parse JSON request bodies before any route handler runs.
 app.use(express.json({ limit: "1mb" }))
@@ -21,12 +25,12 @@ app.use((req, res, next) => {
   next()
 })
 
-app.use("/", router)
+app.use("/", masterRouter)
 
 // Generic error handler — catches anything thrown inside route handlers.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
-  console.error(err)
+  logger.error(`Unhandled error on ${req.method} ${req.originalUrl || req.url}`, err)
   res.status(500).json({
     error: "Internal server error",
     message: err instanceof Error ? err.message : "Unknown error",

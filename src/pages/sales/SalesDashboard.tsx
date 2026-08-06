@@ -59,19 +59,23 @@ export default function SalesDashboard() {
     const params = new URLSearchParams({ page: "1", pageSize: "100", sort: "sale_date.desc" })
     setSalesLoading(true)
     listSalesIssues(params)
-      .then((result) => setSalesIssues(result.rows))
+      .then((result: any) => {
+        const rows = Array.isArray(result) ? result : Array.isArray(result?.rows) ? result.rows : []
+        setSalesIssues(rows)
+      })
       .catch(() => setSalesIssues([]))
       .finally(() => setSalesLoading(false))
   }, [])
 
-  const postedIssues = salesIssues.filter((issue) => issue.status === "Posted")
-  const draftIssues = salesIssues.filter((issue) => issue.status === "Draft")
-  const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue.total_amount || 0), 0)
+  const safeIssues = Array.isArray(salesIssues) ? salesIssues : []
+  const postedIssues = safeIssues.filter((issue) => issue?.status === "Posted")
+  const draftIssues = safeIssues.filter((issue) => issue?.status === "Draft")
+  const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue?.total_amount || 0), 0)
   const postedIssueCount = postedIssues.length
-  const orderAmount = salesOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0)
-  const quotationAmount = quotations.reduce((sum, quote) => sum + Number(quote.amount || 0), 0)
+  const orderAmount = salesOrders.reduce((sum, order) => sum + Number(order?.amount || 0), 0)
+  const quotationAmount = quotations.reduce((sum, quote) => sum + Number(quote?.amount || 0), 0)
 
-  const recentActivity = useMemo(() => salesIssues.slice(0, 6), [salesIssues])
+  const recentActivity = useMemo(() => safeIssues.slice(0, 6), [safeIssues])
   const isLoading = erp.isLoading() || salesLoading
 
   return (

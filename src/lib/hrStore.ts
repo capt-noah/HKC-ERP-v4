@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react"
 import { loadResource, persistResources } from "./apiPersistence"
 import { financeStore } from "./financeStore"
+import { calculatePayrollRecord } from "../core/hr/payrollEngine"
+import { evaluateAttendanceMatrix } from "../core/hr/attendanceEngine"
 
 export interface Employee {
   id: string
@@ -712,6 +714,14 @@ class HRStore {
       p.id === trainingId ? { ...p, enrolledCount: p.enrolledCount + 1 } : p
     )
     this.notify()
+  }
+
+  public computePayroll(empId: string, name: string, sal: number, allow = 0) {
+    return calculatePayrollRecord(empId, name, sal, allow)
+  }
+
+  public evaluateAttendance(recs: any[]) {
+    return evaluateAttendanceMatrix(recs)
   }
 }
 

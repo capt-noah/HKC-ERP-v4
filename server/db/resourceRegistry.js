@@ -12,6 +12,7 @@ export const resources = {
   quotations: { table: "quotations", module: "sales", ...jsonb },
   delivery_notes: { table: "delivery_notes", module: "sales", ...jsonb },
   purchase_orders: { table: "purchase_orders", module: "sales", ...jsonb },
+  sales_issues: { table: "sales_issues", module: "sales", storage: "relational" },
   customers: { table: "customers", module: "sales", ...jsonb },
   suppliers: { table: "suppliers", module: "sales", ...jsonb },
 

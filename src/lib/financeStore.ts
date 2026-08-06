@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { deleteResource, loadResource, persistResources } from "./apiPersistence"
+import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 
 export interface AccountItem {
   id: string
@@ -389,6 +390,248 @@ class FinanceStore {
       }))
       this.taxRules = taxRules
 
+      // CROSS-MODULE LIVE FINANCE SYNC ENGINE:
+      // Fetch source module records and ensure all Sales Issues, Sales Orders, Purchase Orders, Expense Claims, and Payroll Records appear in Finance
+      try {
+        const [salesIssues, salesOrders, purchaseOrders, expenseClaims, payrollRecords] = await Promise.all([
+          loadResource<any>("sales_issues").catch(() => []),
+          loadResource<any>("sales_orders").catch(() => []),
+          loadResource<any>("purchase_orders").catch(() => []),
+          loadResource<any>("expense_claims").catch(() => []),
+          loadResource<any>("payroll_records").catch(() => []),
+        ])
+
+        let hasNewSync = false
+
+        // A. Sync Sales Issues -> Invoices & GL Entries
+        salesIssues.forEach((si: any, idx: number) => {
+          const invId = `INV-SI-${si.id || idx + 1}`
+          const jeId = `JE-SI-${si.id || idx + 1}`
+          const invAmt = Number(si.total_amount || si.totalAmount || si.amount || 1000)
+          const taxAmt = Math.round(invAmt * 0.15)
+          const totalAmt = Math.round(invAmt * 1.15)
+
+          if (!this.invoices.some((i) => i.id === invId || i.invoice_number === invId)) {
+            this.invoices.push({
+              id: invId,
+              invoice_number: invId,
+              customer_name: si.customer_name || si.customer || "Customer",
+              issue_date: si.sale_date || si.issueDate || new Date().toISOString().split("T")[0],
+              due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+              currency: "ETB",
+              line_items: [{ description: `Sales Dispatch #${si.fs_no || si.id}`, quantity: Number(si.total_quantity || 1), unit_price: invAmt, line_total: invAmt }],
+              subtotal: invAmt,
+              tax_amount: taxAmt,
+              discount_amount: 0,
+              payment_terms: si.payment_type || "Net 30",
+              total: totalAmt,
+              amount_paid: si.payment_type === "Cash" ? totalAmt : 0,
+              balance_due: si.payment_type === "Cash" ? 0 : totalAmt,
+              status: si.status === "Posted" ? "Sent" : "Draft",
+            })
+            hasNewSync = true
+          }
+
+          if (!this.entries.some((e) => e.id === jeId || e.source_id === si.id)) {
+            const arAcc = this.accounts.find((a) => a.code === "1200" || a.id === "acc-1200") || this.accounts[0]
+            const salesAcc = this.accounts.find((a) => a.code === "4000" || a.code === "4010" || a.id === "acc-4000") || this.accounts[0]
+            const taxAcc = this.accounts.find((a) => a.code === "2210" || a.id === "acc-2210") || this.accounts[0]
+
+            this.entries.push({
+              id: jeId,
+              entry_date: si.sale_date || new Date().toISOString().split("T")[0],
+              source_type: "Sales Invoice",
+              source_id: si.id,
+              created_by: si.created_by || "Sales Manager",
+              currency: "ETB",
+              exchange_rate: 1.0,
+              description: `Sales Dispatch Entry #${si.fs_no || si.id} for ${si.customer_name || "Customer"}`,
+              is_reversal_of: null,
+            })
+
+            if (arAcc && salesAcc) {
+              this.lines.push(
+                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: arAcc.id, debit_amount: totalAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Customer", party_id: si.customer_id, party_name: si.customer_name },
+                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: salesAcc.id, debit_amount: 0, credit_amount: invAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                { id: `${jeId}-3`, journal_entry_id: jeId, account_id: taxAcc ? taxAcc.id : salesAcc.id, debit_amount: 0, credit_amount: taxAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null }
+              )
+            }
+            hasNewSync = true
+          }
+        })
+
+        // B. Sync Sales Orders -> Invoices & GL Entries
+        salesOrders.forEach((so: any, idx: number) => {
+          const invId = `INV-SO-${so.id || idx + 1}`
+          const jeId = `JE-SO-${so.id || idx + 1}`
+          const invAmt = Number(so.amount || so.total_amount || 15000)
+          const taxAmt = Math.round(invAmt * 0.15)
+          const totalAmt = Math.round(invAmt * 1.15)
+
+          if (!this.invoices.some((i) => i.id === invId || i.invoice_number === invId)) {
+            this.invoices.push({
+              id: invId,
+              invoice_number: invId,
+              customer_name: so.customer || so.customerName || "Customer",
+              issue_date: so.date || new Date().toISOString().split("T")[0],
+              due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+              currency: "ETB",
+              line_items: so.items || [{ description: so.desc || "Sales Order Item", quantity: 1, unit_price: invAmt, line_total: invAmt }],
+              subtotal: invAmt,
+              tax_amount: taxAmt,
+              discount_amount: 0,
+              payment_terms: "Net 30",
+              total: totalAmt,
+              amount_paid: 0,
+              balance_due: totalAmt,
+              status: "Sent",
+            })
+            hasNewSync = true
+          }
+
+          if (!this.entries.some((e) => e.id === jeId || e.source_id === so.id)) {
+            const arAcc = this.accounts.find((a) => a.code === "1200" || a.id === "acc-1200") || this.accounts[0]
+            const salesAcc = this.accounts.find((a) => a.code === "4000" || a.code === "4010" || a.id === "acc-4000") || this.accounts[0]
+            const taxAcc = this.accounts.find((a) => a.code === "2210" || a.id === "acc-2210") || this.accounts[0]
+
+            this.entries.push({
+              id: jeId,
+              entry_date: so.date || new Date().toISOString().split("T")[0],
+              source_type: "Sales Invoice",
+              source_id: so.id,
+              created_by: "Sales Operations Manager",
+              currency: "ETB",
+              exchange_rate: 1.0,
+              description: `Sales Order Contract ${so.id} for ${so.customer || "Customer"}`,
+              is_reversal_of: null,
+            })
+
+            if (arAcc && salesAcc) {
+              this.lines.push(
+                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: arAcc.id, debit_amount: totalAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Customer", party_id: so.customerId || "CUST-001", party_name: so.customer || "Customer" },
+                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: salesAcc.id, debit_amount: 0, credit_amount: invAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                { id: `${jeId}-3`, journal_entry_id: jeId, account_id: taxAcc ? taxAcc.id : salesAcc.id, debit_amount: 0, credit_amount: taxAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null }
+              )
+            }
+            hasNewSync = true
+          }
+        })
+
+        // C. Sync Purchase Orders -> Procurement GL Entries
+        purchaseOrders.forEach((po: any, idx: number) => {
+          const jeId = `JE-PO-${po.id || idx + 1}`
+          const poAmt = Number(po.amount || po.total_amount || 20000)
+
+          if (!this.entries.some((e) => e.id === jeId || e.source_id === po.id)) {
+            const stockAcc = this.accounts.find((a) => a.code === "1010" || a.code === "1410" || a.id === "acc-1010") || this.accounts[0]
+            const apAcc = this.accounts.find((a) => a.code === "2000" || a.code === "2100" || a.id === "acc-2000") || this.accounts[0]
+
+            this.entries.push({
+              id: jeId,
+              entry_date: po.date || new Date().toISOString().split("T")[0],
+              source_type: "Purchase Invoice",
+              source_id: po.id,
+              created_by: "Supply Chain Manager",
+              currency: "ETB",
+              exchange_rate: 1.0,
+              description: `Supplier Procurement Accrual PO ${po.id} for ${po.supplier || "Supplier"}`,
+              is_reversal_of: null,
+            })
+
+            if (stockAcc && apAcc) {
+              this.lines.push(
+                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: stockAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: apAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || "SUPP-001", party_name: po.supplier || "Supplier" }
+              )
+            }
+            hasNewSync = true
+          }
+        })
+
+        // D. Sync Expense Claims -> Expenses & GL Entries
+        expenseClaims.forEach((ec: any, idx: number) => {
+          const expId = `EXP-${ec.id || idx + 1}`
+          const jeId = `JE-EXP-${ec.id || idx + 1}`
+          const expAmt = Number(ec.amount || 3500)
+
+          if (!this.expenses.some((e) => e.id === expId)) {
+            this.expenses.push({
+              id: expId,
+              merchant: ec.vendor || ec.merchant || "Vendor Supply",
+              category: ec.category || "Office Expenses",
+              date: ec.date || new Date().toISOString().split("T")[0],
+              employee: ec.employee_name || ec.employee || "Employee",
+              amount: expAmt,
+              currency: "ETB",
+              status: "APPROVED",
+            })
+            hasNewSync = true
+          }
+
+          if (!this.entries.some((e) => e.id === jeId || e.source_id === ec.id)) {
+            const expAcc = this.accounts.find((a) => a.code === "5100" || a.id === "acc-5100") || this.accounts[0]
+            const cashAcc = this.accounts.find((a) => a.code === "1000" || a.id === "acc-1000") || this.accounts[0]
+
+            this.entries.push({
+              id: jeId,
+              entry_date: ec.date || new Date().toISOString().split("T")[0],
+              source_type: "Recurring Expense",
+              source_id: ec.id,
+              created_by: "Finance Manager",
+              currency: "ETB",
+              exchange_rate: 1.0,
+              description: `Employee Expense Claim Disbursement for ${ec.employee_name || ec.employee || "Employee"}`,
+              is_reversal_of: null,
+            })
+
+            if (expAcc && cashAcc) {
+              this.lines.push(
+                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: expAcc.id, debit_amount: expAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: expAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: ec.employee_id || "EMP-001", party_name: ec.employee_name || ec.employee || "Employee" }
+              )
+            }
+            hasNewSync = true
+          }
+        })
+
+        // E. Sync Payroll Records -> Payroll GL Entries
+        payrollRecords.forEach((pr: any, idx: number) => {
+          const jeId = `JE-PAY-${pr.id || idx + 1}`
+          const payAmt = Number(pr.net_salary || pr.net_pay || pr.amount || 18000)
+
+          if (!this.entries.some((e) => e.id === jeId || e.source_id === pr.id)) {
+            const salaryAcc = this.accounts.find((a) => a.code === "5010" || a.id === "acc-5010") || this.accounts[0]
+            const cashAcc = this.accounts.find((a) => a.code === "1000" || a.id === "acc-1000") || this.accounts[0]
+
+            this.entries.push({
+              id: jeId,
+              entry_date: pr.payment_date || new Date().toISOString().split("T")[0],
+              source_type: "Payroll Payment",
+              source_id: pr.id,
+              created_by: "HR & Payroll Manager",
+              currency: "ETB",
+              exchange_rate: 1.0,
+              description: `Salaries & Wages Disbursement for ${pr.employee_name || "Employee"}`,
+              is_reversal_of: null,
+            })
+
+            if (salaryAcc && cashAcc) {
+              this.lines.push(
+                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: salaryAcc.id, debit_amount: payAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || "EMP-001", party_name: pr.employee_name || "Employee" }
+              )
+            }
+            hasNewSync = true
+          }
+        })
+
+        if (hasNewSync) {
+          this.saveToApi().catch((err) => console.error("Failed to auto-persist synced Finance records:", err))
+        }
+      } catch (syncErr) {
+        console.error("Cross-module live finance sync error:", syncErr)
+      }
+
       this._isLoading = false
       this._loadError = null
       this.listeners.forEach((l) => l())
@@ -677,6 +920,10 @@ class FinanceStore {
 
     this.notify()
     return { success: true, entry: newEntry, autoRounded, roundOffAmount }
+  }
+
+  public validateVoucher(lines: any[]) {
+    return validateJournalVoucher(lines)
   }
 
   // --- Reversal Action ---

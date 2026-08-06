@@ -111,8 +111,10 @@ export default function SalesIssued() {
       if (itemFilter !== "ALL") params.set("item_id", itemFilter)
       if (batchFilter !== "ALL") params.set("batch_no", batchFilter)
       const result = await listSalesIssues(params)
-      setRows(result.rows)
-      setTotal(result.total)
+      const safeRows = Array.isArray(result?.rows) ? result.rows : Array.isArray(result) ? result : []
+      const safeTotal = typeof result?.total === "number" ? result.total : safeRows.length
+      setRows(safeRows)
+      setTotal(safeTotal)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sales issued records.")
       setRows([])
