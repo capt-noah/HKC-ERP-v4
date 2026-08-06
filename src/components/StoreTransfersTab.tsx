@@ -12,7 +12,6 @@ import {
   Shield, 
   AlertTriangle, 
   Download, 
-  User, 
   Clock,
   ArrowRight,
   Edit
@@ -20,6 +19,7 @@ import {
 import { GlassCard } from "@/components/GlassCard"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus } from "@/lib/erpStore"
+import { withOperatingWarehouses } from "@/lib/warehouses"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 
@@ -35,45 +35,19 @@ const transferColumns: TableColumn[] = [
   { key: "_actions", label: "Actions", align: "center", noSort: true },
 ]
 
-interface MockUser {
-  name: string
-  role: "Store Manager" | "Warehouse Operator"
-  warehouse: string
-  signature: string
-}
-
-// --- MOCK CONSTANTS ---
-const WAREHOUSES = [
-  "WH1",
-  "WH2",
-  "WH3"
-]
-
-const PRODUCTS_POOL = [
-  { name: "Grade 1 Yirgacheffe Arabica Coffee Beans", sku: "AGR-COF-YRG1", defaultUOM: "bags (60kg)" },
-  { name: "Humera White Sesame Seeds", sku: "AGR-SES-HUM1", defaultUOM: "Metric Tons" },
-  { name: "Oxytetracycline 20% LA Injectable (100ml)", sku: "VET-OXY-20LA", defaultUOM: "vials" },
-  { name: "Amoxicillin Trihydrate 50% Soluble Powder", sku: "VET-AMX-50SP", defaultUOM: "tins (1kg)" },
-  { name: "Newcastle & IB Poultry Vaccine (1000d)", sku: "VET-VAC-NCIB", defaultUOM: "vials" },
-  { name: "Ivermectin 1% Injectable Solution", sku: "VET-IVM-01IN", defaultUOM: "vials" }
-]
-
-const MOCK_USERS: MockUser[] = [
-  { name: "Noah", role: "Store Manager", warehouse: "WH1", signature: "Noah T." },
-  { name: "Sophia", role: "Store Manager", warehouse: "WH2", signature: "Sophia R." },
-  { name: "Liam", role: "Store Manager", warehouse: "WH3", signature: "Liam O." },
-]
-
 export default function StoreTransfersTab() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
 
-  // --- MOCK CONTEXT STATE ---
-  const [currentUser, setCurrentUser] = useState<MockUser>(MOCK_USERS[0]) // Starts as Noah at Cold-Chain A
-  const [currentRole, setCurrentRole] = useState<"Store Manager" | "Warehouse Operator">("Store Manager")
-
   // --- TRANSFERS DATA FROM STORE ---
   const transfers = erp.getTransfers()
+  const products = erp.getProducts()
+  const warehouses = withOperatingWarehouses(erp.getWarehouses())
+  const warehouseOptions = useMemo(() => warehouses.map((warehouse) => warehouse.code || warehouse.id).filter(Boolean), [warehouses])
+  const currentWarehouse = warehouseOptions[0] || ""
+  const currentWarehouseRecord = warehouses.find((warehouse) => (warehouse.code || warehouse.id) === currentWarehouse)
+  const currentOperator = currentWarehouseRecord?.manager || "Store Manager"
+  const currentSignature = currentOperator
 
   // --- LIST FILTER STATE ---
   const [searchQuery, setSearchQuery] = useState("")
@@ -117,30 +91,14 @@ export default function StoreTransfersTab() {
     return formLineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
   }, [formLineItems])
 
-  // --- SWITCH MOCK USER SIMULATION ---
-  const handleUserSwitch = (userIdx: number) => {
-    const user = MOCK_USERS[userIdx]
-    setCurrentUser(user)
-    showToast(
-      "Session Switched",
-      "info",
-      `Now simulating: ${user.name} (${currentRole} at ${user.warehouse})`
-    )
-  }
-
-  const handleRoleSwitch = (role: "Store Manager" | "Warehouse Operator") => {
-    setCurrentRole(role)
-    showToast(
-      "Role Switched",
-      "info",
-      `Simulated access tier changed to: ${role}`
-    )
-  }
-
     // --- START NEW TRANSFER ---
   const handleInitiateNew = () => {
-    if (currentRole !== "Store Manager") {
-      showToast("Access Denied", "warning", "Only Store Managers can initiate new transfers.")
+    if (!currentWarehouse) {
+      showToast("Warehouse required", "warning", "Create a warehouse in Supabase before initiating a transfer.")
+      return
+    }
+    if (warehouseOptions.length < 2) {
+      showToast("Destination required", "warning", "At least two saved warehouses are required for a transfer.")
       return
     }
 
@@ -151,16 +109,15 @@ export default function StoreTransfersTab() {
 
     setFormMode("create")
     setFormRefNum(refNum)
-    setFormFromW(currentUser.warehouse) // Automatically lock From Warehouse to current user's location
+    setFormFromW(currentWarehouse)
     setFormSubmitted(false)
 
     // Find first warehouse that is different
-    const diffW = WAREHOUSES.find(w => w !== currentUser.warehouse) || ""
+    const diffW = warehouseOptions.find(w => w !== currentWarehouse) || ""
     setFormToW(diffW)
 
-    // Initialize with 1 empty line item for custom entry
     setFormLineItems([
-      { line_no: 1, item: "", UOM: "Carton", quantity: 10, remark: "" }
+      { line_no: 1, item: "", UOM: "", quantity: 0, remark: "" }
     ])
 
     setWizardStep(1)
@@ -172,7 +129,7 @@ export default function StoreTransfersTab() {
     const nextLineNo = formLineItems.length + 1
     setFormLineItems(prev => [
       ...prev,
-      { line_no: nextLineNo, item: "", UOM: "Carton", quantity: 1, remark: "" }
+      { line_no: nextLineNo, item: "", UOM: "", quantity: 0, remark: "" }
     ])
   }
 
@@ -235,9 +192,9 @@ export default function StoreTransfersTab() {
       line_items: formLineItems,
       total_quantity: formTotalQuantity,
       date: new Date().toISOString().split("T")[0],
-      issued_by: currentUser.name,
+      issued_by: currentOperator,
       issued_at: todayStr,
-      issued_signature: currentUser.signature
+      issued_signature: currentSignature
     }
 
     const res = erp.addStockTransfer(payload)
@@ -259,7 +216,7 @@ export default function StoreTransfersTab() {
     if (!selectedTransfer) return
 
     if (receiptMode === "match") {
-      erp.updateTransferStatus(selectedTransfer.reference_number, "Received", currentUser.name)
+      erp.updateTransferStatus(selectedTransfer.reference_number, "Received", currentOperator)
       showToast(
         "Shipment Received",
         "success",
@@ -270,7 +227,7 @@ export default function StoreTransfersTab() {
         showToast("Validation Warning", "warning", "Please specify details of the reported discrepancy.")
         return
       }
-      erp.updateTransferStatus(selectedTransfer.reference_number, "Discrepancy", currentUser.name, discrepancyText)
+      erp.updateTransferStatus(selectedTransfer.reference_number, "Discrepancy", currentOperator, discrepancyText)
       showToast(
         "Discrepancy Logged",
         "warning",
@@ -284,7 +241,7 @@ export default function StoreTransfersTab() {
     setDiscrepancyText("")
   }
 
-  // --- MOCK DOCUMENT DOWNLOAD ---
+  // --- DOCUMENT DOWNLOAD ---
   const handleDownloadPDF = (refNum: string) => {
     setIsExporting(true)
     setTimeout(() => {
@@ -325,91 +282,18 @@ export default function StoreTransfersTab() {
 
   return (
     <div className="space-y-6">
-      {/* =========================================================================
-          1. SIMULATION CONTROL BOARD (STRICT REQUIREMENT TO SWITCH USERS/PERSPECTIVES)
-          ========================================================================= */}
-      <GlassCard className="p-5 border border-emerald-500/10 shadow-sm relative overflow-hidden bg-white/40">
-        <div className="absolute right-0 top-0 size-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
+      <GlassCard className="p-5 border border-white/65 shadow-sm bg-white/40">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="inline-block size-2 rounded-full bg-emerald-500 animate-pulse" />
-              <h4 className="text-xs font-black text-zinc-950 uppercase tracking-widest flex items-center gap-1.5">
-                <Shield className="size-3.5 text-emerald-600 shrink-0" /> Simulation Control Board
-              </h4>
-            </div>
-            <p className="text-[11px] font-bold text-zinc-500 max-w-2xl leading-snug">
-              Toggle the mock context to test role-based constraints. 
-              Only <strong className="text-zinc-800">Store Managers</strong> can draft/issue from their warehouse or confirm receipt at destination.
+          <div>
+            <h4 className="text-xs font-black text-zinc-950 uppercase tracking-widest flex items-center gap-1.5">
+              <Shield className="size-3.5 text-emerald-600 shrink-0" /> Transfer Context
+            </h4>
+            <p className="text-[11px] font-bold text-zinc-500 max-w-2xl leading-snug mt-1">
+              Transfers use warehouses and stock items saved in Supabase.
             </p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {/* User Selector */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">Simulated User & Location</span>
-              <div className="flex bg-zinc-100/80 p-1 rounded-full border border-zinc-200/50">
-                {MOCK_USERS.map((user, idx) => {
-                  const isActive = currentUser.name === user.name
-                  return (
-                    <button
-                      key={user.name}
-                      onClick={() => handleUserSwitch(idx)}
-                      className={`px-3 py-1.5 rounded-full text-[10px] font-black tracking-tight transition-all uppercase ${
-                        isActive
-                          ? "bg-zinc-950 text-white shadow-sm"
-                          : "text-zinc-500 hover:text-zinc-800 hover:bg-zinc-200/50"
-                      }`}
-                    >
-                      {user.name} ({user.warehouse.split(" ")[0]})
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Role Toggle */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">Access Clearance</span>
-              <div className="flex bg-zinc-100/80 p-1 rounded-full border border-zinc-200/50">
-                {(["Store Manager", "Warehouse Operator"] as const).map(role => {
-                  const isActive = currentRole === role
-                  return (
-                    <button
-                      key={role}
-                      onClick={() => handleRoleSwitch(role)}
-                      className={`px-3 py-1.5 rounded-full text-[10px] font-black tracking-tight transition-all uppercase ${
-                        isActive
-                          ? "bg-zinc-950 text-white shadow-sm"
-                          : "text-zinc-500 hover:text-zinc-800 hover:bg-zinc-200/50"
-                      }`}
-                    >
-                      {role.split(" ")[1] || role}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Dynamic Context Header Indicator */}
-        <div className="mt-4 pt-3 border-t border-zinc-200/50 flex flex-wrap items-center justify-between gap-2 text-[10px] font-bold text-zinc-600">
-          <div className="flex items-center gap-1.5 bg-zinc-100/80 border border-zinc-200/40 px-3 py-1 rounded-full">
-            <User className="size-3.5 text-zinc-500" />
-            <span>Active Session:</span>
-            <strong className="text-zinc-900 uppercase font-black">{currentUser.name}</strong>
-            <span className="text-zinc-300">|</span>
-            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-1.5 py-0.2 rounded font-black uppercase text-[8px]">
-              {currentRole}
-            </span>
-            <span className="text-zinc-300">|</span>
-            <span>Assigned:</span>
-            <strong className="text-zinc-900 uppercase font-black">{currentUser.warehouse}</strong>
-          </div>
-
-          <div className="text-[10px] text-zinc-400 italic">
-            * Every permission, action card, and button changes dynamically based on this context.
+          <div className="rounded-full border border-zinc-200/60 bg-zinc-100/80 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700">
+            Active warehouse: {currentWarehouse || "No saved warehouse"}
           </div>
         </div>
       </GlassCard>
@@ -449,7 +333,7 @@ export default function StoreTransfersTab() {
             </div>
           }
           actions={
-            currentRole === "Store Manager"
+            currentWarehouse && warehouseOptions.length > 1
               ? [
                   {
                     label: "New Entry",
@@ -496,9 +380,9 @@ export default function StoreTransfersTab() {
                       "bg-zinc-100 text-zinc-700 border-zinc-200"
 
                     // Check if current user has permission to process the incoming transfer
-                    const isIncomingForMe = transfer.to_warehouse === currentUser.warehouse
-                    const canProcessReceipt = isIssued && isIncomingForMe && currentRole === "Store Manager"
-                    const canEdit = (isIssued || isDiscrepancy) && transfer.from_warehouse === currentUser.warehouse && currentRole === "Store Manager"
+                    const isIncomingForMe = transfer.to_warehouse === currentWarehouse
+                    const canProcessReceipt = isIssued && isIncomingForMe
+                    const canEdit = (isIssued || isDiscrepancy) && transfer.from_warehouse === currentWarehouse
 
                     return (
                       <tr
@@ -686,7 +570,7 @@ export default function StoreTransfersTab() {
                           onChange={e => setFormToW(e.target.value)}
                           className="w-full bg-white border border-zinc-200 px-3 py-2 rounded-xl text-xs font-black outline-none cursor-pointer focus:border-zinc-950"
                         >
-                          {WAREHOUSES.filter(w => w !== formFromW).map(w => (
+                          {warehouseOptions.filter(w => w !== formFromW).map(w => (
                             <option key={w} value={w}>{w}</option>
                           ))}
                         </select>
@@ -732,8 +616,8 @@ export default function StoreTransfersTab() {
                                 />
                               </div>
                               <datalist id="products-suggestions">
-                                {PRODUCTS_POOL.map(p => (
-                                  <option key={p.name} value={p.name} />
+                                {products.map(p => (
+                                  <option key={p.id} value={p.name} />
                                 ))}
                               </datalist>
                             </div>
@@ -746,7 +630,7 @@ export default function StoreTransfersTab() {
                                 onChange={e => handleUpdateLineItem(idx, "UOM", e.target.value)}
                                 className="w-full bg-transparent border-0 text-[11px] font-bold text-zinc-600 outline-none p-0 cursor-pointer"
                               >
-                                {["Carton", "kg", "L", "Pack"].map(u => (
+                                {Array.from(new Set(products.map((product) => product.unit).filter(Boolean))).map(u => (
                                   <option key={u} value={u}>{u}</option>
                                 ))}
                               </select>
@@ -876,15 +760,15 @@ export default function StoreTransfersTab() {
                       <div className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
                         <div className="space-y-0.5">
                           <span className="text-[8px] font-black text-zinc-400 uppercase">Authorized Dispatcher</span>
-                          <h5 className="text-xs font-black text-zinc-800">{currentUser.name}</h5>
-                          <span className="text-[8px] font-bold text-zinc-400 uppercase block">{currentRole}</span>
+                          <h5 className="text-xs font-black text-zinc-800">{currentOperator}</h5>
+                          <span className="text-[8px] font-bold text-zinc-400 uppercase block">{currentWarehouse || "No warehouse"}</span>
                         </div>
 
                         {/* Script signature style */}
                         <div className="border-l border-zinc-150 pl-6 pr-4 py-1 text-center">
                           <span className="text-[8px] font-black text-zinc-400 uppercase block mb-1">Pre-registered Digital Sig</span>
                           <span className="font-serif italic text-2xl tracking-widest text-zinc-800 font-extrabold select-none">
-                            {currentUser.signature}
+                            {currentSignature}
                           </span>
                         </div>
                       </div>
@@ -1112,14 +996,13 @@ export default function StoreTransfersTab() {
                         {selectedTransfer.issued_by ? (
                           <div className="space-y-1">
                             <div className="flex items-center gap-1">
-                              <User className="size-3 text-zinc-400" />
+                              <Shield className="size-3 text-zinc-400" />
                               <span className="text-zinc-950 font-extrabold">{selectedTransfer.issued_by}</span>
                             </div>
                             <div className="flex items-center gap-1 text-[9px] text-zinc-400 font-mono">
                               <Clock className="size-3" />
                               <span>{selectedTransfer.issued_at}</span>
                             </div>
-                            {/* Simulated Handwritten Sig */}
                             <div className="mt-3.5 border-t border-dashed border-zinc-200 pt-2 flex items-center justify-between">
                               <span className="text-[8px] text-zinc-400 uppercase">Seal-Signature</span>
                               <span className="font-serif italic text-base font-extrabold tracking-widest text-blue-800 pr-2 select-none">
@@ -1142,14 +1025,13 @@ export default function StoreTransfersTab() {
                         {selectedTransfer.received_by ? (
                           <div className="space-y-1">
                             <div className="flex items-center gap-1">
-                              <User className="size-3 text-zinc-400" />
+                              <Shield className="size-3 text-zinc-400" />
                               <span className="text-zinc-950 font-extrabold">{selectedTransfer.received_by}</span>
                             </div>
                             <div className="flex items-center gap-1 text-[9px] text-zinc-400 font-mono">
                               <Clock className="size-3" />
                               <span>{selectedTransfer.received_at}</span>
                             </div>
-                            {/* Simulated Handwritten Sig */}
                             <div className="mt-3.5 border-t border-dashed border-zinc-200 pt-2 flex items-center justify-between">
                               <span className="text-[8px] text-zinc-400 uppercase">Seal-Signature</span>
                               <span className="font-serif italic text-base font-extrabold tracking-widest text-blue-800 pr-2 select-none">
@@ -1178,7 +1060,6 @@ export default function StoreTransfersTab() {
                 </button>
 
                 <div className="flex items-center gap-2">
-                  {/* Export PDF mock button */}
                   <button
                     onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
                     disabled={isExporting}
@@ -1190,8 +1071,7 @@ export default function StoreTransfersTab() {
 
                   {/* Edit Transfer action from document view */}
                   {((selectedTransfer.status === "Issued" || selectedTransfer.status === "Discrepancy") &&
-                    selectedTransfer.from_warehouse === currentUser.warehouse &&
-                    currentRole === "Store Manager") && (
+                    selectedTransfer.from_warehouse === currentWarehouse) && (
                     <button
                       onClick={() => {
                         const tr = selectedTransfer
@@ -1213,7 +1093,7 @@ export default function StoreTransfersTab() {
                   )}
 
                   {/* Confirm Receipt Action inside document (SCREEN 4) */}
-                  {selectedTransfer.status === "Issued" && selectedTransfer.to_warehouse === currentUser.warehouse && currentRole === "Store Manager" && (
+                  {selectedTransfer.status === "Issued" && selectedTransfer.to_warehouse === currentWarehouse && (
                     <button
                       onClick={() => {
                         setReceiptMode("match")
@@ -1271,10 +1151,10 @@ export default function StoreTransfersTab() {
 
               {/* Sub-header Context Banner */}
               <div className="bg-zinc-100 border border-zinc-200 rounded-xl p-3 mb-4 text-[10px] font-bold text-zinc-600 leading-snug flex items-center gap-2">
-                <User className="size-4 text-zinc-500" />
+                <Shield className="size-4 text-zinc-500" />
                 <div>
-                  Receiving Manager: <strong className="text-zinc-800">{currentUser.name}</strong> 
-                  <span className="text-zinc-400 px-1">|</span> Facility: <strong className="text-zinc-800">{currentUser.warehouse}</strong>
+                  Receiving Manager: <strong className="text-zinc-800">{currentOperator}</strong>
+                  <span className="text-zinc-400 px-1">|</span> Facility: <strong className="text-zinc-800">{currentWarehouse || "No saved warehouse"}</strong>
                 </div>
               </div>
 
@@ -1346,7 +1226,7 @@ export default function StoreTransfersTab() {
                 {/* Terms Disclaimer */}
                 <div className="text-[9px] text-zinc-400 leading-normal font-bold pt-1">
                   * Submission of this audit will automatically register your digital signature 
-                  <strong className="text-zinc-600"> "{currentUser.signature}"</strong> and timestamp on the Transfer Document.
+                  <strong className="text-zinc-600"> "{currentSignature}"</strong> and timestamp on the Transfer Document.
                 </div>
               </div>
 

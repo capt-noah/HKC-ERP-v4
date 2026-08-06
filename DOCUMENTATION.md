@@ -100,28 +100,52 @@ Navigation labels and child routes are defined in `src/lib/nav-config.ts`. All r
 
 **Stack:** React 19, TypeScript, Vite, React Router 7, Tailwind CSS v4, Framer Motion, Recharts, shadcn/ui primitives.
 
-**Current persistence model:** Frontend-first with a prototype backend. Business logic and state still live in TypeScript stores seeded from JSON files in `/data/`, while the initial Node/Supabase backend lives in `/server/` and exposes REST-style resource routes for the documented ERP modules.
+**Current persistence model:** All business modules hydrate from Supabase through the Node API. The browser must not seed Finance, Sales, Inventory, HR, or Admin records from local JSON files. Dashboards may show skeletons and empty states, but they must not invent records, balances, overdue amounts, warehouses, users, notifications, products, invoices, or payroll rows.
+
+### Non-Negotiable Data Rules for Future Work
+
+These rules exist to prevent fake data from reappearing in production screens:
+
+1. **Do not add business seed JSON back into `data/`.** The old JSON records were removed intentionally. If a page needs data, load it through `/api/:resource` and let Supabase be the source of truth.
+2. **Do not hardcode fallback records in React components or stores.** Empty Supabase tables must render empty states, not placeholder customers, invoices, HR employees, warehouses, stock items, or admin users.
+3. **Do not add default Supabase project credentials in code or docs.** Configure `SUPABASE_REST_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` through `.env` only. Never commit service-role keys, database passwords, or generated credential notes.
+4. **Do not bypass the Node API from the browser for privileged writes.** The browser calls local app routes like `/api/invoices`; the Node server owns Supabase REST calls and keeps service-role credentials server-side.
+5. **Finance screens are derived screens.** Cash position, reports, unpaid invoices, invoice timelines, banking, and GL views must derive from persisted invoices, payments, accounts, and journal-entry lines.
+6. **When a persistence write fails, do not keep optimistic fake state.** Reload from Supabase or show a safe error state.
+
+### Cross-Module Posting Rules
+
+The modules are connected through persisted Supabase records and backend posting workflows:
+
+- **Sales Issued → Inventory + Finance:** `POST /api/sales-issues/:id/post` calls the Supabase `hkc_post_sales_issue` RPC. It validates released, unexpired batches; deducts warehouse and batch stock; writes stock movement records; posts balanced Finance journal entries for sales revenue and COGS; and syncs a Finance invoice for the posted sales issue.
+- **Sales Issue batch selection:** Warehouse IDs are canonical. UI dropdowns must store and send warehouse `id` values such as `WH1`, not display codes such as `WH1-AGRI-EXP`, because inventory `stockBreakdown` and batch availability are keyed by warehouse ID.
+- **Payroll → Finance:** `POST /api/payroll-records/:id/pay` calls `hkc_pay_payroll_record`. Only approved payroll records can be paid. The RPC updates payroll status and posts the salary payment journal voucher atomically.
+- **Inventory adjustments/transfers/receipts → Finance:** Inventory actions in `useErpStore()` post GL vouchers through `financeStore.postJournalEntry()` only when real persisted stock/product data exists.
+- **Finance refresh after module posting:** Sales and payroll screens should reload Finance data after posting so ledger, invoices, and reports reflect the new persisted entries immediately.
 
 | Store / Context | Path | Scope |
 | :--- | :--- | :--- |
 | `useFinanceStore()` | `src/lib/financeStore.ts` | Finance module — COA, journal entries, invoices, payments, expenses, fixed assets, tax rules, accounting periods, forex revaluation |
 | `useErpStore()` | `src/lib/erpStore.ts` | Sales & Inventory module — products, multi-warehouse tracking, stock movements audit log, inter-warehouse transfers, sales orders, purchase orders with GL accruals, customers, suppliers |
 | `useFeedback()` | `src/context/FeedbackContext.tsx` | Global toasts and confirmation dialogs (wraps the app in `main.tsx`) |
-| Static HR seed | `src/lib/hrData.ts` | HR dashboard and employee roster mock data |
 
-### Supabase Testing Configuration
+### Supabase Configuration
 
-The current testing Supabase project is wired through the prototype backend in `/server/`.
+The current Supabase project must be configured through environment variables. The application no longer ships with a default/demo Supabase project or local business-data JSON fallbacks.
 
 | Setting | Value |
 | :--- | :--- |
-| Supabase REST URL | `https://hutzzxwkzfnwiafnnwpl.supabase.co/rest/v1/` |
-| Supabase Project Ref | `hutzzxwkzfnwiafnnwpl` |
-| Supabase Publishable Key | `sb_publishable_qQtl8eY08iX_MSOfWQXXcQ_97nZYK-N` |
+| Supabase REST URL | `SUPABASE_REST_URL` |
+| Supabase Publishable Key | `SUPABASE_PUBLISHABLE_KEY` |
+| Supabase Service Role Key | `SUPABASE_SERVICE_ROLE_KEY` |
 | Backend route registry | `/api` |
 | Backend health check | `/health` |
 
-**Security note:** This is a publishable client key for testing and low-privilege Data API access. Do not place Supabase service-role keys, database passwords, or any other secret credentials in this documentation.
+**Security note:** Do not place Supabase service-role keys, database passwords, or any other secret credentials in this documentation.
+
+**Local development startup:** run `npm run server` for the Node API and `npm run dev` for Vite. The expected local URLs are `http://127.0.0.1:8787` for the API and `http://localhost:3000/` for the app.
+
+**Required validation before pushing changes:** run `npm run build`, `npm test`, and `git diff --check`. If a change touches Supabase posting logic, also test the relevant local API endpoint against the configured Supabase project.
 
 **Design intent:** Module workflows and GL posting rules are modeled after ERPNext concepts (double-entry vouchers, COA hierarchy, AR/AP aging, etc.) but implemented as original code — not a fork or copy of ERPNext — so the system can be licensed and sold as a standalone product.
 
@@ -205,7 +229,7 @@ This section details the functional purpose, database/state contents, and specif
   - **Treasury KPIs:** Overdue AR Amount, Due This Month (open receivable balance), Cash Position (derived from GL cash account lines).
   - **Invoice Due Dates Timeline:** Horizontally scrollable cards for every non-void invoice sorted by due date, color-coded by status (Overdue, Paid, Open).
   - **Unpaid Invoices List:** Sidebar of outstanding customer balances with quick link to `/finance/invoices`.
-  - **Cash Flow Trends Chart:** Monthly Revenue vs Expenses area chart (Recharts); trend series is static demo data, KPI figures are store-derived.
+  - **Cash Flow Trends Chart:** Monthly Revenue vs Expenses area chart (Recharts), calculated from posted GL account lines.
 - **How it is Showed (Visualizations):**
   - **JetBrains Mono KPI Cards:** Three top-row glass cards for overdue, due-this-month, and cash position figures in ETB.
   - **Timeline Strip & Area Chart:** Invoice due-date pills plus revenue/expense dual-area chart with export button in header.
@@ -327,7 +351,7 @@ This section details the functional purpose, database/state contents, and specif
 #### 3. Payroll Disbursement (`/hr/payroll`)
 - **Functional Purpose:** Manages monthly salary dispersals, tax withholdings, allowances, and payment states.
 - **Contents (Data & States):**
-  - Employee list showing base salary, allowance numbers, tax deductions, and payment state (Paid vs. Pending).
+  - Employee list showing base salary, allowance numbers, tax deductions, and payment state (Paid vs. Pending). Marking an approved record Paid invokes an idempotent Supabase transaction that creates the salary expense/cash payment voucher and updates Finance immediately.
 - **How it is Showed (Visualizations):**
   - **Bulk Disburse Controller:** Features a prominent **Process Bulk Payroll button** that triggers state updates with quick confirmation notifications.
 

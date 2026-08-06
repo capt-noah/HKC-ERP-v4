@@ -20,96 +20,7 @@ export interface UserAccount {
   initials: string
 }
 
-const initialUsers: UserAccount[] = [
-  {
-    id: "USR-001",
-    name: "Sophia Chen",
-    email: "sophia@hkctrading.erp",
-    department: "HR",
-    role: "HR Manager",
-    lastLogin: "Active Now",
-    status: "Active",
-    avatarBg: "bg-pink-100 text-pink-700 border border-pink-200",
-    initials: "SC"
-  },
-  {
-    id: "USR-002",
-    name: "Amanda Smith",
-    email: "amanda@hkctrading.erp",
-    department: "Finance",
-    role: "Finance Auditor",
-    lastLogin: "5 mins ago",
-    status: "Active",
-    avatarBg: "bg-purple-100 text-purple-700 border border-purple-200",
-    initials: "AS"
-  },
-  {
-    id: "USR-003",
-    name: "Yulia Pavlova",
-    email: "yulia@hkctrading.erp",
-    department: "Tech",
-    role: "Admin",
-    lastLogin: "10 mins ago",
-    status: "Active",
-    avatarBg: "bg-green-100 text-green-700 border border-green-200",
-    initials: "YP"
-  },
-  {
-    id: "USR-004",
-    name: "David Kassa",
-    email: "david@hkctrading.erp",
-    department: "Executive",
-    role: "Admin",
-    lastLogin: "Active Now",
-    status: "Active",
-    avatarBg: "bg-emerald-100 text-emerald-700 border border-emerald-200",
-    initials: "DK"
-  },
-  {
-    id: "USR-005",
-    name: "Bogdan Novak",
-    email: "bogdan@hkctrading.erp",
-    department: "Product",
-    role: "Staff",
-    lastLogin: "1 day ago",
-    status: "Active",
-    avatarBg: "bg-sky-100 text-sky-700 border border-sky-200",
-    initials: "BN"
-  },
-  {
-    id: "USR-006",
-    name: "Charles Dubois",
-    email: "charles@hkctrading.erp",
-    department: "Design",
-    role: "Staff",
-    lastLogin: "3 days ago",
-    status: "Suspended",
-    avatarBg: "bg-rose-100 text-rose-700 border border-rose-200",
-    initials: "CD"
-  },
-  {
-    id: "USR-007",
-    name: "Selamawit Alene",
-    email: "selamawit@hkctrading.erp",
-    department: "Tech",
-    role: "Staff",
-    lastLogin: "3 hours ago",
-    status: "Active",
-    avatarBg: "bg-blue-100 text-blue-700 border border-blue-200",
-    initials: "SA"
-  },
-  {
-    id: "USR-008",
-    name: "Bereket Tesfaye",
-    email: "bereket@hkctrading.erp",
-    department: "Finance",
-    role: "Staff",
-    lastLogin: "Pending Invitation",
-    status: "Invited",
-    avatarBg: "bg-indigo-100 text-indigo-700 border border-indigo-200",
-    initials: "BT"
-  }
-]
+const initialUsers: UserAccount[] = []
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 
@@ -409,9 +320,9 @@ export default function UserManagement() {
                                 onClick={() => handleToggleStatus(user.id)}
                                 className={cn(
                                   "p-1.5 rounded-lg transition-all active:scale-90",
-                                  user.status === "Active" 
-                                    ? "hover:bg-zinc-100 text-gray-400 hover:text-zinc-900" 
-                                    : "hover:bg-emerald-50 text-gray-400 hover:text-emerald-600"
+                                  user.status === "Active"
+                                    ? "hover:bg-zinc-100 text-zinc-600 hover:text-zinc-900"
+                                    : "hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800"
                                 )}
                                 title={user.status === "Active" ? "Suspend Account" : "Activate Account"}
                               >
@@ -420,7 +331,7 @@ export default function UserManagement() {
                             )}
                             <button
                               onClick={() => handleDeleteUser(user.id)}
-                              className="p-1.5 hover:bg-red-50 hover:text-red-600 rounded-lg text-gray-400 transition-all active:scale-90"
+                              className="p-1.5 hover:bg-red-50 rounded-lg text-red-700 transition-all active:scale-90"
                               title="Delete Account"
                             >
                               <Trash2 className="size-4" />

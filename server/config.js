@@ -1,6 +1,3 @@
-const DEFAULT_SUPABASE_REST_URL = "https://hutzzxwkzfnwiafnnwpl.supabase.co/rest/v1/"
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_qQtl8eY08iX_MSOfWQXXcQ_97nZYK-N"
-
 try {
   process.loadEnvFile?.()
 } catch {
@@ -8,7 +5,7 @@ try {
 }
 
 function normalizeRestUrl(value) {
-  const url = value || DEFAULT_SUPABASE_REST_URL
+  const url = value || ""
   return url.endsWith("/") ? url : `${url}/`
 }
 
@@ -18,8 +15,7 @@ export const config = {
   // process. Override to 127.0.0.1 locally if you prefer.
   host: process.env.SERVER_HOST || "0.0.0.0",
   supabaseRestUrl: normalizeRestUrl(process.env.SUPABASE_REST_URL),
-  supabasePublishableKey:
-    process.env.SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+  supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
 }
 

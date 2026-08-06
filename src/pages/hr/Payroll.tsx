@@ -7,6 +7,7 @@ import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
 import { useFeedback } from "@/context/FeedbackContext"
+import { financeStore } from "@/lib/financeStore"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { PAYMENT_STATUSES, PAYROLL_PERIOD_STATUSES, calculatePayroll, hrApi, loadHRData, makeId, money, type Employee, type PayrollPeriod, type PayrollRecord } from "@/lib/hrApi"
 
@@ -199,6 +200,17 @@ export default function Payroll() {
       return showToast("Payroll Locked", "warning", "Paid payroll records cannot be cancelled.")
     }
     if (nextStatus === record.payment_status) return
+    if (nextStatus === "Paid") {
+      try {
+        await hrApi.payPayrollRecord(record.id)
+        showToast("Payroll Paid", "success", "Salary payment and its balanced Finance journal entry were posted.")
+        await financeStore.reloadFromApi()
+        await refresh()
+      } catch (err) {
+        showToast("Payroll Payment Failed", "warning", err instanceof Error ? err.message : "Could not post payroll payment.")
+      }
+      return
+    }
     await updateRecord(record, { payment_status: nextStatus })
   }
 

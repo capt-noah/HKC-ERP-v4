@@ -137,8 +137,74 @@ function normalizeIssueBody(body) {
   }
 }
 
+function totalsFromItems(items) {
+  return (Array.isArray(items) ? items : []).reduce(
+    (totals, item) => ({
+      quantity: totals.quantity + Number(item.quantity || 0),
+      amount: totals.amount + Number(item.amount || calculateAmount(item.quantity, item.unit_price) || 0),
+    }),
+    { quantity: 0, amount: 0 }
+  )
+}
+
+async function loadSalesIssueWithItems(id) {
+  const issue = await request(`sales_issues?id=eq.${encodeURIComponent(id)}&select=*`)
+  const items = await request(`sales_issue_items?sales_issue_id=eq.${encodeURIComponent(id)}&select=*`)
+  if (!issue?.[0]) return null
+  const enrichedItems = await enrichItemsWithInventory(items)
+  const totals = totalsFromItems(enrichedItems)
+  return {
+    ...issue[0],
+    total_quantity: totals.quantity,
+    total_amount: totals.amount,
+    items: enrichedItems,
+  }
+}
+
+async function upsertFinanceInvoiceForSalesIssue(issue) {
+  if (!issue || issue.status !== "Posted") return
+  const invoiceId = `INV-SALE-${issue.id}`
+  const invoiceNumber = issue.fs_no || issue.reference_no || invoiceId
+  const issueDate = issue.sale_date || new Date().toISOString().slice(0, 10)
+  const dueDate = issue.payment_type === "Credit"
+    ? new Date(Date.parse(issueDate) + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    : issueDate
+  const total = Number(issue.total_amount || 0)
+  const payload = {
+    id: invoiceId,
+    invoice_number: invoiceNumber,
+    customer_name: issue.customer_name,
+    issue_date: issueDate,
+    due_date: dueDate,
+    currency: "ETB",
+    line_items: (issue.items || []).map((item) => ({
+      description: `${item.item_name || item.item_id}${item.batch_no ? ` / Batch ${item.batch_no}` : ""}`,
+      quantity: Number(item.quantity || 0),
+      unit_price: Number(item.unit_price || 0),
+      line_total: Number(item.amount || calculateAmount(item.quantity, item.unit_price) || 0),
+    })),
+    subtotal: total,
+    tax_amount: 0,
+    discount_amount: 0,
+    payment_terms: issue.payment_type === "Credit" ? "Net 30" : "Cash",
+    total,
+    amount_paid: issue.payment_type === "Cash" ? total : 0,
+    balance_due: issue.payment_type === "Cash" ? 0 : total,
+    status: issue.payment_type === "Cash" ? "Paid" : "Sent",
+    source_type: "Sales Issue",
+    source_id: issue.id,
+  }
+
+  const existing = await request(`invoices?id=eq.${encodeURIComponent(invoiceId)}&select=id`)
+  if (existing?.[0]) {
+    await request(`invoices?id=eq.${encodeURIComponent(invoiceId)}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ payload }) })
+  } else {
+    await request("invoices", { method: "POST", prefer: "return=minimal", body: JSON.stringify({ id: invoiceId, payload }) })
+  }
+}
+
 // ── Route handlers ────────────────────────────────────────────────────────────
-// All functions now receive plain data (query object, body object, id string)
+// All functions receive plain data (query object, body object, id string)
 // instead of the raw Node IncomingMessage — Express handles parsing upstream.
 
 export async function listSalesIssues(query = {}) {
@@ -196,26 +262,17 @@ export async function listSalesIssues(query = {}) {
   const total = rows.length
   const paged = []
   for (const row of rows.slice((page - 1) * pageSize, page * pageSize)) {
-    paged.push({
-      ...row,
-      items: await enrichItemsWithInventory(itemsByIssue.get(row.id) || []),
-    })
+    const items = await enrichItemsWithInventory(itemsByIssue.get(row.id) || [])
+    const totals = totalsFromItems(items)
+    paged.push({ ...row, total_quantity: totals.quantity, total_amount: totals.amount, items })
   }
 
   return jsonResult(200, { rows: paged, total, page, pageSize })
 }
 
 export async function getSalesIssue(id) {
-  const issue = await request(`sales_issues?id=eq.${encodeURIComponent(id)}&select=*`)
-  const items = await request(
-    `sales_issue_items?sales_issue_id=eq.${encodeURIComponent(id)}&select=*`,
-  )
-  return jsonResult(
-    issue?.[0] ? 200 : 404,
-    issue?.[0]
-      ? { ...issue[0], items: await enrichItemsWithInventory(items) }
-      : { error: "Sales issue not found." },
-  )
+  const issue = await loadSalesIssueWithItems(id)
+  return jsonResult(issue ? 200 : 404, issue || { error: "Sales issue not found." })
 }
 
 export async function createSalesIssue(body = {}) {
@@ -298,6 +355,7 @@ export async function postSalesIssue(body = {}, id) {
       ...(body?.posted_by ? { p_posted_by: body.posted_by } : {}),
     }),
   })
+  await upsertFinanceInvoiceForSalesIssue(await loadSalesIssueWithItems(id))
   return jsonResult(200, result)
 }
 

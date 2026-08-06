@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { Bell, Settings, User, Check, Sparkles, Inbox, Calendar, ClipboardCheck } from "lucide-react"
+import { Bell, Settings, User, Check, Inbox } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 
@@ -33,35 +33,7 @@ export function FloatingNav({
   const location = useLocation()
   const isDark = variant === "dark"
   const [showNotifications, setShowNotifications] = useState(false)
-  const [notifications, setNotifications] = useState([
-    {
-      id: "nt-1",
-      title: "Sales Order Approved",
-      desc: "Order #SO-1038 was successfully confirmed.",
-      time: "10m ago",
-      type: "success",
-      icon: ClipboardCheck,
-      unread: true,
-    },
-    {
-      id: "nt-2",
-      title: "New Employee Onboarded",
-      desc: "Sophia Chen was added to the HR database.",
-      time: "1h ago",
-      type: "info",
-      icon: Sparkles,
-      unread: true,
-    },
-    {
-      id: "nt-3",
-      title: "System Update Scheduled",
-      desc: "Weekly database backup starts at 02:00 UTC.",
-      time: "4h ago",
-      type: "calendar",
-      icon: Calendar,
-      unread: false,
-    },
-  ])
+  const [notifications, setNotifications] = useState<Array<{ id: string; title: string; desc: string; time: string; type: string; icon?: typeof Inbox; unread: boolean }>>([])
 
   const unreadCount = notifications.filter((n) => n.unread).length
 
@@ -240,7 +212,7 @@ export function FloatingNav({
                         <div className="flex flex-col gap-2 max-h-[290px] overflow-y-auto pr-0.5">
                           {notifications.length > 0 ? (
                             notifications.map((n) => {
-                              const IconComp = n.icon
+                              const IconComp = n.icon ?? Inbox
                               return (
                                 <div
                                   key={n.id}

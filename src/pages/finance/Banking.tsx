@@ -4,7 +4,6 @@ import {
   Landmark,
   ArrowRightLeft,
   CheckCircle2,
-  Download
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -29,26 +28,31 @@ interface BankStatementLine {
   clearedDate?: string
 }
 
-const initialBankLines: BankStatementLine[] = [
-  { id: "ST-001", date: "2026-07-18", reference: "DEP-9082", payee: "Stark Medical Supplies", type: "Deposit", amount: 32500, isCleared: true, clearedDate: "2026-07-19" },
-  { id: "ST-002", date: "2026-07-19", reference: "CHK-4412", payee: "Ethio Chemicals Corp", type: "Withdrawal", amount: 45000, isCleared: true, clearedDate: "2026-07-19" },
-  { id: "ST-003", date: "2026-07-20", reference: "TRF-8821", payee: "Apex Healthcare Ltd", type: "Deposit", amount: 12000, isCleared: false },
-  { id: "ST-004", date: "2026-07-21", reference: "WTH-1029", payee: "Office Rent - Commercial Tower", type: "Withdrawal", amount: 25000, isCleared: false },
-  { id: "ST-005", date: "2026-07-22", reference: "DEP-3310", payee: "Lifeline Clinics", type: "Deposit", amount: 18350, isCleared: false },
-]
-
 export default function Banking() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
 
   const [activeTab, setActiveTab] = useState<"BankRecon" | "Reconciliation">("BankRecon")
-  const [bankLines, setBankLines] = useState<BankStatementLine[]>(initialBankLines)
+  const [clearedLineIds, setClearedLineIds] = useState<Set<string>>(new Set())
   const [bankSearch, setBankSearch] = useState("")
   const [bankStatusFilter, setBankStatusFilter] = useState("ALL")
   const [bankTypeFilter, setBankTypeFilter] = useState("ALL")
   const [allocSearch, setAllocSearch] = useState("")
 
   const invoices = store.getInvoices()
+  const accounts = store.getAccounts()
+  const entries = store.getJournalEntries()
+  const lines = store.getJournalEntryLines()
+  const accountById = new Map(accounts.map((account) => [account.id, account]))
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]))
+  const bankLines: BankStatementLine[] = lines.flatMap((line) => {
+    const account = accountById.get(line.account_id)
+    const entry = entryById.get(line.journal_entry_id)
+    if (!account || !entry || account.account_type !== "Asset" || !/cash|bank/i.test(account.name)) return []
+    const amount = line.debit_amount || line.credit_amount
+    if (!amount) return []
+    return [{ id: line.id, date: entry.entry_date, reference: entry.source_id || entry.id, payee: line.party_name || entry.description, type: line.debit_amount > 0 ? "Deposit" : "Withdrawal", amount, isCleared: clearedLineIds.has(line.id), clearedDate: clearedLineIds.has(line.id) ? new Date().toISOString().slice(0, 10) : undefined }]
+  })
 
   const filteredBankLines = bankLines.filter((line) => {
     if (bankStatusFilter === "CLEARED" && !line.isCleared) return false
@@ -86,27 +90,12 @@ export default function Banking() {
   const { colWidths, sortKey, sortDir, openMenuCol, handleResizeStart, toggleMenu, setSortAsc, setSortDesc, clearSort, sorted } = useResizableTable(columns, filteredBankLines)
 
   const handleClearBankLine = (id: string) => {
-    setBankLines((prev) =>
-      prev.map((b) =>
-        b.id === id ? { ...b, isCleared: true, clearedDate: new Date().toISOString().slice(0, 10) } : b
-      )
-    )
+    setClearedLineIds((previous) => new Set(previous).add(id))
     showToast("Transaction Cleared", "success", "Bank statement line successfully matched and cleared against general ledger.")
   }
 
-  const handleUploadBankStatement = () => {
-    const newSt: BankStatementLine = {
-      id: `ST-${String(bankLines.length + 1).padStart(3, "0")}`,
-      date: new Date().toISOString().slice(0, 10),
-      reference: `TRF-${Math.floor(1000 + Math.random() * 9000)}`,
-      payee: "Incoming Wire Transfer",
-      type: "Deposit",
-      amount: 28000,
-      isCleared: false,
-    }
-    setBankLines([newSt, ...bankLines])
-    showToast("Bank Statement Uploaded", "info", "Parsed 1 new transaction from imported bank statement file.")
-  }
+  const cashBalance = bankLines.reduce((total, line) => total + (line.type === "Deposit" ? line.amount : -line.amount), 0)
+  const clearedBalance = bankLines.filter((line) => line.isCleared).reduce((total, line) => total + (line.type === "Deposit" ? line.amount : -line.amount), 0)
 
   return (
     <div className="min-h-screen page-gradient text-black">
@@ -177,15 +166,15 @@ export default function Banking() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <GlassCard className="p-4">
                   <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">GL Cash Ledger Balance</div>
-                  <div className="text-xl font-black text-zinc-900 font-mono mt-1">ETB 1,452,800.00</div>
+                  <div className="text-xl font-black text-zinc-900 font-mono mt-1">ETB {cashBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                 </GlassCard>
                 <GlassCard className="p-4">
                   <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">Statement Cleared Balance</div>
-                  <div className="text-xl font-black text-emerald-600 font-mono mt-1">ETB 1,440,350.00</div>
+                  <div className="text-xl font-black text-emerald-600 font-mono mt-1">ETB {clearedBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                 </GlassCard>
                 <GlassCard className="p-4">
                   <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">Uncleared Difference</div>
-                  <div className="text-xl font-black text-amber-600 font-mono mt-1">ETB 12,450.00</div>
+                  <div className="text-xl font-black text-amber-600 font-mono mt-1">ETB {(cashBalance - clearedBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                 </GlassCard>
               </div>
 
@@ -217,13 +206,6 @@ export default function Banking() {
                         { value: "Deposit", label: "Deposits" },
                         { value: "Withdrawal", label: "Withdrawals" },
                       ],
-                    },
-                  ]}
-                  actions={[
-                    {
-                      label: "Upload Bank Statement",
-                      onClick: handleUploadBankStatement,
-                      icon: <Download className="size-4" />,
                     },
                   ]}
                 />
@@ -325,13 +307,7 @@ export default function Banking() {
                 <GlassCard className="p-4 flex flex-col gap-3">
                   <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">Unallocated Receipts</h4>
                   <div className="flex flex-col gap-2 text-xs">
-                    <div className="p-3 bg-zinc-50/80 rounded-xl border border-zinc-200/60 flex justify-between items-center">
-                      <div>
-                        <div className="font-bold text-zinc-900">PAY-2026-092 | Stark Medical</div>
-                        <div className="text-[10px] text-zinc-400">Received 2026-07-20 via Wire Transfer</div>
-                      </div>
-                      <span className="font-mono font-bold text-emerald-700">ETB 32,500.00</span>
-                    </div>
+                    {store.getPayments().filter((payment) => payment.direction === "Received" && !payment.linked_invoice_id).length === 0 ? <p className="py-4 text-center text-zinc-400">No unallocated receipts.</p> : store.getPayments().filter((payment) => payment.direction === "Received" && !payment.linked_invoice_id).map((payment) => <div key={payment.id} className="p-3 bg-zinc-50/80 rounded-xl border border-zinc-200/60 flex justify-between items-center"><div><div className="font-bold text-zinc-900">{payment.reference}</div><div className="text-[10px] text-zinc-400">Received {payment.date} via {payment.method}</div></div><span className="font-mono font-bold text-emerald-700">ETB {payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>)}
                   </div>
                 </GlassCard>
 

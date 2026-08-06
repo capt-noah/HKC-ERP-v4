@@ -51,34 +51,6 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
-// ERPNext Aligned Trend Data for Profit & Loss Charting
-const plMonthlyTrendData = [
-  { month: "Jan 2026", revenue: 380000, cogs: 175000, expenses: 105000, netProfit: 100000 },
-  { month: "Feb 2026", revenue: 410000, cogs: 190000, expenses: 110000, netProfit: 110000 },
-  { month: "Mar 2026", revenue: 390000, cogs: 180000, expenses: 108000, netProfit: 102000 },
-  { month: "Apr 2026", revenue: 420000, cogs: 195000, expenses: 112000, netProfit: 113000 },
-  { month: "May 2026", revenue: 440000, cogs: 200000, expenses: 120000, netProfit: 120000 },
-  { month: "Jun 2026", revenue: 410000, cogs: 180000, expenses: 125000, netProfit: 105000 },
-]
-
-const plExpenseCategoryData = [
-  { name: "6010 Staff Payroll & Benefits", value: 380000, color: "#10b981" },
-  { name: "6020 Rent & Facilities", value: 120000, color: "#3b82f6" },
-  { name: "6030 Utilities & Warehouse", value: 85000, color: "#f59e0b" },
-  { name: "6040 Sales & Distribution", value: 55000, color: "#8b5cf6" },
-  { name: "6050 IT & Admin Operations", value: 40000, color: "#ec4899" },
-]
-
-// ERPNext Aligned Cash Flow Trend & Activity Data
-const cashFlowTrendData = [
-  { period: "Jan 2026", operating: 120000, investing: -30000, financing: 0, netCash: 90000, cashBalance: 1250000 },
-  { period: "Feb 2026", operating: 145000, investing: -40000, financing: 0, netCash: 105000, cashBalance: 1355000 },
-  { period: "Mar 2026", operating: 130000, investing: -20000, financing: 0, netCash: 110000, cashBalance: 1465000 },
-  { period: "Apr 2026", operating: 150000, investing: -50000, financing: 0, netCash: 100000, cashBalance: 1565000 },
-  { period: "May 2026", operating: 160000, investing: -25000, financing: 0, netCash: 135000, cashBalance: 1700000 },
-  { period: "Jun 2026", operating: 115000, investing: -15000, financing: 0, netCash: 100000, cashBalance: 1800000 },
-]
-
 interface AgingRecord {
   id: string
   partner: string
@@ -88,22 +60,6 @@ interface AgingRecord {
   amount: number
   dunningLevel: number
 }
-
-const initialAgingReceivables: AgingRecord[] = [
-  { id: "AR-101", partner: "Stark Medical Supplies", invoiceRef: "INV-2026-001", category: "current", daysOverdue: 0, amount: 32500, dunningLevel: 0 },
-  { id: "AR-102", partner: "Apex Healthcare Ltd", invoiceRef: "INV-2026-004", category: "31-60", daysOverdue: 35, amount: 45200, dunningLevel: 1 },
-  { id: "AR-103", partner: "Initech Diagnostics", invoiceRef: "INV-2025-089", category: "90+", daysOverdue: 94, amount: 28450, dunningLevel: 2 },
-  { id: "AR-104", partner: "Lifeline Clinics", invoiceRef: "INV-2026-008", category: "61-90", daysOverdue: 65, amount: 18350, dunningLevel: 1 },
-  { id: "AR-105", partner: "St. Paul Hospital", invoiceRef: "INV-2025-072", category: "90+", daysOverdue: 110, amount: 9550, dunningLevel: 3 },
-]
-
-const initialAgingPayables: AgingRecord[] = [
-  { id: "AP-201", partner: "Ethio Chemicals Corp", invoiceRef: "PINV-2026-012", category: "current", daysOverdue: 0, amount: 45000, dunningLevel: 0 },
-  { id: "AP-202", partner: "Red Cross Pharma Supplies", invoiceRef: "PINV-2026-015", category: "current", daysOverdue: 0, amount: 28000, dunningLevel: 0 },
-  { id: "AP-203", partner: "Global Logistics Inc", invoiceRef: "PINV-2026-003", category: "31-60", daysOverdue: 42, amount: 14000, dunningLevel: 1 },
-  { id: "AP-204", partner: "East-Africa Power Co", invoiceRef: "PINV-2025-098", category: "90+", daysOverdue: 91, amount: 14000, dunningLevel: 2 },
-  { id: "AP-205", partner: "Prime Glassware Ltd", invoiceRef: "PINV-2026-002", category: "61-90", daysOverdue: 62, amount: 22000, dunningLevel: 1 },
-]
 
 export type ReportTab = "GL" | "Aging" | "TrialBalance" | "BalanceSheet" | "IncomeStatement" | "CashFlow"
 
@@ -125,8 +81,13 @@ export default function FinancialReports() {
   const [agingType, setAgingType] = useState<"receivables" | "payables">("receivables")
   const [agingBucketFilter, setAgingBucketFilter] = useState<"ALL" | "current" | "31-60" | "61-90" | "90+">("ALL")
   const [agingSearch, setAgingSearch] = useState("")
-  const [receivables] = useState<AgingRecord[]>(initialAgingReceivables)
-  const [payables] = useState<AgingRecord[]>(initialAgingPayables)
+  const invoices = store.getInvoices()
+  const receivables: AgingRecord[] = invoices.filter((invoice) => invoice.balance_due > 0 && invoice.status !== "Void" && invoice.status !== "Cancelled").map((invoice) => {
+    const daysOverdue = Math.max(0, Math.floor((Date.now() - new Date(`${invoice.due_date}T00:00:00`).getTime()) / 86_400_000))
+    const category = daysOverdue <= 30 ? "current" : daysOverdue <= 60 ? "31-60" : daysOverdue <= 90 ? "61-90" : "90+"
+    return { id: invoice.id, partner: invoice.customer_name, invoiceRef: invoice.invoice_number, category, daysOverdue, amount: invoice.balance_due, dunningLevel: daysOverdue > 90 ? 3 : daysOverdue > 60 ? 2 : daysOverdue > 30 ? 1 : 0 }
+  })
+  const payables: AgingRecord[] = []
 
   const agingColumns: TableColumn[] = [
     { key: "partner", label: "Partner / Organization" },
@@ -461,12 +422,34 @@ export default function FinancialReports() {
     Expense: accounts.filter((a) => a.account_type === "Expense"),
   }
 
-  const totalAssets = accountsByType.Asset.reduce((s, a) => s + ((a as any).current_balance ?? 250000), 0)
-  const totalLiabilities = accountsByType.Liability.reduce((s, a) => s + ((a as any).current_balance ?? 120000), 0)
-  const totalEquity = accountsByType.Equity.reduce((s, a) => s + ((a as any).current_balance ?? 500000), 0)
-  const totalRevenue = accountsByType.Revenue.reduce((s, a) => s + ((a as any).current_balance ?? 2450000), 0)
-  const totalExpenses = accountsByType.Expense.reduce((s, a) => s + ((a as any).current_balance ?? 1800000), 0)
+  const accountBalance = (account: typeof accounts[number]) => lines.filter((line) => line.account_id === account.id).reduce((total, line) => total + (account.account_type === "Asset" || account.account_type === "Expense" ? line.debit_amount - line.credit_amount : line.credit_amount - line.debit_amount), 0)
+  const totalAssets = accountsByType.Asset.reduce((s, account) => s + accountBalance(account), 0)
+  const totalLiabilities = accountsByType.Liability.reduce((s, account) => s + accountBalance(account), 0)
+  const totalEquity = accountsByType.Equity.reduce((s, account) => s + accountBalance(account), 0)
+  const totalRevenue = accountsByType.Revenue.reduce((s, account) => s + accountBalance(account), 0)
+  const totalExpenses = accountsByType.Expense.reduce((s, account) => s + accountBalance(account), 0)
   const netIncome = totalRevenue - totalExpenses
+  const cogsTotal = accountsByType.Expense.filter((account) => /^5/.test(account.code)).reduce((total, account) => total + accountBalance(account), 0)
+  const operatingExpenseTotal = totalExpenses - cogsTotal
+  const monthlyReports = new Map<string, { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; operating: number; investing: number; financing: number; netCash: number; cashBalance: number }>()
+  let cumulativeCash = 0
+  for (const transaction of [...allGlTransactions].sort((a, b) => a.entry_date.localeCompare(b.entry_date))) {
+    const month = transaction.entry_date.slice(0, 7)
+    const row = monthlyReports.get(month) || { month, revenue: 0, cogs: 0, expenses: 0, netProfit: 0, operating: 0, investing: 0, financing: 0, netCash: 0, cashBalance: 0 }
+    if (transaction.account_type === "Revenue") row.revenue += transaction.credit_amount - transaction.debit_amount
+    if (transaction.account_type === "Expense") {
+      const amount = transaction.debit_amount - transaction.credit_amount
+      if (/^5/.test(transaction.account_code)) row.cogs += amount
+      else row.expenses += amount
+    }
+    if (transaction.account_type === "Asset" && /cash|bank/i.test(transaction.account_name)) row.operating += transaction.debit_amount - transaction.credit_amount
+    monthlyReports.set(month, row)
+  }
+  const plMonthlyTrendData = [...monthlyReports.values()].map((row) => ({ ...row, netProfit: row.revenue - row.cogs - row.expenses }))
+  for (const row of plMonthlyTrendData) { cumulativeCash += row.operating; row.netCash = row.operating + row.investing + row.financing; row.cashBalance = cumulativeCash }
+  const cashFlowTrendData = plMonthlyTrendData.map((row) => ({ period: row.month, operating: row.operating, investing: row.investing, financing: row.financing, netCash: row.netCash, cashBalance: row.cashBalance }))
+  const chartColors = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899"]
+  const plExpenseCategoryData = accountsByType.Expense.map((account, index) => ({ name: `${account.code} ${account.name}`, value: accountBalance(account), color: chartColors[index % chartColors.length] })).filter((item) => item.value !== 0)
 
   const handleSendDunningNotice = (rec: AgingRecord) => {
     showToast(`Dunning Level ${rec.dunningLevel + 1} notice dispatched to ${rec.partner} for ${rec.invoiceRef}`, "success")
@@ -1551,7 +1534,7 @@ export default function FinancialReports() {
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-emerald-800">
-                      ETB {Math.max(totalAssets, 2850000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ETB {totalAssets.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">1000 Series Account Ledger</p>
                   </div>
@@ -1564,7 +1547,7 @@ export default function FinancialReports() {
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-amber-800">
-                      ETB {Math.max(totalLiabilities, 1200000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ETB {totalLiabilities.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">2000 Series Account Ledger</p>
                   </div>
@@ -1577,7 +1560,7 @@ export default function FinancialReports() {
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-purple-800">
-                      ETB {Math.max(totalEquity, 1650000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ETB {totalEquity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">3000 Series Account Ledger</p>
                   </div>
@@ -1606,7 +1589,7 @@ export default function FinancialReports() {
                         <p className="text-zinc-400 text-[11px] italic py-2">No asset accounts recorded.</p>
                       ) : (
                         accountsByType.Asset.map((a) => {
-                          const bal = (a as any).current_balance ?? 250000
+                          const bal = accountBalance(a)
                           return (
                             <div key={a.id} className="flex justify-between items-center py-1.5 border-b border-zinc-100/80 hover:bg-zinc-50/80 px-1 rounded transition-colors">
                               <div className="flex flex-col">
@@ -1625,7 +1608,7 @@ export default function FinancialReports() {
 
                   <div className="pt-4 mt-4 border-t-2 border-zinc-200 flex justify-between items-center font-mono font-black text-sm text-emerald-800 bg-emerald-50/50 p-2.5 rounded-xl">
                     <span className="font-sans uppercase text-xs tracking-wider">Total Assets</span>
-                    <span>ETB {Math.max(totalAssets, 2850000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>ETB {totalAssets.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </GlassCard>
 
@@ -1649,7 +1632,7 @@ export default function FinancialReports() {
                         <p className="text-zinc-400 text-[11px] italic py-2">No liability accounts recorded.</p>
                       ) : (
                         accountsByType.Liability.map((a) => {
-                          const bal = (a as any).current_balance ?? 120000
+                          const bal = accountBalance(a)
                           return (
                             <div key={a.id} className="flex justify-between items-center py-1.5 border-b border-zinc-100/80 hover:bg-zinc-50/80 px-1 rounded transition-colors">
                               <div className="flex flex-col">
@@ -1668,7 +1651,7 @@ export default function FinancialReports() {
 
                   <div className="pt-4 mt-4 border-t-2 border-zinc-200 flex justify-between items-center font-mono font-black text-sm text-amber-900 bg-amber-50/50 p-2.5 rounded-xl">
                     <span className="font-sans uppercase text-xs tracking-wider">Total Liabilities</span>
-                    <span>ETB {Math.max(totalLiabilities, 1200000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>ETB {totalLiabilities.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </GlassCard>
 
@@ -1692,7 +1675,7 @@ export default function FinancialReports() {
                         <p className="text-zinc-400 text-[11px] italic py-2">No equity accounts recorded.</p>
                       ) : (
                         accountsByType.Equity.map((a) => {
-                          const bal = (a as any).current_balance ?? 500000
+                          const bal = accountBalance(a)
                           return (
                             <div key={a.id} className="flex justify-between items-center py-1.5 border-b border-zinc-100/80 hover:bg-zinc-50/80 px-1 rounded transition-colors">
                               <div className="flex flex-col">
@@ -1711,7 +1694,7 @@ export default function FinancialReports() {
 
                   <div className="pt-4 mt-4 border-t-2 border-zinc-200 flex justify-between items-center font-mono font-black text-sm text-purple-900 bg-purple-50/50 p-2.5 rounded-xl">
                     <span className="font-sans uppercase text-xs tracking-wider">Total Equity</span>
-                    <span>ETB {Math.max(totalEquity, 1650000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>ETB {totalEquity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </GlassCard>
               </div>
@@ -1728,7 +1711,7 @@ export default function FinancialReports() {
                         Balance Sheet
                       </h4>
                       <p className="text-xs text-zinc-600 font-mono mt-0.5">
-                        Assets (ETB {Math.max(totalAssets, 2850000).toLocaleString("en-US")}) = Liabilities (ETB {Math.max(totalLiabilities, 1200000).toLocaleString("en-US")}) + Equity (ETB {Math.max(totalEquity, 1650000).toLocaleString("en-US")})
+                        Assets (ETB {totalAssets.toLocaleString("en-US")}) = Liabilities (ETB {totalLiabilities.toLocaleString("en-US")}) + Equity (ETB {totalEquity.toLocaleString("en-US")})
                       </p>
                     </div>
                   </div>
@@ -1737,7 +1720,7 @@ export default function FinancialReports() {
                     <div className="text-right">
                       <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Liabilities + Equity</span>
                       <span className="text-sm font-mono font-black text-emerald-700">
-                        ETB {Math.max(totalLiabilities + totalEquity, 2850000).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        ETB {(totalLiabilities + totalEquity).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                     <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-full flex items-center gap-1.5">
@@ -1768,7 +1751,7 @@ export default function FinancialReports() {
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-emerald-700">
-                      ETB 2,450,000.00
+                      ETB {totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </span>
                     <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Sales & Services (4000 Series)</p>
                   </div>
@@ -1781,7 +1764,7 @@ export default function FinancialReports() {
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-rose-600">
-                      ETB (1,120,000.00)
+                      ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})
                     </span>
                     <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Direct Materials & COGS (5000 Series)</p>
                   </div>
@@ -1790,11 +1773,11 @@ export default function FinancialReports() {
                 <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-blue-500">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Gross Profit Margin</span>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">54.3% Margin</span>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">{totalRevenue ? (((totalRevenue - cogsTotal) / totalRevenue) * 100).toFixed(1) : "0.0"}% Margin</span>
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-zinc-900">
-                      ETB 1,330,000.00
+                      ETB {(totalRevenue - cogsTotal).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </span>
                     <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Gross Surplus (Revenue - COGS)</p>
                   </div>
@@ -1807,7 +1790,7 @@ export default function FinancialReports() {
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-emerald-800">
-                      ETB {(netIncome !== 0 ? netIncome : 650000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ETB {netIncome.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <p className="text-[10px] text-zinc-500 font-medium mt-0.5">Bottom Line Net Profit (EBIT)</p>
                   </div>
@@ -1917,13 +1900,13 @@ export default function FinancialReports() {
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60">
                     <div className="flex justify-between items-center text-sm font-black text-zinc-900 uppercase font-sans mb-2 border-b border-zinc-200 pb-1.5">
                       <span>1. Operating Revenues (4000 Series)</span>
-                      <span className="text-emerald-700 font-mono">ETB 2,450,000.00</span>
+                      <span className="text-emerald-700 font-mono">ETB {totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
                     {accountsByType.Revenue.map((a) => (
                       <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
                         <span>{a.code} - {a.name}</span>
                         <span className="font-bold text-zinc-900">
-                          ETB {((a as any).current_balance ?? 1225000).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          ETB {accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                     ))}
@@ -1933,35 +1916,28 @@ export default function FinancialReports() {
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60">
                     <div className="flex justify-between items-center text-sm font-black text-zinc-900 uppercase font-sans mb-2 border-b border-zinc-200 pb-1.5">
                       <span>2. Cost of Goods Sold (5000 Series)</span>
-                      <span className="text-rose-600 font-mono">ETB (1,120,000.00)</span>
+                      <span className="text-rose-600 font-mono">ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
-                    <div className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
-                      <span>5010 - Raw Material & Goods Direct Cost</span>
-                      <span className="font-bold text-rose-600">ETB (850,000.00)</span>
-                    </div>
-                    <div className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
-                      <span>5020 - Inbound Freight & Import Logistics</span>
-                      <span className="font-bold text-rose-600">ETB (270,000.00)</span>
-                    </div>
+                    {accountsByType.Expense.filter((a) => /^5/.test(a.code)).map((a) => <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700"><span>{a.code} - {a.name}</span><span className="font-bold text-rose-600">ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})</span></div>)}
                   </div>
 
                   {/* Gross Profit Summary Bar */}
                   <div className="flex justify-between items-center p-3.5 rounded-xl bg-zinc-100 font-sans font-black text-sm text-zinc-950 border border-zinc-300">
                     <span>GROSS PROFIT MARGIN</span>
-                    <span className="font-mono text-emerald-800 text-base">ETB 1,330,000.00 (54.3%)</span>
+                    <span className="font-mono text-emerald-800 text-base">ETB {(totalRevenue - cogsTotal).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                   </div>
 
                   {/* Operating Expenses Section */}
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60">
                     <div className="flex justify-between items-center text-sm font-black text-zinc-900 uppercase font-sans mb-2 border-b border-zinc-200 pb-1.5">
                       <span>3. Operating & Administrative Expenses (6000 Series)</span>
-                      <span className="text-rose-600 font-mono">ETB (680,000.00)</span>
+                      <span className="text-rose-600 font-mono">ETB ({operatingExpenseTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
                     {accountsByType.Expense.map((a) => (
                       <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
                         <span>{a.code} - {a.name}</span>
                         <span className="font-bold text-rose-600">
-                          ETB ({((a as any).current_balance ?? 170000).toLocaleString("en-US", { minimumFractionDigits: 2 })})
+                          ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})
                         </span>
                       </div>
                     ))}
@@ -1971,7 +1947,7 @@ export default function FinancialReports() {
                   <div className="flex justify-between items-center p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 font-sans font-black text-base shadow-xs">
                     <span className="uppercase tracking-wider text-emerald-950">NET OPERATING INCOME (EBIT)</span>
                     <span className="font-mono text-xl text-emerald-800">
-                      ETB {(netIncome !== 0 ? netIncome : 650000).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ETB {netIncome.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>
@@ -1994,7 +1970,7 @@ export default function FinancialReports() {
                 <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-500">
                   <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Operating Cash Flow</span>
                   <span className="text-xl font-mono font-black text-emerald-700 mt-1">
-                    ETB +820,000.00
+                    ETB {cashFlowTrendData.reduce((total, row) => total + row.operating, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                   </span>
                   <span className="text-[10px] text-zinc-400 font-medium mt-0.5">Collections & Customer Sales</span>
                 </GlassCard>
@@ -2002,7 +1978,7 @@ export default function FinancialReports() {
                 <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-rose-500">
                   <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Investing Cash Flow</span>
                   <span className="text-xl font-mono font-black text-rose-600 mt-1">
-                    ETB -180,000.00
+                    ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                   </span>
                   <span className="text-[10px] text-zinc-400 font-medium mt-0.5">Capex, Vehicles & Equipment</span>
                 </GlassCard>
@@ -2010,7 +1986,7 @@ export default function FinancialReports() {
                 <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-zinc-400">
                   <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Financing Cash Flow</span>
                   <span className="text-xl font-mono font-black text-zinc-800 mt-1">
-                    ETB 0.00
+                    ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                   </span>
                   <span className="text-[10px] text-zinc-400 font-medium mt-0.5">Debt servicing & Dividends</span>
                 </GlassCard>
@@ -2022,7 +1998,7 @@ export default function FinancialReports() {
                   </div>
                   <div className="mt-2">
                     <span className="text-xl font-mono font-black text-emerald-800">
-                      ETB +640,000.00
+                      ETB {cashFlowTrendData.reduce((total, row) => total + row.netCash, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </span>
                     <p className="text-[10px] text-zinc-500 font-medium mt-0.5">Net Liquidity Inflow YTD</p>
                   </div>
@@ -2113,19 +2089,19 @@ export default function FinancialReports() {
                     <span className="text-xs font-black text-zinc-900 font-sans uppercase">1. Cash Flow from Operating Activities</span>
                     <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
                       <span>Receipts from Customers & Sales Ledger</span>
-                      <span className="font-bold text-emerald-700">ETB +2,150,000.00</span>
+                      <span className="font-bold text-emerald-700">ETB {totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
                       <span>Payments to Suppliers for Goods & Services</span>
-                      <span className="font-bold text-rose-600">ETB -950,000.00</span>
+                      <span className="font-bold text-rose-600">ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
                     <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
                       <span>Payroll & Employee Disbursements</span>
-                      <span className="font-bold text-rose-600">ETB -380,000.00</span>
+                      <span className="font-bold text-rose-600">ETB ({operatingExpenseTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
                     <div className="flex justify-between font-sans font-black text-emerald-800 pt-1 text-xs">
                       <span>Net Cash Generated from Operating Activities</span>
-                      <span>ETB +820,000.00</span>
+                      <span>ETB {cashFlowTrendData.reduce((total, row) => total + row.operating, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 
@@ -2133,11 +2109,11 @@ export default function FinancialReports() {
                     <span className="text-xs font-black text-zinc-900 font-sans uppercase">2. Cash Flow from Investing Activities</span>
                     <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
                       <span>Purchase of Plant Machinery & Logistics Fleet</span>
-                      <span className="font-bold text-rose-600">ETB -180,000.00</span>
+                      <span className="font-bold text-rose-600">ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between font-sans font-black text-rose-700 pt-1 text-xs">
                       <span>Net Cash Used in Investing Activities</span>
-                      <span>ETB -180,000.00</span>
+                      <span>ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 
@@ -2145,17 +2121,17 @@ export default function FinancialReports() {
                     <span className="text-xs font-black text-zinc-900 font-sans uppercase">3. Cash Flow from Financing Activities</span>
                     <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
                       <span>Share Capital Issuance / Dividend Payments</span>
-                      <span className="font-bold text-zinc-600">ETB 0.00</span>
+                      <span className="font-bold text-zinc-600">ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between font-sans font-black text-zinc-800 pt-1 text-xs">
                       <span>Net Cash Flow from Financing Activities</span>
-                      <span>ETB 0.00</span>
+                      <span>ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 
                   <div className="flex justify-between items-center p-4 rounded-xl bg-emerald-50 border border-emerald-200/80 font-sans font-black text-sm shadow-xs">
                     <span className="uppercase tracking-wider text-emerald-950">NET INCREASE IN CASH & CASH EQUIVALENTS</span>
-                    <span className="font-mono text-emerald-800 text-lg font-black">ETB +640,000.00</span>
+                    <span className="font-mono text-emerald-800 text-lg font-black">ETB {cashFlowTrendData.reduce((total, row) => total + row.netCash, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               </GlassCard>

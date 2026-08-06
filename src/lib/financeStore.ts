@@ -1,17 +1,4 @@
 import { useState, useEffect } from "react"
-
-// JSON imports for default initial state
-import chartOfAccountsData from "../../data/chart_of_accounts.json"
-import journalEntriesData from "../../data/journal_entries.json"
-import journalEntryLinesData from "../../data/journal_entry_lines.json"
-import invoicesData from "../../data/invoices.json"
-import paymentsData from "../../data/payments.json"
-import recurringExpenseSchedulesData from "../../data/recurring_expense_schedules.json"
-import vehiclesData from "../../data/vehicles.json"
-import accountingPeriodsData from "../../data/accounting_periods.json"
-import companySettingsData from "../../data/company_settings.json"
-import payrollRunsData from "../../data/payroll_runs.json"
-import revaluationsData from "../../data/revaluations.json"
 import { loadResource, persistResources } from "./apiPersistence"
 
 export interface AccountItem {
@@ -158,6 +145,7 @@ export interface CompanySettings {
   payroll_expense_account_id: string
   payroll_payable_account_id: string
   tax_payable_account_id: string
+  cash_account_id?: string
 }
 
 export interface PayrollDeduction {
@@ -237,14 +225,6 @@ export interface FixedAsset {
   serialNumber?: string
 }
 
-// Initial default one-off expenses
-const initialOneOffExpenses: OneOffExpense[] = [
-  { id: "EXP-8012", merchant: "Amazon Web Services", category: "Infrastructure", date: "2026-07-05", employee: "Alex Mercer", amount: 12450.00, currency: "ETB", status: "APPROVED" },
-  { id: "EXP-8011", merchant: "Delta Air Lines", category: "Travel & Lodging", date: "2026-07-04", employee: "Marcus Vance", amount: 1850.50, currency: "ETB", status: "PENDING" },
-  { id: "EXP-8010", merchant: "Salesforce CRM", category: "Software & SaaS", date: "2026-06-30", employee: "Sophia Chen", amount: 4200.00, currency: "ETB", status: "APPROVED" },
-  { id: "EXP-8009", merchant: "The Steakhouse Tavern", category: "Meals & Entertaining", date: "2026-06-28", employee: "Sophia Chen", amount: 840.00, currency: "ETB", status: "REJECTED" },
-]
-
 export function helperGenerateDeprSchedule(
   cost: number,
   salvage: number,
@@ -277,96 +257,54 @@ export function helperGenerateDeprSchedule(
   return schedule
 }
 
-const initialTaxRules: TaxRule[] = [
-  { id: "TAX-01", name: "Standard VAT 15%", ratePercent: 15, type: "VAT/GST", accountCode: "2200", isInclusive: false },
-  { id: "TAX-02", name: "Zero-Rated Export 0%", ratePercent: 0, type: "VAT/GST", accountCode: "2200", isInclusive: false },
-  { id: "TAX-03", name: "Withholding Tax Services 2%", ratePercent: 2, type: "Withholding Tax (TDS)", accountCode: "2210", isInclusive: true },
-  { id: "TAX-04", name: "Withholding Tax Goods 5%", ratePercent: 5, type: "Withholding Tax (TDS)", accountCode: "2210", isInclusive: true },
-]
+const emptyCompanySettings: CompanySettings = {
+  company_name: "",
+  base_currency: "ETB",
+  exchange_rates: {},
+  unrealized_exchange_gain_loss_account_id: "",
+  payroll_expense_account_id: "",
+  payroll_payable_account_id: "",
+  tax_payable_account_id: "",
+}
 
-const initialFixedAssets: FixedAsset[] = [
-  { id: "AST-001", name: "Delivery Truck Isuzu 5-Ton", category: "Vehicles", purchaseDate: "2024-01-15", depreciationStartDate: "2024-02-01", cost: 1200000, salvageValue: 200000, usefulLifeYears: 1, accumulatedDepreciation: 333333, status: "Active", asset_account_id: "ACC-1500", depreciation_expense_account_id: "ACC-6500", accumulated_depreciation_account_id: "ACC-1510", depreciation_schedule: [] },
-  { id: "AST-002", name: "Warehouse Automatic Forklift", category: "Machinery", purchaseDate: "2024-06-10", depreciationStartDate: "2024-07-01", cost: 450000, salvageValue: 50000, usefulLifeYears: 2, accumulatedDepreciation: 100000, status: "Active", asset_account_id: "ACC-1500", depreciation_expense_account_id: "ACC-6500", accumulated_depreciation_account_id: "ACC-1510", depreciation_schedule: [] },
-  { id: "AST-003", name: "HQ Dell PowerEdge Server Rack", category: "IT Hardware", purchaseDate: "2025-02-01", depreciationStartDate: "2025-03-01", cost: 180000, salvageValue: 20000, usefulLifeYears: 1, accumulatedDepreciation: 40000, status: "Active", asset_account_id: "ACC-1500", depreciation_expense_account_id: "ACC-6500", accumulated_depreciation_account_id: "ACC-1510", depreciation_schedule: [] },
-  { id: "AST-004", name: "Bole Logistics Office Premises", category: "Buildings", purchaseDate: "2022-03-01", depreciationStartDate: "2022-04-01", cost: 8500000, salvageValue: 2000000, usefulLifeYears: 2, accumulatedDepreciation: 1083333, status: "Active", asset_account_id: "ACC-1500", depreciation_expense_account_id: "ACC-6500", accumulated_depreciation_account_id: "ACC-1510", depreciation_schedule: [] },
-]
-
-// In-Memory Storage State
+// Finance starts empty and is hydrated exclusively from the Finance API.
 class FinanceStore {
-  private accounts: AccountItem[] = (chartOfAccountsData as AccountItem[])
-  private entries: JournalEntry[] = (journalEntriesData as JournalEntry[])
-  private lines: JournalEntryLine[] = (journalEntryLinesData as JournalEntryLine[])
-  private invoices: Invoice[] = (invoicesData as Invoice[])
-  private payments: Payment[] = (paymentsData as Payment[])
-  private recurringSchedules: RecurringExpenseSchedule[] = (recurringExpenseSchedulesData as RecurringExpenseSchedule[])
-  private expenses: OneOffExpense[] = initialOneOffExpenses
-  private vehicles: Vehicle[] = (vehiclesData as Vehicle[])
-  private periods: AccountingPeriod[] = (accountingPeriodsData as AccountingPeriod[])
-  private companySettings: CompanySettings = (companySettingsData as CompanySettings)
-  private payrollRuns: PayrollRun[] = (payrollRunsData as PayrollRun[])
-  private revaluations: Revaluation[] = (revaluationsData as Revaluation[])
-  private fixedAssets: FixedAsset[] = initialFixedAssets
-  private taxRules: TaxRule[] = initialTaxRules
+  private accounts: AccountItem[] = []
+  private entries: JournalEntry[] = []
+  private lines: JournalEntryLine[] = []
+  private invoices: Invoice[] = []
+  private payments: Payment[] = []
+  private recurringSchedules: RecurringExpenseSchedule[] = []
+  private expenses: OneOffExpense[] = []
+  private vehicles: Vehicle[] = []
+  private periods: AccountingPeriod[] = []
+  private companySettings: CompanySettings = emptyCompanySettings
+  private payrollRuns: PayrollRun[] = []
+  private revaluations: Revaluation[] = []
+  private fixedAssets: FixedAsset[] = []
+  private taxRules: TaxRule[] = []
 
   private listeners = new Set<() => void>()
 
   constructor() {
-    this.loadFromApi()
-    this.ensureStandardAccountsAndSchedules()
+    void this.loadFromApi()
   }
 
-  private ensureStandardAccountsAndSchedules() {
-    // 1. Ensure depreciation accounts exist in Chart of Accounts
-    if (!this.accounts.some((a) => a.code === "1510")) {
-      this.accounts.push({
-        id: "acc-1510",
-        code: "1510",
-        name: "Accumulated Depreciation",
-        account_type: "Asset",
-        parent_account_id: "1400",
-        is_active: true,
-        is_group: false,
-      })
-    }
-    if (!this.accounts.some((a) => a.code === "6500")) {
-      this.accounts.push({
-        id: "acc-6500",
-        code: "6500",
-        name: "Depreciation Expense",
-        account_type: "Expense",
-        parent_account_id: "5150",
-        is_active: true,
-        is_group: false,
-      })
-    }
-    if (!this.accounts.some((a) => a.code === "6550")) {
-      this.accounts.push({
-        id: "acc-6550",
-        code: "6550",
-        name: "Loss on Asset Disposal",
-        account_type: "Expense",
-        parent_account_id: "5150",
-        is_active: true,
-        is_group: false,
-      })
-    }
-
-    // 2. Ensure initial fixed assets have generated schedules
-    this.fixedAssets = this.fixedAssets.map((asset) => {
-      if (asset.depreciation_schedule.length === 0) {
-        return {
-          ...asset,
-          depreciation_schedule: helperGenerateDeprSchedule(
-            asset.cost,
-            asset.salvageValue,
-            asset.usefulLifeYears,
-            asset.depreciationStartDate,
-            asset.accumulatedDepreciation
-          ),
-        }
-      }
-      return asset
-    })
+  private clearFinanceState() {
+    this.accounts = []
+    this.entries = []
+    this.lines = []
+    this.invoices = []
+    this.payments = []
+    this.recurringSchedules = []
+    this.expenses = []
+    this.vehicles = []
+    this.periods = []
+    this.companySettings = emptyCompanySettings
+    this.payrollRuns = []
+    this.revaluations = []
+    this.fixedAssets = []
+    this.taxRules = []
   }
 
   private async loadFromApi() {
@@ -396,7 +334,7 @@ class FinanceStore {
         loadResource<OneOffExpense>("expenses", this.expenses),
         loadResource<Vehicle>("vehicles", this.vehicles),
         loadResource<AccountingPeriod>("accounting_periods", this.periods),
-        loadResource<CompanySettings & { id?: string }>("company_settings", [{ id: "default", ...this.companySettings }]),
+        loadResource<CompanySettings & { id?: string }>("company_settings"),
         loadResource<PayrollRun>("payroll_runs", this.payrollRuns),
         loadResource<Revaluation>("revaluations", this.revaluations),
         loadResource<FixedAsset>("fixed_assets", this.fixedAssets),
@@ -412,16 +350,17 @@ class FinanceStore {
       this.expenses = expenses
       this.vehicles = vehicles
       this.periods = periods
-      const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...this.companySettings }
-      this.companySettings = companySettings
+      const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
+      this.companySettings = companySettings as CompanySettings
       this.payrollRuns = payrollRuns
       this.revaluations = revaluations
       this.fixedAssets = fixedAssets
       this.taxRules = taxRules
-      this.ensureStandardAccountsAndSchedules()
       this.listeners.forEach((l) => l())
     } catch (error) {
       console.error("Failed to load finance data from Supabase.", error)
+      this.clearFinanceState()
+      this.listeners.forEach((l) => l())
     }
   }
 
@@ -458,6 +397,7 @@ class FinanceStore {
   private notify() {
     void this.saveToApi().catch((error) => {
       console.error("Failed to persist finance data to Supabase.", error)
+      void this.loadFromApi()
     })
     this.listeners.forEach((l) => l())
   }
@@ -1222,8 +1162,10 @@ class FinanceStore {
     }
 
     const newBalanceInBase = Math.round(data.original_balance * data.current_rate * 100) / 100
-    // Get old rate or base balance
-    const oldRate = this.companySettings.exchange_rates[data.currency] || 55.0
+    const oldRate = this.companySettings.exchange_rates[data.currency]
+    if (!oldRate) {
+      return { success: false, error: `No persisted exchange rate is configured for ${data.currency}.` }
+    }
     const oldBalanceInBase = Math.round(data.original_balance * oldRate * 100) / 100
     const unrealizedGainLoss = Math.round((newBalanceInBase - oldBalanceInBase) * 100) / 100
 
@@ -1861,9 +1803,17 @@ export function useFinanceStore() {
   const [, setTick] = useState(0)
 
   useEffect(() => {
-    return financeStore.subscribe(() => {
+    const unsubscribe = financeStore.subscribe(() => {
       setTick((t) => t + 1)
     })
+    const refresh = () => void financeStore.reloadFromApi()
+    const interval = window.setInterval(refresh, 30_000)
+    window.addEventListener("focus", refresh)
+    return () => {
+      unsubscribe()
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refresh)
+    }
   }, [])
 
   return financeStore

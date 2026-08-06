@@ -31,43 +31,7 @@ interface Employee {
   attendance: ("present" | "absent" | "leave")[]
 }
 
-const initialEmployees: Employee[] = [
-  {
-    id: "EMP-001",
-    name: "Sophia Chen",
-    role: "HR Systems Coordinator",
-    avatar: "SC",
-    attendance: ["present", "present", "present", "absent", "present", "present", "present", "present", "present", "leave", "leave", "present", "present", "present"],
-  },
-  {
-    id: "EMP-002",
-    name: "Dr. Elias Bekele",
-    role: "Lead Research Chemist",
-    avatar: "EB",
-    attendance: ["present", "present", "present", "present", "present", "present", "present", "present", "absent", "present", "present", "present", "present", "present"],
-  },
-  {
-    id: "EMP-003",
-    name: "Abraham Lemma",
-    role: "Lab Inventory Officer",
-    avatar: "AL",
-    attendance: ["present", "absent", "present", "present", "present", "present", "absent", "present", "present", "present", "present", "present", "absent", "present"],
-  },
-  {
-    id: "EMP-004",
-    name: "Tigist Hailu",
-    role: "Cold-Chain Logistics Mgr",
-    avatar: "TH",
-    attendance: ["present", "present", "present", "present", "leave", "leave", "leave", "present", "present", "present", "present", "present", "present", "present"],
-  },
-  {
-    id: "EMP-005",
-    name: "Kidist Kebede",
-    role: "Pharma Compliance Auditor",
-    avatar: "KK",
-    attendance: ["present", "present", "present", "present", "present", "present", "present", "present", "present", "present", "present", "present", "present", "present"],
-  },
-]
+const initialEmployees: Employee[] = []
 
 interface LeaveRequest {
   id: string
@@ -80,48 +44,7 @@ interface LeaveRequest {
   status: "Pending" | "Approved" | "Rejected"
 }
 
-const initialLeaveRequests: LeaveRequest[] = [
-  {
-    id: "LR-101",
-    employeeName: "Sophia Chen",
-    role: "HR Systems Coordinator",
-    avatar: "SC",
-    type: "Annual Leave",
-    range: "Jul 10 - Jul 12, 2026",
-    reason: "Family engagement travel & personal restructuring.",
-    status: "Pending",
-  },
-  {
-    id: "LR-102",
-    employeeName: "Tigist Hailu",
-    role: "Cold-Chain Logistics Mgr",
-    avatar: "TH",
-    type: "Medical Leave",
-    range: "Jul 14 - Jul 15, 2026",
-    reason: "Routine outpatient health assessment & calibration.",
-    status: "Pending",
-  },
-  {
-    id: "LR-103",
-    employeeName: "Abraham Lemma",
-    role: "Lab Inventory Officer",
-    avatar: "AL",
-    type: "Annual Leave",
-    range: "Jul 22 - Jul 26, 2026",
-    reason: "Annual vacation renewal with family.",
-    status: "Pending",
-  },
-  {
-    id: "LR-104",
-    employeeName: "Dr. Elias Bekele",
-    role: "Lead Research Chemist",
-    avatar: "EB",
-    type: "Compassionate",
-    range: "Jun 20 - Jun 22, 2026",
-    reason: "Urgent family domestic matter resolution.",
-    status: "Approved",
-  },
-]
+const initialLeaveRequests: LeaveRequest[] = []
 
 export default function AttendanceLeave() {
   const { showToast } = useFeedback()
@@ -137,9 +60,9 @@ export default function AttendanceLeave() {
   // New Leave Modal State
   const [showApplyLeaveModal, setShowApplyLeaveModal] = useState(false)
   const [newLeave, setNewLeave] = useState({
-    employeeName: "Sophia Chen",
+    employeeName: "",
     type: "Annual Leave" as LeaveRequest["type"],
-    range: "Jul 28 - Jul 30, 2026",
+    range: "",
     reason: "",
   })
 
@@ -192,9 +115,9 @@ export default function AttendanceLeave() {
     setRequests([newReq, ...requests])
     setShowApplyLeaveModal(false)
     setNewLeave({
-      employeeName: "Sophia Chen",
+      employeeName: "",
       type: "Annual Leave",
-      range: "Jul 28 - Jul 30, 2026",
+      range: "",
       reason: "",
     })
     showToast("Leave Request Submitted", "success", `Application ${newReq.id} recorded for review.`)

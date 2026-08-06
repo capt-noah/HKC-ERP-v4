@@ -167,6 +167,55 @@ create index if not exists leave_requests_employee_status_idx
 create index if not exists payroll_records_period_status_idx
   on public.payroll_records ((payload->>'payroll_period_id'), (payload->>'payment_status'));
 
+-- Finance-owned, idempotent payroll disbursement. The status transition and
+-- double-entry voucher happen in one database transaction.
+create or replace function public.hkc_pay_payroll_record(p_payroll_record_id text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  payroll jsonb;
+  employee jsonb;
+  settings jsonb;
+  expense_account_id text;
+  cash_account_id text;
+  amount numeric;
+  journal_id text;
+begin
+  select payload into payroll from public.payroll_records where id = p_payroll_record_id for update;
+  if payroll is null then raise exception 'Payroll record % was not found.', p_payroll_record_id; end if;
+  if payroll->>'payment_status' = 'Paid' then
+    select id into journal_id from public.journal_entries where payload->>'source_id' = p_payroll_record_id and payload->>'source_type' = 'Payroll Payment' limit 1;
+    return jsonb_build_object('payroll_record_id', p_payroll_record_id, 'journal_entry_id', journal_id, 'already_posted', true);
+  end if;
+  if payroll->>'payment_status' <> 'Approved' then raise exception 'Only approved payroll records can be paid.'; end if;
+
+  select payload into employee from public.employees where id = payroll->>'employee_id';
+  if employee is null then raise exception 'Employee % was not found.', payroll->>'employee_id'; end if;
+  select payload into settings from public.company_settings order by updated_at desc limit 1;
+  expense_account_id := settings->>'payroll_expense_account_id';
+  cash_account_id := settings->>'cash_account_id';
+  if expense_account_id is null or cash_account_id is null then raise exception 'Company settings must define payroll_expense_account_id and cash_account_id.'; end if;
+  if not exists (select 1 from public.chart_of_accounts where id = expense_account_id and coalesce((payload->>'is_active')::boolean, true)) then raise exception 'Configured payroll expense account is unavailable.'; end if;
+  if not exists (select 1 from public.chart_of_accounts where id = cash_account_id and coalesce((payload->>'is_active')::boolean, true)) then raise exception 'Configured cash account is unavailable.'; end if;
+
+  amount := coalesce((payroll->>'net_pay')::numeric, 0);
+  if amount <= 0 then raise exception 'Payroll net pay must be greater than zero.'; end if;
+  journal_id := 'JE-PAY-' || p_payroll_record_id;
+  insert into public.journal_entries (id, payload) values (journal_id, jsonb_build_object(
+    'id', journal_id, 'entry_date', current_date::text, 'description', 'Payroll payment for ' || coalesce(employee->>'full_name', payroll->>'employee_id'),
+    'source_type', 'Payroll Payment', 'source_id', p_payroll_record_id, 'created_by', 'Payroll', 'currency', coalesce(settings->>'base_currency', 'ETB'), 'exchange_rate', 1, 'is_reversal_of', null
+  ));
+  insert into public.journal_entry_lines (id, payload) values
+    (journal_id || '-1', jsonb_build_object('id', journal_id || '-1', 'journal_entry_id', journal_id, 'account_id', expense_account_id, 'debit_amount', amount, 'credit_amount', 0, 'currency', coalesce(settings->>'base_currency', 'ETB'), 'exchange_rate_at_time', 1, 'warehouse_id', null, 'party_type', 'Employee', 'party_id', payroll->>'employee_id', 'party_name', employee->>'full_name')),
+    (journal_id || '-2', jsonb_build_object('id', journal_id || '-2', 'journal_entry_id', journal_id, 'account_id', cash_account_id, 'debit_amount', 0, 'credit_amount', amount, 'currency', coalesce(settings->>'base_currency', 'ETB'), 'exchange_rate_at_time', 1, 'warehouse_id', null, 'party_type', 'Employee', 'party_id', payroll->>'employee_id', 'party_name', employee->>'full_name'));
+  update public.payroll_records set payload = jsonb_set(payroll, '{payment_status}', '"Paid"'::jsonb, true) where id = p_payroll_record_id;
+  return jsonb_build_object('payroll_record_id', p_payroll_record_id, 'journal_entry_id', journal_id, 'already_posted', false);
+end;
+$$;
+
 drop function public.create_hkc_document_table(text);
 
 notify pgrst, 'reload schema';

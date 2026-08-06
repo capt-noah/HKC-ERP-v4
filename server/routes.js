@@ -11,6 +11,7 @@ import {
   postSalesIssue,
   updateSalesIssue,
 } from "./salesIssues.js"
+import { payPayrollRecord } from "./payrollFinance.js"
 
 export const router = Router()
 
@@ -114,6 +115,15 @@ router.get("/api/:resource", async (req, res, next) => {
     if (result.headers?.["Content-Range"]) {
       res.setHeader("Content-Range", result.headers["Content-Range"])
     }
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.post("/api/payroll-records/:id/pay", async (req, res, next) => {
+  try {
+    const result = await payPayrollRecord(req.params.id)
     res.status(result.status).json(result.body)
   } catch (err) {
     next(err)

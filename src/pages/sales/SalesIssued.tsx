@@ -95,6 +95,11 @@ export default function SalesIssued() {
   const [paymentType, setPaymentType] = useState<PaymentType>("Cash")
   const [items, setItems] = useState<SalesIssueItem[]>([blankItem()])
 
+  const canonicalWarehouseId = (value: string) => {
+    const warehouse = warehouses.find((entry) => entry.id === value || entry.code === value || entry.name === value)
+    return warehouse?.id || value
+  }
+
   const load = async () => {
     setLoading(true)
     setError("")
@@ -153,13 +158,14 @@ export default function SalesIssued() {
     }
     try {
       const detail = await getSalesIssue(issue.id)
-      const options = await Promise.all((detail.items || []).map((row) => row.item_id ? getAvailableBatches(row.item_id, detail.warehouse_id).catch(() => []) : Promise.resolve([])))
+      const normalizedWarehouseId = canonicalWarehouseId(detail.warehouse_id)
+      const options = await Promise.all((detail.items || []).map((row) => row.item_id ? getAvailableBatches(row.item_id, normalizedWarehouseId).catch(() => []) : Promise.resolve([])))
       setEditing(detail)
       setFsNo(detail.fs_no)
       setReferenceNo(detail.reference_no)
       setSaleDate(detail.sale_date)
       setCustomerName(detail.customer_name || detail.customer_id)
-      setWarehouseId(detail.warehouse_id)
+      setWarehouseId(normalizedWarehouseId)
       setPaymentType(detail.payment_type)
       setItems(detail.items?.length ? detail.items.map((item) => {
         const product = products.find((entry) => entry.id === item.item_id)
@@ -185,7 +191,7 @@ export default function SalesIssued() {
       const itemId = patch.item_id || next[index].item_id
       if (itemId && warehouseId) {
         try {
-          const batches = await getAvailableBatches(itemId, warehouseId)
+          const batches = await getAvailableBatches(itemId, canonicalWarehouseId(warehouseId))
           setBatchOptions((current) => ({ ...current, [index]: batches }))
         } catch {
           setBatchOptions((current) => ({ ...current, [index]: [] }))
@@ -195,7 +201,7 @@ export default function SalesIssued() {
   }
 
   const handleWarehouseChange = (value: string) => {
-    setWarehouseId(value)
+    setWarehouseId(canonicalWarehouseId(value))
     setItems([blankItem()])
     setBatchOptions({})
   }
@@ -218,7 +224,7 @@ export default function SalesIssued() {
       sale_date: saleDate,
       customer_id: enteredCustomer,
       customer_name: enteredCustomer,
-      warehouse_id: warehouseId,
+      warehouse_id: canonicalWarehouseId(warehouseId),
       payment_type: paymentType,
       items: items.map((item, index) => ({ ...item, id: item.id || `${editing?.id || fsNo}-ITEM-${index + 1}` })),
     }
@@ -237,7 +243,7 @@ export default function SalesIssued() {
     if (!formOpen) return
     let cancelled = false
     const refresh = async () => {
-      const options = await Promise.all(items.map((item) => item.item_id ? getAvailableBatches(item.item_id, warehouseId).catch(() => []) : Promise.resolve([])))
+      const options = await Promise.all(items.map((item) => item.item_id ? getAvailableBatches(item.item_id, canonicalWarehouseId(warehouseId)).catch(() => []) : Promise.resolve([])))
       if (!cancelled) setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
     }
     void refresh()
@@ -418,7 +424,7 @@ export default function SalesIssued() {
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Warehouse</span>
                   <select value={warehouseId} onChange={(e) => handleWarehouseChange(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold">
                     <option value="">Select warehouse</option>
-                    {warehouses.map((w) => <option key={w.id} value={w.code || w.id}>{w.name || w.code}</option>)}
+                    {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name || w.code || w.id}</option>)}
                   </select>
                 </label>
                 <label className="space-y-1">

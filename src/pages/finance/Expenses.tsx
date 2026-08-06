@@ -160,7 +160,7 @@ export default function Expenses() {
     showToast("Claim Rejected", "warning", `Expense claim ${id} marked rejected.`)
   }
 
-  // Generate due recurring expenses simulation button
+  // Generate due recurring expenses from saved schedules.
   const handleGenerateDueExpenses = () => {
     const generatedCount = store.generateDueExpenses()
     if (generatedCount > 0) {
@@ -409,7 +409,7 @@ export default function Expenses() {
                           type="text"
                           value={employee}
                           onChange={(e) => setEmployee(e.target.value)}
-                          placeholder="e.g. Sophia Chen"
+                          placeholder="Employee name"
                           className="w-full bg-white/70 border border-black/10 rounded-xl px-3 py-2 text-sm text-black placeholder:text-gray-400 focus:outline-none focus:border-black font-bold"
                           required
                         />

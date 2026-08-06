@@ -151,7 +151,7 @@ export default function Invoices() {
     setCustName("")
     setDiscountVal("0")
     setSelectedInvoice(created)
-    setNewItems([{ description: "Sterile Medical Gloves", quantity: 500, unit_price: 40, line_total: 20000 }])
+    setNewItems([{ description: "", quantity: 1, unit_price: 0, line_total: 0 }])
     showToast(
       submitStatus === "Draft" ? "Invoice Saved as Draft" : "Invoice Issued & Posted",
       "success",

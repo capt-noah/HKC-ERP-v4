@@ -12,13 +12,13 @@ The server listens on `http://localhost:8787` by default.
 
 ## Supabase
 
-The server uses the Supabase Data API at:
+The server uses the Supabase Data API configured by environment variables:
 
 ```text
-https://hutzzxwkzfnwiafnnwpl.supabase.co/rest/v1/
+SUPABASE_REST_URL=https://your-project-ref.supabase.co/rest/v1/
 ```
 
-Environment variables can override the defaults:
+Required environment variables:
 
 ```bash
 SUPABASE_REST_URL=https://your-project.supabase.co/rest/v1/

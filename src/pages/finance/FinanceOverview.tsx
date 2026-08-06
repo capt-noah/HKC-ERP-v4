@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { Wallet, AlertCircle, Clock, Calendar, Download, ArrowUpRight } from "lucide-react"
+import { Wallet, Calendar, Download, ArrowUpRight } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -11,38 +11,39 @@ import { Link } from "react-router-dom"
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
-const cashFlowData = [
-  { name: "Jan", Revenue: 180000, Expenses: 95000 },
-  { name: "Feb", Revenue: 220000, Expenses: 110000 },
-  { name: "Mar", Revenue: 250000, Expenses: 105000 },
-  { name: "Apr", Revenue: 210000, Expenses: 125000 },
-  { name: "May", Revenue: 310000, Expenses: 130000 },
-  { name: "Jun", Revenue: 342000, Expenses: 142000 },
-  { name: "Jul", Revenue: 385000, Expenses: 158000 },
-]
-
 export default function FinanceOverview() {
   const store = useFinanceStore()
   const invoices = store.getInvoices()
   const journalLines = store.getJournalEntryLines()
+  const journalEntries = store.getJournalEntries()
+  const accounts = store.getAccounts()
+  const accountById = new Map(accounts.map((account) => [account.id, account]))
+  const entryById = new Map(journalEntries.map((entry) => [entry.id, entry]))
 
-  // Dynamic calculations from store
-  const overdueAmount = invoices
-    .filter((inv) => inv.status === "Overdue")
-    .reduce((sum, inv) => sum + inv.balance_due, 0)
-
-  const dueThisMonthAmount = invoices
-    .filter((inv) => inv.status !== "Paid" && inv.status !== "Void")
-    .reduce((sum, inv) => sum + inv.balance_due, 0)
-
-  // Cash Position from Account 1000
-  const cashLines = journalLines.filter((l) => l.account_id === "acc-1000" || l.account_id === "1000")
+  const cashLines = journalLines.filter((line) => {
+    const account = accountById.get(line.account_id)
+    return account?.account_type === "Asset" && /cash|bank/i.test(account.name)
+  })
   const cashDebits = cashLines.reduce((s, l) => s + l.debit_amount, 0)
   const cashCredits = cashLines.reduce((s, l) => s + l.credit_amount, 0)
-  const cashPosition = Math.max(487600, cashDebits - cashCredits + 450000)
+  const cashPosition = cashDebits - cashCredits
+
+  const cashFlowByMonth = new Map<string, { name: string; Revenue: number; Expenses: number }>()
+  for (const line of journalLines) {
+    const entry = entryById.get(line.journal_entry_id)
+    const account = accountById.get(line.account_id)
+    if (!entry || !account) continue
+    const month = entry.entry_date.slice(0, 7)
+    const row = cashFlowByMonth.get(month) || { name: month, Revenue: 0, Expenses: 0 }
+    if (account.account_type === "Revenue") row.Revenue += line.credit_amount - line.debit_amount
+    if (account.account_type === "Expense") row.Expenses += line.debit_amount - line.credit_amount
+    cashFlowByMonth.set(month, row)
+  }
+  const cashFlowData = [...cashFlowByMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value)
 
   // Unpaid invoices
   const unpaidInvoices = invoices.filter((inv) => inv.balance_due > 0)
+  const totalReceivables = unpaidInvoices.reduce((sum, inv) => sum + Number(inv.balance_due || 0), 0)
 
   // Timeline strip items sorted by due date
   const sortedInvoiceTimeline = [...invoices]
@@ -68,34 +69,7 @@ export default function FinanceOverview() {
           </div>
         </motion.div>
 
-        {/* Top stat row with bold JetBrains Mono figures for Overdue Amount, Due This Month, Cash Position */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <GlassCard transition={{ delay: 0.05, duration: 0.4, ease: "easeOut" }}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Overdue Amount</span>
-              <div className="size-8 rounded-xl bg-red-100/80 text-red-600 flex items-center justify-center">
-                <AlertCircle className="size-4" />
-              </div>
-            </div>
-            <p className="text-3xl font-black font-mono text-red-600 mt-1">
-              ETB {overdueAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-            <p className="text-xs text-gray-400 mt-1 font-medium">Requires immediate AR recovery collection</p>
-          </GlassCard>
-
-          <GlassCard transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Due This Month</span>
-              <div className="size-8 rounded-xl bg-amber-100/80 text-amber-700 flex items-center justify-center">
-                <Clock className="size-4" />
-              </div>
-            </div>
-            <p className="text-3xl font-black font-mono text-black mt-1">
-              ETB {dueThisMonthAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-            <p className="text-xs text-gray-400 mt-1 font-medium">Upcoming receivable inflows scheduled</p>
-          </GlassCard>
-
+        <div className="grid grid-cols-1 gap-4 mb-6">
           <GlassCard transition={{ delay: 0.15, duration: 0.4, ease: "easeOut" }}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Cash Position</span>
@@ -121,7 +95,7 @@ export default function FinanceOverview() {
           </div>
 
           <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-thin">
-            {sortedInvoiceTimeline.map((inv) => {
+            {sortedInvoiceTimeline.length === 0 ? <p className="w-full py-6 text-center text-xs font-medium text-gray-400">No live invoice due dates are available.</p> : sortedInvoiceTimeline.map((inv) => {
               const isOverdue = inv.status === "Overdue"
               const isPaid = inv.status === "Paid"
               return (
@@ -175,7 +149,7 @@ export default function FinanceOverview() {
               </div>
             </div>
             <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
+              {cashFlowData.length === 0 ? <div className="flex h-full items-center justify-center text-xs font-medium text-gray-400">No posted revenue or expense activity yet.</div> : <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={cashFlowData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -194,7 +168,7 @@ export default function FinanceOverview() {
                   <Area type="monotone" dataKey="Revenue" stroke="#242427" strokeWidth={2} fillOpacity={1} fill="url(#colorRev)" />
                   <Area type="monotone" dataKey="Expenses" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
                 </AreaChart>
-              </ResponsiveContainer>
+              </ResponsiveContainer>}
             </div>
           </GlassCard>
 
@@ -215,37 +189,39 @@ export default function FinanceOverview() {
                 {unpaidInvoices.length === 0 ? (
                   <p className="text-xs text-gray-400 py-6 text-center">No outstanding unpaid invoices.</p>
                 ) : (
-                  unpaidInvoices.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="p-3.5 rounded-2xl bg-black/[0.02] border border-black/5 hover:bg-black/[0.04] transition-all flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-[10px] font-bold text-gray-400">{inv.invoice_number}</span>
-                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                            inv.status === "Overdue" ? "bg-red-100 text-red-700" : "bg-zinc-100 text-zinc-700"
-                          }`}>
-                            {inv.status}
-                          </span>
+                  unpaidInvoices.map((inv) => {
+                    let statusClass = "bg-zinc-100 text-zinc-700"
+                    if (inv.status === "Overdue") statusClass = "bg-red-100 text-red-800"
+                    return (
+                      <div
+                        key={inv.id}
+                        className="p-3.5 rounded-2xl bg-black/[0.02] border border-black/5 hover:bg-black/[0.04] transition-all flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono text-[10px] font-bold text-gray-400">{inv.invoice_number}</span>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusClass}`}>
+                              {inv.status}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-black">{inv.customer_name}</p>
+                          <p className="text-[10px] text-gray-400 font-medium">Due: {inv.due_date}</p>
                         </div>
-                        <p className="text-xs font-bold text-black">{inv.customer_name}</p>
-                        <p className="text-[10px] text-gray-400 font-medium">Due: {inv.due_date}</p>
-                      </div>
 
-                      <div className="text-right">
-                        <span className="text-xs font-black font-mono block text-black">
-                          ETB {inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </span>
-                        <Link
-                          to="/finance/invoices"
-                          className="inline-block mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md hover:bg-emerald-100"
-                        >
-                          Collect
-                        </Link>
+                        <div className="text-right">
+                          <span className="text-xs font-black font-mono block text-black">
+                            ETB {inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </span>
+                          <Link
+                            to="/finance/invoices"
+                            className="inline-block mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md hover:bg-emerald-100"
+                          >
+                            Collect
+                          </Link>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -253,7 +229,7 @@ export default function FinanceOverview() {
             <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between">
               <span className="text-xs font-bold text-gray-400 uppercase">Total Receivables</span>
               <span className="text-base font-black font-mono text-black">
-                ETB {dueThisMonthAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ETB {totalReceivables.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </span>
             </div>
           </GlassCard>

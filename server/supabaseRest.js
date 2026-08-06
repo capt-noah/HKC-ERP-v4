@@ -206,7 +206,8 @@ export async function replaceRows({ resource, body, headers = {} }) {
 
   for (const row of existingRows) {
     if (row?.id && !nextIds.has(String(row.id))) {
-      await deleteRow({ resource, id: String(row.id), headers })
+      const deleted = await deleteRow({ resource, id: String(row.id), headers })
+      if (deleted.status >= 400) return deleted
     }
   }
 
@@ -220,19 +221,33 @@ export async function replaceRows({ resource, body, headers = {} }) {
     const url = new URL(resource.table, config.supabaseRestUrl)
     url.searchParams.set("id", `eq.${id}`)
 
-    await fetch(url, {
+    const patched = await fetch(url, {
       method: "PATCH",
       headers: buildHeaders(headers, "return=minimal"),
       body: JSON.stringify(
         resource.storage === "jsonb_document" ? { payload: payload.payload } : payload,
       ),
     })
+    if (patched.status >= 400) {
+      return {
+        status: patched.status,
+        headers: patched.headers,
+        body: await parseSupabaseResponse(patched),
+      }
+    }
 
-    await fetch(new URL(resource.table, config.supabaseRestUrl), {
+    const inserted = await fetch(new URL(resource.table, config.supabaseRestUrl), {
       method: "POST",
       headers: buildHeaders(headers, "resolution=merge-duplicates,return=minimal"),
       body: JSON.stringify(payload),
     })
+    if (inserted.status >= 400) {
+      return {
+        status: inserted.status,
+        headers: inserted.headers,
+        body: await parseSupabaseResponse(inserted),
+      }
+    }
   }
 
   return {

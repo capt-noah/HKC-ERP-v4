@@ -67,7 +67,7 @@ export default function SalesDashboard() {
   const postedIssues = salesIssues.filter((issue) => issue.status === "Posted")
   const draftIssues = salesIssues.filter((issue) => issue.status === "Draft")
   const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue.total_amount || 0), 0)
-  const issuedQuantity = postedIssues.reduce((sum, issue) => sum + Number(issue.total_quantity || 0), 0)
+  const postedIssueCount = postedIssues.length
   const orderAmount = salesOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0)
   const quotationAmount = quotations.reduce((sum, quote) => sum + Number(quote.amount || 0), 0)
 
@@ -93,7 +93,7 @@ export default function SalesDashboard() {
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {isLoading ? Array.from({ length: 4 }).map((_, index) => <MetricSkeleton key={index} />) : [
             { label: "Posted Sales", value: `ETB ${money(issuedAmount)}`, note: `${postedIssues.length.toLocaleString()} posted issues`, Icon: DollarSign },
-            { label: "Issued Quantity", value: issuedQuantity.toLocaleString(), note: "Posted stock quantity", Icon: PackageCheck },
+            { label: "Issued Records", value: postedIssueCount.toLocaleString(), note: "Posted sales issue records", Icon: PackageCheck },
             { label: "Open Orders", value: `ETB ${money(orderAmount)}`, note: `${salesOrders.length.toLocaleString()} sales orders`, Icon: Truck },
             { label: "Quotations", value: `ETB ${money(quotationAmount)}`, note: `${quotations.length.toLocaleString()} quotations`, Icon: FileText },
           ].map((card, index) => {
