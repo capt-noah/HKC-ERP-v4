@@ -19,12 +19,15 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
 import type { Invoice, InvoiceLineItem } from "@/lib/financeStore"
 
+import { Skeleton } from "@/components/ui/skeleton"
+
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
 export default function Invoices() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
   const invoices = store.getInvoices()
 
   const [searchQuery, setSearchQuery] = useState("")
@@ -42,12 +45,17 @@ export default function Invoices() {
   // Create Invoice Slide-In Drawer State
   const [showCreateDrawer, setShowCreateDrawer] = useState(false)
   const [custName, setCustName] = useState("")
-  const [invNumber, setInvNumber] = useState(`INV-2026-${103 + invoices.length}`)
-  const [issueDate, setIssueDate] = useState("2026-07-20")
-  const [dueDate, setDueDate] = useState("2026-08-20")
+  const todayStr = new Date().toISOString().split("T")[0]
+  const defaultDueObj = new Date()
+  defaultDueObj.setDate(defaultDueObj.getDate() + 30)
+  const defaultDueStr = defaultDueObj.toISOString().split("T")[0]
+
+  const [invNumber, setInvNumber] = useState(`INV-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`)
+  const [issueDate, setIssueDate] = useState(todayStr)
+  const [dueDate, setDueDate] = useState(defaultDueStr)
   const [currency, setCurrency] = useState("ETB")
   const [newItems, setNewItems] = useState<InvoiceLineItem[]>([
-    { description: "Personal Protective Equipment Packs", quantity: 1000, unit_price: 35, line_total: 35000 }
+    { description: "", quantity: 1, unit_price: 0, line_total: 0 }
   ])
 
   const getFilteredInvoices = (status: string, query: string) => {
@@ -197,6 +205,14 @@ export default function Invoices() {
   return (
     <div className="min-h-screen page-gradient text-black">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — invoice data cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Top Header Row */}
@@ -292,7 +308,18 @@ export default function Invoices() {
 
             {/* Invoices Cards Stack */}
             <div className="space-y-3">
-              {filteredInvoices.length === 0 ? (
+              {isLoading ? (
+                Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="p-4 rounded-2xl bg-white/60 border border-black/5 space-y-2">
+                    <div className="flex justify-between">
+                      <Skeleton className="h-4 w-24 bg-zinc-200/80" />
+                      <Skeleton className="h-4 w-16 bg-zinc-200/80" />
+                    </div>
+                    <Skeleton className="h-5 w-40 bg-zinc-200/80" />
+                    <Skeleton className="h-3 w-32 bg-zinc-200/80" />
+                  </div>
+                ))
+              ) : filteredInvoices.length === 0 ? (
                 <div className="p-8 text-center bg-white/50 backdrop-blur-xs rounded-2xl border border-black/5 text-gray-400 text-xs font-medium space-y-2">
                   <Search className="size-5 mx-auto text-gray-300" />
                   <p className="font-semibold text-gray-600">Nothing to show</p>
@@ -408,7 +435,7 @@ export default function Invoices() {
                     <div>
                       <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider block mb-1">TOTAL RECEIVABLE</span>
                       <span className="text-xl font-black text-black font-mono">
-                        {activeInvoice.currency} {activeInvoice.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {activeInvoice.currency} {(activeInvoice.total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -427,69 +454,85 @@ export default function Invoices() {
 
                     {/* Item Rows */}
                     <div className="divide-y divide-black/5">
-                      {activeInvoice.line_items.map((item, i) => (
-                        <div key={i} className="grid grid-cols-12 px-4 py-3.5 text-xs items-center font-semibold">
-                          <span className="col-span-6 font-bold text-black">{item.description}</span>
-                          <span className="col-span-2 text-center font-mono text-gray-600">{item.quantity}</span>
-                          <span className="col-span-2 text-right font-mono text-gray-600">
-                            {activeInvoice.currency} {item.unit_price.toFixed(2)}
-                          </span>
-                          <span className="col-span-2 text-right font-mono font-bold text-black">
-                            {activeInvoice.currency} {item.line_total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      ))}
+                      {(activeInvoice.line_items || []).map((item: any, i: number) => {
+                        const q = Number(item.quantity ?? 1)
+                        const p = Number(item.unit_price ?? 0)
+                        const t = Number(item.line_total ?? q * p)
+                        return (
+                          <div key={i} className="grid grid-cols-12 px-4 py-3.5 text-xs items-center font-semibold">
+                            <span className="col-span-6 font-bold text-black">{item.description || "Invoice Item"}</span>
+                            <span className="col-span-2 text-center font-mono text-gray-600">{q}</span>
+                            <span className="col-span-2 text-right font-mono text-gray-600">
+                              {activeInvoice.currency} {p.toFixed(2)}
+                            </span>
+                            <span className="col-span-2 text-right font-mono font-bold text-black">
+                              {activeInvoice.currency} {t.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
 
                   {/* Financial Summary Breakdown & GL Impact */}
-                  <div className="mt-8 p-4 rounded-2xl bg-white/60 backdrop-blur-xs border border-black/5 space-y-2 text-xs">
-                    <div className="flex justify-between text-gray-500">
-                      <span>Subtotal</span>
-                      <span className="font-mono">{activeInvoice.currency} {activeInvoice.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    {activeInvoice.discount_amount ? (
-                      <div className="flex justify-between text-emerald-700 font-semibold">
-                        <span>Discount Applied</span>
-                        <span className="font-mono">-{activeInvoice.currency} {activeInvoice.discount_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    ) : null}
-                    <div className="flex justify-between text-gray-500">
-                      <span>Tax Amount</span>
-                      <span className="font-mono">{activeInvoice.currency} {activeInvoice.tax_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-black text-sm pt-2 border-t border-black/5">
-                      <span>Total Receivable</span>
-                      <span className="font-mono">{activeInvoice.currency} {activeInvoice.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-emerald-700">
-                      <span>Amount Received</span>
-                      <span className="font-mono">{activeInvoice.currency} {activeInvoice.amount_paid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between font-black text-red-600 text-sm">
-                      <span>Balance Outstanding</span>
-                      <span className="font-mono">{activeInvoice.currency} {activeInvoice.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    </div>
+                  {(() => {
+                    const totalVal = Number(activeInvoice.total ?? 0)
+                    const subtotalVal = Number(activeInvoice.subtotal ?? 0)
+                    const taxVal = Number(activeInvoice.tax_amount ?? 0)
+                    const discVal = Number(activeInvoice.discount_amount ?? 0)
+                    const paidVal = Number(activeInvoice.amount_paid ?? 0)
+                    const dueVal = Number(activeInvoice.balance_due ?? totalVal - paidVal)
 
-                    {/* GL Posting Impact Box */}
-                    <div className="pt-3 border-t border-black/5 text-[10px] font-mono space-y-1">
-                      <span className="font-sans font-extrabold uppercase text-gray-400 block mb-1">GL Posting Entry Audit</span>
-                      <div className="flex justify-between text-black">
-                        <span>Debit ACC-1200 (Accounts Receivable)</span>
-                        <span className="font-bold">ETB {activeInvoice.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-500 pl-2">
-                        <span>Credit ACC-4000 (Sales Revenue)</span>
-                        <span>ETB {(activeInvoice.total - activeInvoice.tax_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      {activeInvoice.tax_amount > 0 && (
-                        <div className="flex justify-between text-gray-500 pl-2">
-                          <span>Credit ACC-2210 (Tax Liability)</span>
-                          <span>ETB {activeInvoice.tax_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    return (
+                      <div className="mt-8 p-4 rounded-2xl bg-white/60 backdrop-blur-xs border border-black/5 space-y-2 text-xs">
+                        <div className="flex justify-between text-gray-500">
+                          <span>Subtotal</span>
+                          <span className="font-mono">{activeInvoice.currency} {subtotalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                         </div>
-                      )}
-                    </div>
-                  </div>
+                        {discVal > 0 && (
+                          <div className="flex justify-between text-emerald-700 font-semibold">
+                            <span>Discount Applied</span>
+                            <span className="font-mono">-{activeInvoice.currency} {discVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-gray-500">
+                          <span>Tax Amount</span>
+                          <span className="font-mono">{activeInvoice.currency} {taxVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-black text-sm pt-2 border-t border-black/5">
+                          <span>Total Receivable</span>
+                          <span className="font-mono">{activeInvoice.currency} {totalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-emerald-700">
+                          <span>Amount Received</span>
+                          <span className="font-mono">{activeInvoice.currency} {paidVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between font-black text-red-600 text-sm">
+                          <span>Balance Outstanding</span>
+                          <span className="font-mono">{activeInvoice.currency} {dueVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+
+                        {/* GL Posting Impact Box */}
+                        <div className="pt-3 border-t border-black/5 text-[10px] font-mono space-y-1">
+                          <span className="font-sans font-extrabold uppercase text-gray-400 block mb-1">GL Posting Entry Audit</span>
+                          <div className="flex justify-between text-black">
+                            <span>Debit ACC-1200 (Accounts Receivable)</span>
+                            <span className="font-bold">ETB {totalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between text-gray-500 pl-2">
+                            <span>Credit ACC-4000 (Sales Revenue)</span>
+                            <span>ETB {(totalVal - taxVal).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          {taxVal > 0 && (
+                            <div className="flex justify-between text-gray-500 pl-2">
+                              <span>Credit ACC-2210 (Tax Liability)</span>
+                              <span>ETB {taxVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* Bottom Action Footer */}

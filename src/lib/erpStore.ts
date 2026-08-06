@@ -290,6 +290,7 @@ class ErpStore {
 
   private listeners = new Set<() => void>()
   private loading = true
+  private _loadError: string | null = null
 
   constructor() {
     this.loadFromApi()
@@ -297,6 +298,7 @@ class ErpStore {
 
   private async loadFromApi() {
     this.loading = true
+    this._loadError = null
     this.listeners.forEach((l) => l())
     try {
       const [
@@ -311,16 +313,16 @@ class ErpStore {
         transfers,
         stockMovements,
       ] = await Promise.all([
-        loadResource<Warehouse>("warehouses", this.warehouses),
-        loadResource<Product>("inventory_products", this.products),
-        loadResource<SalesOrder>("sales_orders", this.salesOrders),
-        loadResource<PurchaseOrder>("purchase_orders", this.purchaseOrders),
-        loadResource<Customer>("customers", this.customers),
-        loadResource<Supplier>("suppliers", this.suppliers),
-        loadResource<Quotation>("quotations", this.quotations),
-        loadResource<DeliveryNote>("delivery_notes", this.deliveryNotes),
-        loadResource<PersistedTransfer>("store_transfers", this.transfers.map((transfer) => ({ id: transfer.reference_number, ...transfer }))),
-        loadResource<StockMovementLog>("stock_movements", this.stockMovements),
+        loadResource<Warehouse>("warehouses"),
+        loadResource<Product>("inventory_products"),
+        loadResource<SalesOrder>("sales_orders"),
+        loadResource<PurchaseOrder>("purchase_orders"),
+        loadResource<Customer>("customers"),
+        loadResource<Supplier>("suppliers"),
+        loadResource<Quotation>("quotations"),
+        loadResource<DeliveryNote>("delivery_notes"),
+        loadResource<PersistedTransfer>("store_transfers"),
+        loadResource<StockMovementLog>("stock_movements"),
       ])
 
       this.warehouses = warehouses
@@ -333,8 +335,21 @@ class ErpStore {
       this.deliveryNotes = deliveryNotes
       this.transfers = transfers.map(({ id: _id, ...transfer }) => transfer as Transfer)
       this.stockMovements = stockMovements
+      this._loadError = null
     } catch (error) {
       console.error("Failed to load ERP data from Supabase.", error)
+      // Explicitly clear all state so stale data is not shown
+      this.warehouses = []
+      this.products = []
+      this.salesOrders = []
+      this.purchaseOrders = []
+      this.customers = []
+      this.suppliers = []
+      this.quotations = []
+      this.deliveryNotes = []
+      this.transfers = []
+      this.stockMovements = []
+      this._loadError = error instanceof Error ? error.message : "Could not connect to the server. ERP data is unavailable."
     } finally {
       this.loading = false
       this.listeners.forEach((l) => l())
@@ -367,6 +382,10 @@ class ErpStore {
 
   public isLoading() {
     return this.loading
+  }
+
+  public getLoadError(): string | null {
+    return this._loadError
   }
 
   private notify() {
@@ -775,11 +794,41 @@ class ErpStore {
     const enrichedSo: SalesOrder = {
       ...so,
       deliveredAmount: so.deliveredAmount || (so.stage === "Shipped" || so.stage === "Delivered" ? so.amount : 0),
-      billedAmount: so.billedAmount || 0,
+      billedAmount: so.billedAmount || so.amount,
       deliveryStatus: so.deliveryStatus || (so.stage === "Shipped" || so.stage === "Delivered" ? "Fully Delivered" : "Not Delivered"),
-      billingStatus: so.billingStatus || "Not Billed",
+      billingStatus: "Fully Billed",
     }
     this.salesOrders.unshift(enrichedSo)
+
+    // Auto-create Customer AR Invoice & Double-Entry GL Entry in Finance Store
+    try {
+      const invId = `INV-2026-${Date.now().toString().slice(-4)}`
+      const taxAmt = Math.round(so.amount * 0.15)
+      const totalAmt = Math.round(so.amount * 1.15)
+
+      financeStore.createInvoice({
+        invoice_number: invId,
+        customer_name: so.customer,
+        issue_date: so.date || new Date().toISOString().split("T")[0],
+        due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+        currency: "ETB",
+        line_items: (so.items || []).map((i) => ({
+          description: i.name || "Sales Order Item",
+          quantity: i.qty || 1,
+          unit_price: i.unitPrice || 150,
+          line_total: i.total || 150,
+        })),
+        subtotal: so.amount,
+        tax_amount: taxAmt,
+        discount_amount: 0,
+        payment_terms: "Net 30",
+        total: totalAmt,
+        status: "Sent",
+      })
+    } catch (err) {
+      console.error("Auto-posting Sales Order to Finance failed:", err)
+    }
+
     this.notify()
   }
 
@@ -855,42 +904,45 @@ class ErpStore {
     // Post Double-Entry Journal Entry in Finance (Debit COGS ACC-5000, Credit Stock ACC-1010)
     let jeId: string | undefined = undefined
     try {
-      const postRes = financeStore.postJournalEntry(
-        {
-          entry_date: new Date().toISOString().split("T")[0],
-          description: `Stock Fulfillment & COGS Recognition for Delivery Note ${dnId} (SO: ${so.id}, Client: ${so.customer})`,
-          source_type: "Warehouse Transfer",
-          source_id: dnId,
-          created_by: "Sales & Inventory Dispatch System",
-          currency: so.currency || "ETB",
-          exchange_rate: 1.0,
-        },
-        [
+      // Resolve accounts by code — fall back gracefully if not in COA yet
+      const cogsAcc = financeStore.getAccounts().find((a) => a.code === "5001" || a.code === "5000" || a.id === "ACC-5001" || a.account_type === "Expense")
+      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410" || a.code === "1010" || a.id === "ACC-1410" || a.account_type === "Asset")
+
+      if (cogsAcc && stockAcc && totalCogs > 0) {
+        const postRes = financeStore.postJournalEntry(
           {
-            account_id: "acc-5000", // Cost of Goods Sold
-            debit_amount: totalCogs,
-            credit_amount: 0,
-            warehouse_id: so.warehouse,
-            party_type: "Customer",
-            party_id: so.customerId,
-            party_name: so.customer,
+            entry_date: new Date().toISOString().split("T")[0],
+            description: `Stock Fulfillment & COGS Recognition for Delivery Note ${dnId} (SO: ${so.id}, Client: ${so.customer})`,
+            source_type: "Warehouse Transfer",
+            source_id: dnId,
+            created_by: "Sales & Inventory Dispatch System",
+            currency: so.currency || "ETB",
+            exchange_rate: 1.0,
           },
-          {
-            account_id: "acc-1010", // Raw Material / Merchandise Inventory
-            debit_amount: 0,
-            credit_amount: totalCogs,
-            warehouse_id: so.warehouse,
-            party_type: "Customer",
-            party_id: so.customerId,
-            party_name: so.customer,
-          },
-        ]
-      )
-      if (postRes.success && postRes.entry) {
-        jeId = postRes.entry.id
+          [
+            {
+              account_id: cogsAcc.id,
+              debit_amount: totalCogs,
+              credit_amount: 0,
+              warehouse_id: so.warehouse,
+              party_type: "Customer",
+              party_id: so.customerId,
+              party_name: so.customer,
+            },
+            {
+              account_id: stockAcc.id,
+              debit_amount: 0,
+              credit_amount: totalCogs,
+              warehouse_id: so.warehouse,
+            },
+          ]
+        )
+        if (postRes.success && postRes.entry) {
+          jeId = postRes.entry.id
+        }
       }
     } catch {
-      // Ignore if GL posting fails gracefully
+      // GL posting failure must not block the delivery note from being created
     }
 
     const newDn: DeliveryNote = {
@@ -1061,12 +1113,17 @@ class ErpStore {
     })
 
     // 2. Post Goods Received Double-Entry Journal Entry in Finance Store
-    // Debit 1410 (Inventory / Stock In Hand)
-    // Credit 2120 (Stock Received But Not Billed / Payable Clearing)
-    const invAcc = financeStore.getAccounts().find((a) => a.code === "1410" || a.name.includes("Inventory")) || financeStore.getAccounts()[0]
-    const clearingAcc = financeStore.getAccounts().find((a) => a.code === "2120" || a.code === "2100" || a.name.includes("Payable")) || financeStore.getAccounts()[1]
+    // Debit 1410 Inventory / Stock In Hand
+    // Credit 2120 Stock Received But Not Billed (clearing account) or 2100 Accounts Payable
+    const invAcc =
+      financeStore.getAccounts().find((a) => a.code === "1410" || a.code === "1300" || a.name?.toLowerCase().includes("inventory") || a.name?.toLowerCase().includes("stock in hand")) ||
+      financeStore.getAccounts().find((a) => a.account_type === "Asset")
+    const clearingAcc =
+      financeStore.getAccounts().find((a) => a.code === "2120") ||
+      financeStore.getAccounts().find((a) => a.code === "2100" || a.name?.toLowerCase().includes("payable")) ||
+      financeStore.getAccounts().find((a) => a.account_type === "Liability")
 
-    let jeId = "JE-PURCH-RCV"
+    let jeId: string | undefined
     if (invAcc && clearingAcc) {
       const postRes = financeStore.postJournalEntry(
         {
@@ -1080,7 +1137,14 @@ class ErpStore {
         },
         [
           { account_id: invAcc.id, debit_amount: po.amount, credit_amount: 0, warehouse_id: po.warehouse },
-          { account_id: clearingAcc.id, debit_amount: 0, credit_amount: po.amount },
+          {
+            account_id: clearingAcc.id,
+            debit_amount: 0,
+            credit_amount: po.amount,
+            party_type: "Supplier" as const,
+            party_id: po.supplierId,
+            party_name: po.supplier,
+          },
         ]
       )
       if (postRes.success && postRes.entry) {
@@ -1120,12 +1184,17 @@ class ErpStore {
     const totalAmount = po.amount + taxAmount
 
     // Post AP Journal Entry:
-    // Debit 2120 Stock Received Not Billed / Cost of Sourcing Account
-    // Credit 2100 Accounts Payable (Supplier Account)
-    const clearingAcc = financeStore.getAccounts().find((a) => a.code === "2120" || a.code === "5100" || a.account_type === "Expense") || financeStore.getAccounts()[0]
-    const apAcc = financeStore.getAccounts().find((a) => a.code === "2100" || a.account_type === "Liability") || financeStore.getAccounts()[1]
+    // Debit 2120 Stock Received Not Billed (clearing) → clears the goods receipt entry
+    // Credit 2100 Accounts Payable (with supplier party reference for AP aging)
+    const clearingAcc =
+      financeStore.getAccounts().find((a) => a.code === "2120") ||
+      financeStore.getAccounts().find((a) => a.code === "5100" || a.account_type === "Expense") ||
+      financeStore.getAccounts().find((a) => a.account_type === "Asset")
+    const apAcc =
+      financeStore.getAccounts().find((a) => a.code === "2100") ||
+      financeStore.getAccounts().find((a) => a.account_type === "Liability")
 
-    let jeId = "JE-AP-INV"
+    let jeId: string | undefined
     if (clearingAcc && apAcc) {
       const postRes = financeStore.postJournalEntry(
         {
@@ -1139,7 +1208,14 @@ class ErpStore {
         },
         [
           { account_id: clearingAcc.id, debit_amount: po.amount, credit_amount: 0 },
-          { account_id: apAcc.id, debit_amount: 0, credit_amount: totalAmount, party_type: "Supplier", party_id: po.supplierId, party_name: po.supplier },
+          {
+            account_id: apAcc.id,
+            debit_amount: 0,
+            credit_amount: totalAmount,
+            party_type: "Supplier" as const,
+            party_id: po.supplierId,
+            party_name: po.supplier,
+          },
         ]
       )
       if (postRes.success && postRes.entry) {
@@ -1173,10 +1249,10 @@ export function useErpStore() {
 
   useEffect(() => {
     const unsub = erpStore.subscribe(() => setTick((t) => t + 1))
-    return () => {
-      unsub()
-    }
+    return () => { unsub() }
   }, [])
 
+  // Return the store directly — pages call store.isLoading() / store.getLoadError()
+  // for error-state awareness without requiring call-site changes.
   return erpStore
 }

@@ -9,7 +9,6 @@ import {
   getSalesIssue,
   listSalesIssues,
   postSalesIssue,
-  updateSalesIssue,
 } from "./salesIssues.js"
 import { payPayrollRecord } from "./payrollFinance.js"
 
@@ -26,6 +25,8 @@ router.get("/api", (_req, res) => {
 })
 
 // ── Sales Issues ─────────────────────────────────────────────────────────────
+// These specific routes must come before the generic /api/:resource routes
+// so Express doesn't match "sales-issues" as a resource name.
 
 router.get("/api/sales-issues/batches", async (req, res, next) => {
   try {
@@ -99,6 +100,19 @@ router.post("/api/sales-issues/:id/cancel", async (req, res, next) => {
   }
 })
 
+// ── Payroll payment ───────────────────────────────────────────────────────────
+// MUST be registered before POST /api/:resource — otherwise Express matches
+// "payroll-records" as :resource and ":id/pay" as :id, hitting the wrong handler.
+
+router.post("/api/payroll-records/:id/pay", async (req, res, next) => {
+  try {
+    const result = await payPayrollRecord(req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
 // ── Generic resource routes ───────────────────────────────────────────────────
 
 router.get("/api/:resource", async (req, res, next) => {
@@ -115,15 +129,6 @@ router.get("/api/:resource", async (req, res, next) => {
     if (result.headers?.["Content-Range"]) {
       res.setHeader("Content-Range", result.headers["Content-Range"])
     }
-    res.status(result.status).json(result.body)
-  } catch (err) {
-    next(err)
-  }
-})
-
-router.post("/api/payroll-records/:id/pay", async (req, res, next) => {
-  try {
-    const result = await payPayrollRecord(req.params.id)
     res.status(result.status).json(result.body)
   } catch (err) {
     next(err)

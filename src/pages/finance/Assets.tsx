@@ -40,9 +40,12 @@ const statusColorMap: Record<string, string> = {
   Disposed: "bg-rose-100 text-rose-700",
 }
 
+import { Skeleton } from "@/components/ui/skeleton"
+
 export default function Assets() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
   const assets = store.getFixedAssets()
   const accounts = store.getAccounts()
 
@@ -219,6 +222,14 @@ export default function Assets() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — asset data cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
@@ -313,7 +324,18 @@ export default function Assets() {
                 actions={[{ label: "Register Asset", onClick: () => setShowAddModal(true) }]}
               />
             </GlassCard>
-            {filteredAssets.length === 0 ? (
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <GlassCard key={index} className="p-5 space-y-3">
+                  <div className="flex justify-between">
+                    <Skeleton className="h-4 w-32 bg-zinc-200/80" />
+                    <Skeleton className="h-4 w-20 bg-zinc-200/80" />
+                  </div>
+                  <Skeleton className="h-5 w-48 bg-zinc-200/80" />
+                  <Skeleton className="h-3 w-36 bg-zinc-200/80" />
+                </GlassCard>
+              ))
+            ) : filteredAssets.length === 0 ? (
               <GlassCard className="p-12 text-center">
                 <Building className="size-10 text-zinc-300 mx-auto mb-3" />
                 <p className="text-sm text-zinc-400">No assets registered yet. Click &quot;Register Asset&quot; to begin.</p>

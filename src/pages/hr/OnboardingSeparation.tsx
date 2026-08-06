@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   CheckCircle2, 
@@ -12,6 +12,7 @@ import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useHRStore } from "@/lib/hrStore"
+import { loadHRData, type Employee as HRApiEmployee } from "@/lib/hrApi"
 import { useFeedback } from "@/context/FeedbackContext"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -23,14 +24,19 @@ export default function OnboardingSeparation() {
 
   const onboardings = store.getOnboardings()
   const separations = store.getSeparations()
-  const employees = store.getEmployees()
+
+  // Load employees from hrApi (production schema) instead of hrStore
+  const [employees, setEmployees] = useState<HRApiEmployee[]>([])
+  useEffect(() => {
+    loadHRData().then((data) => setEmployees(data.employees)).catch(() => setEmployees([]))
+  }, [])
 
   const [activeTab, setActiveTab] = useState<"Onboarding" | "Separation">("Onboarding")
   const [showInitiateSepModal, setShowInitiateSepModal] = useState(false)
 
   // New Separation Form State
   const [newSep, setNewSep] = useState({
-    employeeId: employees[0]?.id || "",
+    employeeId: "",
     resignationDate: new Date().toISOString().split("T")[0],
     exitDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     reason: "",
@@ -50,17 +56,37 @@ export default function OnboardingSeparation() {
     e.preventDefault()
     if (!newSep.employeeId || !newSep.reason) return
 
-    store.initiateSeparation({
+    const emp = employees.find((em) => em.id === newSep.employeeId)
+
+    // Build a compatible separation record directly rather than relying on
+    // hrStore's stale employee cache which uses the old schema.
+    const sep = {
+      id: `SEP-2026-${String(separations.length + 1).padStart(2, "0")}`,
       employeeId: newSep.employeeId,
+      employeeName: emp?.full_name ?? "Employee",
+      department: emp?.warehouse_id ?? "General",
+      role: emp?.employment_type ?? "Staff",
       resignationDate: newSep.resignationDate,
       exitDate: newSep.exitDate,
       reason: newSep.reason,
-    })
+      status: "Clearance Pending" as const,
+      clearances: [
+        { id: "C1", department: "IT" as const, cleared: false },
+        { id: "C2", department: "Finance" as const, cleared: false },
+        { id: "C3", department: "HR" as const, cleared: false },
+        { id: "C4", department: "Department Head" as const, cleared: false },
+      ],
+      finalSettlementAmount: emp ? Number(emp.basic_salary) * 1.5 : 50000,
+      settlementPaid: false,
+    }
+
+    // Directly push into store separations (hrStore handles persistence)
+    store.initiateSeparationRecord(sep)
 
     showToast("Separation Initiated", "warning", "Created multi-department clearance workflow.")
     setShowInitiateSepModal(false)
     setNewSep({
-      employeeId: employees[0]?.id || "",
+      employeeId: "",
       resignationDate: new Date().toISOString().split("T")[0],
       exitDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
       reason: "",
@@ -268,8 +294,9 @@ export default function OnboardingSeparation() {
               <div>
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Select Employee</label>
                 <select value={newSep.employeeId} onChange={(e) => setNewSep({ ...newSep, employeeId: e.target.value })} className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none">
+                  {employees.length === 0 && <option value="">Loading employees...</option>}
                   {employees.map((e) => (
-                    <option key={e.id} value={e.id}>{e.name} ({e.role} - {e.department})</option>
+                    <option key={e.id} value={e.id}>{e.full_name} ({e.employment_type} - {e.warehouse_id})</option>
                   ))}
                 </select>
               </div>

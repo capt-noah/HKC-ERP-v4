@@ -28,12 +28,15 @@ import type { JournalEntry } from "@/lib/financeStore"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 
+import { Skeleton } from "@/components/ui/skeleton"
+
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 export default function Ledger() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
 
   const [activeTab, setActiveTab] = useState<
     "Entries" | "Chart" | "Periods" | "Revaluation"
@@ -157,11 +160,12 @@ export default function Ledger() {
   const [closingRetainedEarningsCode, setClosingRetainedEarningsCode] = useState("3000")
 
   // Posting modal state
+  const todayStr = new Date().toISOString().split("T")[0]
   const [showPostModal, setShowPostModal] = useState(false)
-  const [newDate, setNewDate] = useState("2026-07-22")
+  const [newDate, setNewDate] = useState(todayStr)
   const [newDesc, setNewDesc] = useState("")
   const [newSourceType, setNewSourceType] = useState<JournalEntry["source_type"]>("Manual Adjustment")
-  const [newSourceId, setNewSourceId] = useState("JV-095")
+  const [newSourceId, setNewSourceId] = useState(`JV-${Date.now().toString().slice(-4)}`)
   const newCurrency = "ETB"
 
   const [formLines, setFormLines] = useState<Array<{
@@ -178,11 +182,11 @@ export default function Ledger() {
 
   // Revaluation modal
   const [showRevalModal, setShowRevalModal] = useState(false)
-  const [revalDate, setRevalDate] = useState("2026-07-22")
+  const [revalDate, setRevalDate] = useState(todayStr)
   const [revalCurrency, setRevalCurrency] = useState("USD")
   const [revalTargetAcc, setRevalTargetAcc] = useState(accounts.find(a => a.code === "1000")?.id || "")
-  const [revalOrigBalance, setRevalOrigBalance] = useState("10000")
-  const [revalNewRate, setRevalNewRate] = useState("58.50")
+  const [revalOrigBalance, setRevalOrigBalance] = useState("")
+  const [revalNewRate, setRevalNewRate] = useState("")
 
   // Reversal computation
   const reversedEntryIds = new Set(
@@ -409,11 +413,11 @@ export default function Ledger() {
   // Filter entries
   const filteredEntries = entries.filter((ent) => {
     if (jeSourceFilter !== "ALL" && ent.source_type !== jeSourceFilter) return false
-    return (
-      ent.description.toLowerCase().includes(searchEntries.toLowerCase()) ||
-      ent.id.toLowerCase().includes(searchEntries.toLowerCase()) ||
-      (ent.source_id && ent.source_id.toLowerCase().includes(searchEntries.toLowerCase()))
-    )
+    const q = (searchEntries || "").toLowerCase()
+    const desc = (ent.description || "").toLowerCase()
+    const entId = (ent.id || "").toLowerCase()
+    const srcId = (ent.source_id || "").toLowerCase()
+    return desc.includes(q) || entId.includes(q) || srcId.includes(q)
   })
 
   const jeSourceTypes = Array.from(new Set(entries.map((e) => e.source_type)))
@@ -423,7 +427,7 @@ export default function Ledger() {
     if (periodStatusFilter === "LOCKED" && !p.is_closed) return false
     if (!periodSearch.trim()) return true
     const q = periodSearch.toLowerCase()
-    return p.period_label.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)
+    return (p.period_label || "").toLowerCase().includes(q) || (p.id || "").toLowerCase().includes(q)
   })
   const periodTable = useResizableTable(periodColumns, filteredPeriods)
 
@@ -431,7 +435,7 @@ export default function Ledger() {
     if (revalStatusFilter !== "ALL" && rev.status !== revalStatusFilter) return false
     if (!revalSearch.trim()) return true
     const q = revalSearch.toLowerCase()
-    return rev.id.toLowerCase().includes(q) || rev.currency.toLowerCase().includes(q)
+    return (rev.id || "").toLowerCase().includes(q) || (rev.currency || "").toLowerCase().includes(q)
   })
 
   // Sort entries
@@ -697,6 +701,14 @@ export default function Ledger() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — ledger data cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div 
         variants={stagger} 
@@ -922,7 +934,21 @@ export default function Ledger() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                      {sortedEntries.length === 0 ? (
+                      {isLoading ? (
+                        Array.from({ length: 5 }).map((_, idx) => (
+                          <tr key={idx} className="animate-pulse text-xs">
+                            <td className="px-3 py-3"><Skeleton className="h-4 w-20 bg-zinc-200/80" /></td>
+                            <td className="px-3 py-3"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
+                            <td className="px-3 py-3"><Skeleton className="h-4 w-36 bg-zinc-200/80" /></td>
+                            <td className="px-3 py-3"><Skeleton className="h-4 w-28 bg-zinc-200/80" /></td>
+                            <td className="px-3 py-3"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
+                            <td className="px-3 py-3 text-right"><Skeleton className="h-4 w-20 bg-zinc-200/80 ml-auto" /></td>
+                            <td className="px-3 py-3 text-right"><Skeleton className="h-4 w-20 bg-zinc-200/80 ml-auto" /></td>
+                            <td className="px-3 py-3 text-center"><Skeleton className="h-4 w-16 bg-zinc-200/80 mx-auto" /></td>
+                            <td className="px-3 py-3 text-right"><Skeleton className="h-4 w-12 bg-zinc-200/80 ml-auto" /></td>
+                          </tr>
+                        ))
+                      ) : sortedEntries.length === 0 ? (
                         <tr>
                           <td colSpan={9} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
                             No journal entries found matching search criteria.

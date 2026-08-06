@@ -33,7 +33,7 @@ function errorMessage(body: unknown, fallback: string) {
   return fallback
 }
 
-export async function loadResource<T>(resource: string, _defaults: T[] = []): Promise<T[]> {
+export async function loadResource<T>(resource: string): Promise<T[]> {
   const response = await fetch(`${API_BASE}/api/${resource}`)
   const body = await parseResponse(response)
 

@@ -8,11 +8,14 @@ import { useFinanceStore } from "@/lib/financeStore"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
 import { Link } from "react-router-dom"
 
+import { Skeleton } from "@/components/ui/skeleton"
+
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
 export default function FinanceOverview() {
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
   const invoices = store.getInvoices()
   const journalLines = store.getJournalEntryLines()
   const journalEntries = store.getJournalEntries()
@@ -53,6 +56,14 @@ export default function FinanceOverview() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — finance data cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Header */}
@@ -77,9 +88,13 @@ export default function FinanceOverview() {
                 <Wallet className="size-4" />
               </div>
             </div>
-            <p className="text-3xl font-black font-mono text-emerald-700 mt-1">
-              ETB {cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-8 w-48 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-3xl font-black font-mono text-emerald-700 mt-1">
+                ETB {cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            )}
             <p className="text-xs text-gray-400 mt-1 font-medium">Liquid cash & bank equivalents</p>
           </GlassCard>
         </div>
@@ -95,42 +110,52 @@ export default function FinanceOverview() {
           </div>
 
           <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-thin">
-            {sortedInvoiceTimeline.length === 0 ? <p className="w-full py-6 text-center text-xs font-medium text-gray-400">No live invoice due dates are available.</p> : sortedInvoiceTimeline.map((inv) => {
-              const isOverdue = inv.status === "Overdue"
-              const isPaid = inv.status === "Paid"
-              return (
-                <div
-                  key={inv.id}
-                  className={`shrink-0 p-3 rounded-2xl border min-w-[210px] transition-all ${
-                    isOverdue
-                      ? "bg-red-50/60 border-red-200 text-red-950"
-                      : isPaid
-                      ? "bg-emerald-50/50 border-emerald-200 text-emerald-950"
-                      : "bg-white/80 border-black/10 text-black"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-mono font-bold text-gray-500">{inv.invoice_number}</span>
-                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                      isOverdue
-                        ? "bg-red-100 text-red-700"
-                        : isPaid
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-800"
-                    }`}>
-                      {inv.status}
-                    </span>
-                  </div>
-                  <p className="text-xs font-bold truncate">{inv.customer_name}</p>
-                  <div className="flex items-center justify-between mt-2 pt-1 border-t border-black/5 text-[10px]">
-                    <span className="text-gray-400 font-semibold">Due {inv.due_date}</span>
-                    <span className="font-mono font-black text-xs">
-                      ETB {inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="shrink-0 p-3 rounded-2xl border min-w-[210px] bg-white/50 border-black/5 space-y-2">
+                  <Skeleton className="h-3 w-20 bg-zinc-200/80" />
+                  <Skeleton className="h-4 w-32 bg-zinc-200/80" />
+                  <Skeleton className="h-3 w-24 bg-zinc-200/80" />
                 </div>
-              )
-            })}
+              ))
+            ) : (
+              sortedInvoiceTimeline.map((inv) => {
+                const isOverdue = inv.status === "Overdue"
+                const isPaid = inv.status === "Paid"
+                return (
+                  <div
+                    key={inv.id}
+                    className={`shrink-0 p-3 rounded-2xl border min-w-[210px] transition-all ${
+                      isOverdue
+                        ? "bg-red-50/60 border-red-200 text-red-950"
+                        : isPaid
+                        ? "bg-emerald-50/50 border-emerald-200 text-emerald-950"
+                        : "bg-white/80 border-black/10 text-black"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-mono font-bold text-gray-500">{inv.invoice_number}</span>
+                      <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                        isOverdue
+                          ? "bg-red-100 text-red-700"
+                          : isPaid
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-amber-100 text-amber-800"
+                      }`}>
+                        {inv.status}
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold truncate">{inv.customer_name}</p>
+                    <div className="flex items-center justify-between mt-2 pt-1 border-t border-black/5 text-[10px]">
+                      <span className="text-gray-400 font-semibold">Due {inv.due_date}</span>
+                      <span className="font-mono font-black text-xs">
+                        ETB {inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </GlassCard>
 

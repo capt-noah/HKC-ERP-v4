@@ -28,9 +28,12 @@ const typeColorMap: Record<string, string> = {
   "Import Duty": "bg-purple-100 text-purple-700",
 }
 
+import { Skeleton } from "@/components/ui/skeleton"
+
 export default function Taxes() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
   const taxRules = store.getTaxRules()
   const accounts = store.getAccounts()
 
@@ -154,6 +157,14 @@ export default function Taxes() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — tax rules cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
@@ -244,7 +255,20 @@ export default function Taxes() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/5">
-                  {filteredTaxRules.length === 0 ? (
+                  {isLoading ? (
+                    Array.from({ length: 3 }).map((_, idx) => (
+                      <tr key={idx} className="animate-pulse text-xs">
+                        <td className="py-3.5 pl-2"><Skeleton className="h-4 w-16 bg-zinc-200/80" /></td>
+                        <td className="py-3.5"><Skeleton className="h-4 w-32 bg-zinc-200/80" /></td>
+                        <td className="py-3.5"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
+                        <td className="py-3.5 text-right"><Skeleton className="h-4 w-16 bg-zinc-200/80 ml-auto" /></td>
+                        <td className="py-3.5 font-mono"><Skeleton className="h-4 w-20 bg-zinc-200/80" /></td>
+                        <td className="py-3.5 text-center"><Skeleton className="h-4 w-16 bg-zinc-200/80 mx-auto" /></td>
+                        <td className="py-3.5"><Skeleton className="h-4 w-36 bg-zinc-200/80" /></td>
+                        <td className="py-3.5 text-right pr-2"><Skeleton className="h-4 w-12 bg-zinc-200/80 ml-auto" /></td>
+                      </tr>
+                    ))
+                  ) : filteredTaxRules.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="text-center py-12 text-gray-400">
                         No tax rules configured. Click &quot;Add Tax Rule&quot; to create one.

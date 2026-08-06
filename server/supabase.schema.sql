@@ -167,6 +167,25 @@ create index if not exists leave_requests_employee_status_idx
 create index if not exists payroll_records_period_status_idx
   on public.payroll_records ((payload->>'payroll_period_id'), (payload->>'payment_status'));
 
+-- Finance Performance JSONB Indexes
+create index if not exists journal_entries_date_idx
+  on public.journal_entries ((payload->>'entry_date'));
+
+create index if not exists journal_entries_source_idx
+  on public.journal_entries ((payload->>'source_type'), (payload->>'source_id'));
+
+create index if not exists journal_entry_lines_account_idx
+  on public.journal_entry_lines ((payload->>'account_id'), (payload->>'journal_entry_id'));
+
+create index if not exists invoices_status_customer_idx
+  on public.invoices ((payload->>'status'), (payload->>'customer_id'));
+
+create index if not exists expenses_status_category_idx
+  on public.expenses ((payload->>'status'), (payload->>'category'));
+
+create index if not exists fixed_assets_status_idx
+  on public.fixed_assets ((payload->>'status'));
+
 -- Finance-owned, idempotent payroll disbursement. The status transition and
 -- double-entry voucher happen in one database transaction.
 create or replace function public.hkc_pay_payroll_record(p_payroll_record_id text)

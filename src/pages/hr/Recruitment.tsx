@@ -12,6 +12,7 @@ import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useHRStore } from "@/lib/hrStore"
+import { hrApi, makeId } from "@/lib/hrApi"
 import { useFeedback } from "@/context/FeedbackContext"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -125,14 +126,47 @@ export default function Recruitment() {
     })
   }
 
-  const handleStageChange = (applicantId: string, stage: any) => {
+  const handleStageChange = async (applicantId: string, stage: any) => {
     store.updateApplicantStage(applicantId, stage)
     if (stage === "Hired") {
-      showToast(
-        "Candidate Hired!",
-        "success",
-        "Employee profile automatically created in Directory & Onboarding process launched."
-      )
+      const app = store.getJobApplicants().find((a) => a.id === applicantId)
+      const job = app ? store.getJobOpenings().find((j) => j.id === app.jobOpeningId) : null
+      if (app) {
+        try {
+          const id = makeId("EMP")
+          await hrApi.createEmployee({
+            id,
+            employee_number: id,
+            full_name: app.applicantName,
+            phone: app.phone || "",
+            email: app.email || "",
+            address: "",
+            date_of_birth: "",
+            gender: "",
+            warehouse_id: "Not Assigned",
+            employment_type: "Probation",
+            start_date: new Date().toISOString().split("T")[0],
+            basic_salary: 0,
+            payment_method: "",
+            bank_account: "",
+            emergency_contact_name: "",
+            emergency_contact_phone: "",
+            national_id_image: "",
+            status: "Active",
+          })
+          showToast(
+            "Candidate Hired!",
+            "success",
+            `Employee profile for ${app.applicantName} created for ${job?.title || "position"} via hrApi. Onboarding process launched.`
+          )
+        } catch (err) {
+          showToast(
+            "Employee Save Failed",
+            "warning",
+            err instanceof Error ? err.message : "Applicant stage updated but employee record could not be saved."
+          )
+        }
+      }
     } else {
       showToast("Applicant Stage Updated", "info", `Moved applicant stage to ${stage}.`)
     }

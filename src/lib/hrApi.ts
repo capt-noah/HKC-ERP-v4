@@ -299,7 +299,8 @@ export const hrApi = {
   createPayrollRecord: (record: PayrollRecord) => createResource<PayrollRecord>("payroll_records", record),
   updatePayrollRecord: (id: string, record: Partial<PayrollRecord>) => updateResource<PayrollRecord>("payroll_records", id, record),
   payPayrollRecord: async (id: string) => {
-    const response = await fetch(`/api/payroll-records/${encodeURIComponent(id)}/pay`, { method: "POST" })
+    const base = import.meta.env.VITE_API_URL ?? ""
+    const response = await fetch(`${base}/api/payroll-records/${encodeURIComponent(id)}/pay`, { method: "POST" })
     const body = await response.json().catch(() => null)
     if (!response.ok) throw new Error(body?.error || "Could not post payroll payment.")
     return body

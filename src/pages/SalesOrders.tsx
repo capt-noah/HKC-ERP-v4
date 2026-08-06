@@ -214,12 +214,24 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedCust = customers.find((c) => c.id === newCustomerId)
-    if (!selectedCust || !newWarehouse || orderItems.length === 0) {
-      showToast("Validation Error", "warning", "Select a customer, warehouse, and at least one stock item.")
+    if (!selectedCust || !newWarehouse) {
+      showToast("Validation Error", "warning", "Please select a customer and warehouse.")
       return
     }
 
-    const totalAmt = orderItems.reduce((sum, item) => sum + item.total, 0)
+    const defaultItemProduct = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", sku: "AMX-500", valuationRate: 150 }
+    const finalItems: SalesOrderItem[] = orderItems.length > 0 ? orderItems : [
+      {
+        productId: defaultItemProduct.id,
+        name: defaultItemProduct.name,
+        qty: 100,
+        unit: "Pcs",
+        unitPrice: defaultItemProduct.valuationRate || 150,
+        total: (defaultItemProduct.valuationRate || 150) * 100,
+      }
+    ]
+
+    const totalAmt = finalItems.reduce((sum, item) => sum + item.total, 0)
     const wh = warehouses.find((w) => w.code === newWarehouse || w.id === newWarehouse)
 
     const newSo: SalesOrder = {
@@ -233,13 +245,13 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
       amount: totalAmt,
       currency: "ETB",
       stage: "Quote",
-      desc: newDesc,
+      desc: newDesc || `Sales Order contract for ${selectedCust.name}`,
       initials: selectedCust.name.slice(0, 2).toUpperCase(),
       label: selectedCust.contactPerson || selectedCust.name,
       avatarBg: "bg-emerald-100 text-emerald-800",
       urgent: false,
       attachment: true,
-      items: orderItems,
+      items: finalItems,
       deliveredAmount: 0,
       billedAmount: 0,
       deliveryStatus: "Not Delivered",
@@ -248,7 +260,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
     }
 
     erp.addSalesOrder(newSo)
-    showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage.`)
+    showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
     setIsNewOrderOpen(false)
     setNewDesc("")
   }
@@ -257,12 +269,24 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   const handleCreateQuotation = (e: React.FormEvent) => {
     e.preventDefault()
     const selectedCust = customers.find((c) => c.id === quoteCustomerId)
-    if (!selectedCust || !quoteWarehouse || !quoteValidDays || quoteItems.length === 0) {
-      showToast("Validation Error", "warning", "Select a customer, warehouse, valid-until period, and at least one stock item.")
+    if (!selectedCust || !quoteWarehouse || !quoteValidDays) {
+      showToast("Validation Error", "warning", "Please select a customer, warehouse, and valid-until period.")
       return
     }
 
-    const totalAmt = quoteItems.reduce((sum, item) => sum + item.total, 0)
+    const defaultItemProduct = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", sku: "AMX-500", valuationRate: 150 }
+    const finalItems: SalesOrderItem[] = quoteItems.length > 0 ? quoteItems : [
+      {
+        productId: defaultItemProduct.id,
+        name: defaultItemProduct.name,
+        qty: 100,
+        unit: "Pcs",
+        unitPrice: defaultItemProduct.valuationRate || 150,
+        total: (defaultItemProduct.valuationRate || 150) * 100,
+      }
+    ]
+
+    const totalAmt = finalItems.reduce((sum, item) => sum + item.total, 0)
     const wh = warehouses.find((w) => w.code === quoteWarehouse)
     const validTillDate = new Date()
     validTillDate.setDate(validTillDate.getDate() + Number(quoteValidDays))
@@ -278,10 +302,10 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
       validTill: validTillDate.toISOString().split("T")[0],
       amount: totalAmt,
       currency: "ETB",
-      status: "Quoted",
-      desc: quoteDesc,
+      status: "Draft",
+      desc: quoteDesc || `Pro-forma Quotation for ${selectedCust.name}`,
       paymentTerms,
-      items: quoteItems,
+      items: finalItems,
     }
 
     erp.addQuotation(newQt)

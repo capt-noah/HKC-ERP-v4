@@ -13,6 +13,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -31,6 +32,7 @@ interface BankStatementLine {
 export default function Banking() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
 
   const [activeTab, setActiveTab] = useState<"BankRecon" | "Reconciliation">("BankRecon")
   const [clearedLineIds, setClearedLineIds] = useState<Set<string>>(new Set())
@@ -100,6 +102,14 @@ export default function Banking() {
   return (
     <div className="min-h-screen page-gradient text-black">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — banking data cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div
         variants={stagger}
@@ -231,7 +241,19 @@ export default function Banking() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 text-xs">
-                      {sorted().length === 0 ? (
+                      {isLoading ? (
+                        Array.from({ length: 4 }).map((_, idx) => (
+                          <tr key={idx} className="animate-pulse text-xs">
+                            <td className="px-4 py-3"><Skeleton className="h-4 w-20 bg-zinc-200/80" /></td>
+                            <td className="px-4 py-3"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
+                            <td className="px-4 py-3"><Skeleton className="h-4 w-32 bg-zinc-200/80" /></td>
+                            <td className="px-4 py-3"><Skeleton className="h-4 w-16 bg-zinc-200/80" /></td>
+                            <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-20 bg-zinc-200/80 ml-auto" /></td>
+                            <td className="px-4 py-3 text-center"><Skeleton className="h-4 w-16 bg-zinc-200/80 mx-auto" /></td>
+                            <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-12 bg-zinc-200/80 ml-auto" /></td>
+                          </tr>
+                        ))
+                      ) : sorted().length === 0 ? (
                         <tr>
                           <td colSpan={7} className="text-center py-12 text-gray-400">
                             No bank statement lines match your filters.

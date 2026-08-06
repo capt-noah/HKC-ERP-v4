@@ -307,7 +307,6 @@ class HRStore {
   private async loadFromApi() {
     try {
       const [
-        employees,
         departments,
         designations,
         jobOpenings,
@@ -320,21 +319,21 @@ class HRStore {
         appraisals,
         trainingPrograms,
       ] = await Promise.all([
-        loadResource<Employee>("employees", this.employees),
-        loadResource<Department>("departments", this.departments),
-        loadResource<Designation>("designations", this.designations),
-        loadResource<JobOpening>("job_openings", this.jobOpenings),
-        loadResource<JobApplicant>("job_applicants", this.jobApplicants),
-        loadResource<OnboardingProcess>("onboardings", this.onboardings),
-        loadResource<SeparationProcess>("separations", this.separations),
-        loadResource<LeaveType>("leave_types", this.leaveTypes),
-        loadResource<LeaveRequest>("leave_requests", this.leaveRequests),
-        loadResource<HRExpenseClaim>("expense_claims", this.expenseClaims),
-        loadResource<PerformanceAppraisal>("appraisals", this.appraisals),
-        loadResource<TrainingProgram>("training_programs", this.trainingPrograms),
+        loadResource<Department>("departments"),
+        loadResource<Designation>("designations"),
+        loadResource<JobOpening>("job_openings"),
+        loadResource<JobApplicant>("job_applicants"),
+        loadResource<OnboardingProcess>("onboardings"),
+        loadResource<SeparationProcess>("separations"),
+        loadResource<LeaveType>("leave_types"),
+        loadResource<LeaveRequest>("leave_requests"),
+        loadResource<HRExpenseClaim>("expense_claims"),
+        loadResource<PerformanceAppraisal>("appraisals"),
+        loadResource<TrainingProgram>("training_programs"),
       ])
 
-      this.employees = employees
+      // employees are intentionally NOT loaded here — they are owned exclusively
+      // by hrApi (production schema). hrStore only manages non-employee HR entities.
       this.departments = departments
       this.designations = designations
       this.jobOpenings = jobOpenings
@@ -353,8 +352,8 @@ class HRStore {
   }
 
   private saveToApi() {
+    // employees are intentionally excluded — written only via hrApi to prevent schema collision.
     return persistResources([
-      { resource: "employees", items: this.employees },
       { resource: "departments", items: this.departments },
       { resource: "designations", items: this.designations },
       { resource: "job_openings", items: this.jobOpenings },
@@ -396,22 +395,29 @@ class HRStore {
   public getTrainingPrograms(): TrainingProgram[] { return [...this.trainingPrograms] }
 
   // --- Employee Actions ---
+  // employees are owned by hrApi (production schema). These methods operate on the
+  // in-memory cache only and must not call saveToApi for employees.
+  public setEmployeesCache(employees: Employee[]) {
+    this.employees = employees
+    // do NOT notify — this is a silent cache hydration from hrApi callers
+  }
+
   public addEmployee(emp: Omit<Employee, "id" | "initials" | "avatarBg" | "paymentStatus" | "paymentStatusColor">): Employee {
     const id = `EMP-${String(this.employees.length + 1).padStart(3, "0")}`
-    const initials = emp.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+    const computedInitials = emp.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     const avatarBgs = ["bg-green-200", "bg-zinc-200", "bg-sky-200", "bg-indigo-200", "bg-amber-200"]
     const avatarBg = avatarBgs[this.employees.length % avatarBgs.length]
 
     const newEmp: Employee = {
       ...emp,
       id,
-      initials,
+      initials: computedInitials,
       avatarBg,
       paymentStatus: "Pending",
       paymentStatusColor: "bg-zinc-100 text-zinc-700 border border-zinc-200",
     }
+    // Only update the local cache — hrApi callers are responsible for Supabase writes
     this.employees = [newEmp, ...this.employees]
-    this.notify()
     return newEmp
   }
 
@@ -421,14 +427,13 @@ class HRStore {
     if (status === "Probation") color = "bg-amber-100 text-amber-800 border border-amber-200"
     if (status === "Suspended") color = "bg-red-100 text-red-700 border border-red-200"
     if (status === "Separated") color = "bg-gray-200 text-gray-700 border border-gray-300"
-
+    // Cache only — hrApi callers must persist status changes to Supabase
     this.employees = this.employees.map((e) => (e.id === id ? { ...e, status, statusColor: color } : e))
-    this.notify()
   }
 
   public deleteEmployee(id: string) {
+    // Cache only — hrApi callers must persist deletion to Supabase
     this.employees = this.employees.filter((e) => e.id !== id)
-    this.notify()
   }
 
   // --- Recruitment Actions ---
@@ -563,6 +568,13 @@ class HRStore {
     this.separations = [newSep, ...this.separations]
     this.notify()
     return newSep
+  }
+
+  // Called from OnboardingSeparation.tsx which provides employee data from hrApi
+  public initiateSeparationRecord(sep: SeparationProcess): SeparationProcess {
+    this.separations = [sep, ...this.separations]
+    this.notify()
+    return sep
   }
 
   public toggleSeparationClearance(separationId: string, clearanceId: string, clearedBy: string) {

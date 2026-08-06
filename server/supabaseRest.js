@@ -12,15 +12,12 @@ function appendQueryParams(url, query = {}) {
 }
 
 function buildHeaders(incomingHeaders = {}, prefer) {
-  const authorization =
-    incomingHeaders.authorization ||
-    (config.supabaseServiceRoleKey ? `Bearer ${config.supabaseServiceRoleKey}` : "")
-  const apiKey = config.supabaseServiceRoleKey || config.supabasePublishableKey
+  const key = config.supabaseServiceRoleKey || config.supabasePublishableKey
   const result = {
-    apikey: apiKey,
+    apikey: key,
+    Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
   }
-  if (authorization) result.Authorization = authorization
   if (prefer) result.Prefer = prefer
   return result
 }
@@ -194,59 +191,33 @@ export async function replaceRows({ resource, body, headers = {} }) {
     }
   }
 
-  const existing = await listRows({ resource, headers })
-  if (existing.status >= 400) return existing
-
-  const existingRows = Array.isArray(existing.body) ? existing.body : []
-  const nextIds = new Set(
-    body.map((item, index) =>
-      documentId({ ...item, id: item?.id || `row-${index + 1}` }),
-    ),
-  )
-
-  for (const row of existingRows) {
-    if (row?.id && !nextIds.has(String(row.id))) {
-      const deleted = await deleteRow({ resource, id: String(row.id), headers })
-      if (deleted.status >= 400) return deleted
+  if (body.length === 0) {
+    return {
+      status: 200,
+      headers: {},
+      body: { ok: true, count: 0 },
     }
   }
 
-  for (const item of body) {
-    const id = documentId(item)
-    const payload =
-      resource.storage === "jsonb_document"
-        ? { id, payload: { ...item, id } }
-        : { ...item, id }
+  const payload = body.map((item, index) => {
+    const id = documentId({ ...item, id: item?.id || `row-${index + 1}` })
+    return resource.storage === "jsonb_document"
+      ? { id, payload: { ...item, id } }
+      : { ...item, id }
+  })
 
-    const url = new URL(resource.table, config.supabaseRestUrl)
-    url.searchParams.set("id", `eq.${id}`)
+  const url = new URL(resource.table, config.supabaseRestUrl)
+  const response = await fetch(url, {
+    method: "POST",
+    headers: buildHeaders(headers, "resolution=merge-duplicates,return=minimal"),
+    body: JSON.stringify(payload),
+  })
 
-    const patched = await fetch(url, {
-      method: "PATCH",
-      headers: buildHeaders(headers, "return=minimal"),
-      body: JSON.stringify(
-        resource.storage === "jsonb_document" ? { payload: payload.payload } : payload,
-      ),
-    })
-    if (patched.status >= 400) {
-      return {
-        status: patched.status,
-        headers: patched.headers,
-        body: await parseSupabaseResponse(patched),
-      }
-    }
-
-    const inserted = await fetch(new URL(resource.table, config.supabaseRestUrl), {
-      method: "POST",
-      headers: buildHeaders(headers, "resolution=merge-duplicates,return=minimal"),
-      body: JSON.stringify(payload),
-    })
-    if (inserted.status >= 400) {
-      return {
-        status: inserted.status,
-        headers: inserted.headers,
-        body: await parseSupabaseResponse(inserted),
-      }
+  if (response.status >= 400) {
+    return {
+      status: response.status,
+      headers: response.headers,
+      body: await parseSupabaseResponse(response),
     }
   }
 

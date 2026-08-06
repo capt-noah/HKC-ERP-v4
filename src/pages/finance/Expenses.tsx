@@ -19,12 +19,15 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
 import type { Vehicle, RecurringExpenseSchedule } from "@/lib/financeStore"
 
+import { Skeleton } from "@/components/ui/skeleton"
+
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
 export default function Expenses() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
 
   const [activeTab, setActiveTab] = useState<"one-off" | "recurring" | "vehicles">("one-off")
 
@@ -50,7 +53,7 @@ export default function Expenses() {
   const [schExpenseType, setSchExpenseType] = useState<RecurringExpenseSchedule["expense_type"]>("Software & SaaS")
   const [schAmount, setSchAmount] = useState("")
   const [schFrequency, setSchFrequency] = useState<"Monthly" | "Quarterly" | "Annually">("Monthly")
-  const [schDueDate, setSchDueDate] = useState("2026-08-01")
+  const [schDueDate, setSchDueDate] = useState(new Date().toISOString().split("T")[0])
   const [schResource, setSchResource] = useState("")
   const [schCostCenter, setSchCostCenter] = useState("CC-100 Corporate HQ")
 
@@ -261,10 +264,11 @@ export default function Expenses() {
   }
 
   const filteredExpenses = expenses.filter((exp) => {
-    const matchesSearch =
-      exp.merchant.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exp.employee.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exp.id.toLowerCase().includes(searchQuery.toLowerCase())
+    const q = (searchQuery || "").toLowerCase()
+    const merchant = (exp.merchant || "").toLowerCase()
+    const employee = (exp.employee || "").toLowerCase()
+    const expId = (exp.id || "").toLowerCase()
+    const matchesSearch = merchant.includes(q) || employee.includes(q) || expId.includes(q)
     const matchesCategory = filterCategory === "ALL" || exp.category === filterCategory
     const matchesStatus = filterStatus === "ALL" || exp.status === filterStatus
     return matchesSearch && matchesCategory && matchesStatus
@@ -275,27 +279,25 @@ export default function Expenses() {
 
   const filteredRecurringSchedules = recurringSchedules.filter((sch) => {
     const matchesStatus = schStatusFilter === "ALL" || sch.status === schStatusFilter
-    if (!schSearch.trim()) return matchesStatus
+    if (!matchesStatus) return false
+    if (!schSearch.trim()) return true
     const q = schSearch.toLowerCase()
     return (
-      matchesStatus &&
-      (sch.id.toLowerCase().includes(q) ||
-        sch.expense_type.toLowerCase().includes(q) ||
-        (sch.cost_center?.toLowerCase().includes(q) ?? false) ||
-        (sch.linked_resource_id?.toLowerCase().includes(q) ?? false))
+      (sch.id || "").toLowerCase().includes(q) ||
+      (sch.expense_type || "").toLowerCase().includes(q) ||
+      ((sch.cost_center || "").toLowerCase().includes(q)) ||
+      ((sch.linked_resource_id || "").toLowerCase().includes(q))
     )
   })
 
   const filteredVehicles = vehicles.filter((v) => {
-    const matchesStatus = vehicleStatusFilter === "ALL" || v.status === vehicleStatusFilter
-    if (!vehicleSearch.trim()) return matchesStatus
+    if (!vehicleSearch.trim()) return true
     const q = vehicleSearch.toLowerCase()
     return (
-      matchesStatus &&
-      (v.registration_number.toLowerCase().includes(q) ||
-        v.driver_name.toLowerCase().includes(q) ||
-        v.type.toLowerCase().includes(q) ||
-        v.assigned_warehouse.toLowerCase().includes(q))
+      (v.registration_number || "").toLowerCase().includes(q) ||
+      (v.driver_name || "").toLowerCase().includes(q) ||
+      (v.type || "").toLowerCase().includes(q) ||
+      (v.assigned_warehouse || "").toLowerCase().includes(q)
     )
   })
 
@@ -308,6 +310,14 @@ export default function Expenses() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — expense data cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
@@ -555,7 +565,19 @@ export default function Expenses() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-black/5">
-                    {filteredExpenses.length === 0 ? (
+                    {isLoading ? (
+                      Array.from({ length: 4 }).map((_, idx) => (
+                        <tr key={idx} className="animate-pulse text-xs">
+                          <td className="py-3.5 pl-4"><Skeleton className="h-4 w-28 bg-zinc-200/80" /></td>
+                          <td className="py-3.5"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
+                          <td className="py-3.5"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
+                          <td className="py-3.5"><Skeleton className="h-4 w-20 bg-zinc-200/80" /></td>
+                          <td className="py-3.5 text-right"><Skeleton className="h-4 w-20 bg-zinc-200/80 ml-auto" /></td>
+                          <td className="py-3.5 text-center"><Skeleton className="h-4 w-16 bg-zinc-200/80 mx-auto" /></td>
+                          <td className="py-3.5 text-right pr-4"><Skeleton className="h-4 w-12 bg-zinc-200/80 ml-auto" /></td>
+                        </tr>
+                      ))
+                    ) : filteredExpenses.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="text-center py-12 text-gray-400 text-sm">
                           No expense entries match your filter.

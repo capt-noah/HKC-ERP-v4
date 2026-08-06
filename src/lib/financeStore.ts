@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { loadResource, persistResources } from "./apiPersistence"
+import { deleteResource, loadResource, persistResources } from "./apiPersistence"
 
 export interface AccountItem {
   id: string
@@ -285,6 +285,8 @@ class FinanceStore {
   private taxRules: TaxRule[] = []
 
   private listeners = new Set<() => void>()
+  private _isLoading = true
+  private _loadError: string | null = null
 
   constructor() {
     void this.loadFromApi()
@@ -308,6 +310,9 @@ class FinanceStore {
   }
 
   private async loadFromApi() {
+    this._isLoading = true
+    this._loadError = null
+    this.listeners.forEach((l) => l())
     try {
       const [
         accounts,
@@ -325,41 +330,73 @@ class FinanceStore {
         fixedAssets,
         taxRules,
       ] = await Promise.all([
-        loadResource<AccountItem>("chart_of_accounts", this.accounts),
-        loadResource<JournalEntry>("journal_entries", this.entries),
-        loadResource<JournalEntryLine>("journal_entry_lines", this.lines),
-        loadResource<Invoice>("invoices", this.invoices),
-        loadResource<Payment>("payments", this.payments),
-        loadResource<RecurringExpenseSchedule>("recurring_expense_schedules", this.recurringSchedules),
-        loadResource<OneOffExpense>("expenses", this.expenses),
-        loadResource<Vehicle>("vehicles", this.vehicles),
-        loadResource<AccountingPeriod>("accounting_periods", this.periods),
+        loadResource<AccountItem>("chart_of_accounts"),
+        loadResource<JournalEntry>("journal_entries"),
+        loadResource<JournalEntryLine>("journal_entry_lines"),
+        loadResource<Invoice>("invoices"),
+        loadResource<Payment>("payments"),
+        loadResource<RecurringExpenseSchedule>("recurring_expense_schedules"),
+        loadResource<OneOffExpense>("expenses"),
+        loadResource<Vehicle>("vehicles"),
+        loadResource<AccountingPeriod>("accounting_periods"),
         loadResource<CompanySettings & { id?: string }>("company_settings"),
-        loadResource<PayrollRun>("payroll_runs", this.payrollRuns),
-        loadResource<Revaluation>("revaluations", this.revaluations),
-        loadResource<FixedAsset>("fixed_assets", this.fixedAssets),
-        loadResource<TaxRule>("tax_rules", this.taxRules),
+        loadResource<PayrollRun>("payroll_runs"),
+        loadResource<Revaluation>("revaluations"),
+        loadResource<FixedAsset>("fixed_assets"),
+        loadResource<TaxRule>("tax_rules"),
       ])
 
       this.accounts = accounts
-      this.entries = entries
-      this.lines = lines
-      this.invoices = invoices
+      this.entries = entries.map((e: any) => ({
+        ...e,
+        entry_number: e.entry_number || e.id,
+        posting_status: e.posting_status || "POSTED",
+        source_type: e.source_type || "MANUAL",
+        currency: e.currency || "ETB",
+      }))
+      this.lines = lines.map((l: any) => ({
+        ...l,
+        debit_amount: Number(l.debit_amount ?? l.debit ?? 0),
+        credit_amount: Number(l.credit_amount ?? l.credit ?? 0),
+        currency: l.currency || "ETB",
+        exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
+      }))
+      this.invoices = invoices.map((inv: any) => ({
+        ...inv,
+        subtotal: Number(inv.subtotal ?? inv.amount ?? 0),
+        total_amount: Number(inv.total_amount ?? inv.total ?? inv.amount ?? 0),
+        balance_due: Number(inv.balance_due ?? inv.total_amount ?? 0),
+        status: inv.status || "Draft",
+      }))
       this.payments = payments
       this.recurringSchedules = recurringSchedules
-      this.expenses = expenses
+      this.expenses = expenses.map((exp: any) => ({
+        ...exp,
+        amount: Number(exp.amount ?? 0),
+        status: exp.status || "Approved",
+      }))
       this.vehicles = vehicles
       this.periods = periods
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
       this.payrollRuns = payrollRuns
       this.revaluations = revaluations
-      this.fixedAssets = fixedAssets
+      this.fixedAssets = fixedAssets.map((fa: any) => ({
+        ...fa,
+        cost: Number(fa.cost ?? 0),
+        accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumulated_depreciation ?? 0),
+        netBookValue: Number(fa.netBookValue ?? fa.cost ?? 0),
+      }))
       this.taxRules = taxRules
+
+      this._isLoading = false
+      this._loadError = null
       this.listeners.forEach((l) => l())
     } catch (error) {
       console.error("Failed to load finance data from Supabase.", error)
       this.clearFinanceState()
+      this._isLoading = false
+      this._loadError = error instanceof Error ? error.message : "Could not connect to the server. Finance data is unavailable."
       this.listeners.forEach((l) => l())
     }
   }
@@ -385,6 +422,14 @@ class FinanceStore {
 
   public async reloadFromApi() {
     await this.loadFromApi()
+  }
+
+  public isLoading(): boolean {
+    return this._isLoading
+  }
+
+  public getLoadError(): string | null {
+    return this._loadError
   }
 
   public subscribe(listener: () => void) {
@@ -775,10 +820,10 @@ class FinanceStore {
 
     this.invoices = this.invoices.map((i) => (i.id === inv.id ? { ...i, status: "Cancelled" as const, balance_due: 0 } : i))
 
-    // Reverse any posted entry for this invoice
+    // Reverse any posted entry for this invoice — pass only the entry ID (no targetLineId)
     const relatedEntry = this.entries.find((e) => e.source_id === inv.invoice_number || e.source_id === inv.id)
     if (relatedEntry) {
-      this.reverseJournalEntry(relatedEntry.id, `Cancellation of Invoice ${inv.invoice_number}`)
+      this.reverseJournalEntry(relatedEntry.id)
     }
 
     this.notify()
@@ -1444,6 +1489,7 @@ class FinanceStore {
       return { success: false, error: "Cannot delete account: it has sub-accounts." }
     }
     this.accounts = this.accounts.filter((a) => a.id !== id && a.code !== id)
+    void deleteResource("chart_of_accounts", id)
     this.notify()
     return { success: true }
   }
@@ -1507,6 +1553,7 @@ class FinanceStore {
       return { success: false, error: "Cannot delete asset: it has posted depreciation history." }
     }
     this.fixedAssets = this.fixedAssets.filter((a) => a.id !== id)
+    void deleteResource("fixed_assets", id)
     this.notify()
     return { success: true }
   }
@@ -1652,6 +1699,7 @@ class FinanceStore {
 
   public deleteTaxRule(id: string): { success: boolean; error?: string } {
     this.taxRules = this.taxRules.filter((t) => t.id !== id)
+    void deleteResource("tax_rules", id)
     this.notify()
     return { success: true }
   }
@@ -1672,6 +1720,7 @@ class FinanceStore {
 
   public deleteAccountingPeriod(id: string) {
     this.periods = this.periods.filter((p) => p.id !== id)
+    void deleteResource("accounting_periods", id)
     this.notify()
   }
 
@@ -1773,6 +1822,7 @@ class FinanceStore {
 
   public deleteOneOffExpense(id: string) {
     this.expenses = this.expenses.filter((e) => e.id !== id)
+    void deleteResource("expenses", id)
     this.notify()
   }
 
@@ -1783,6 +1833,7 @@ class FinanceStore {
 
   public deleteRecurringSchedule(id: string) {
     this.recurringSchedules = this.recurringSchedules.filter((s) => s.id !== id)
+    void deleteResource("recurring_expense_schedules", id)
     this.notify()
   }
 
@@ -1793,6 +1844,7 @@ class FinanceStore {
 
   public deleteVehicle(id: string) {
     this.vehicles = this.vehicles.filter((v) => v.id !== id)
+    void deleteResource("vehicles", id)
     this.notify()
   }
 }
@@ -1816,5 +1868,7 @@ export function useFinanceStore() {
     }
   }, [])
 
+  // Return the store directly — pages call store.isLoading() / store.getLoadError()
+  // for error-state awareness without requiring call-site changes.
   return financeStore
 }

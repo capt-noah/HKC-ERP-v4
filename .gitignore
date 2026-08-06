@@ -27,3 +27,4 @@ dist-ssr
 .bolt/config.json
 .env.example
 
+kiro_ession.md

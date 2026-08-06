@@ -1,10 +1,8 @@
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
-  Calendar,
   Scale,
   Download,
-  PieChart as LucidePieChart,
   BookOpen,
   RotateCcw,
   Search,
@@ -45,23 +43,11 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
-import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
-import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
-interface AgingRecord {
-  id: string
-  partner: string
-  invoiceRef: string
-  category: "current" | "31-60" | "61-90" | "90+"
-  daysOverdue: number
-  amount: number
-  dunningLevel: number
-}
-
-export type ReportTab = "GL" | "Aging" | "TrialBalance" | "BalanceSheet" | "IncomeStatement" | "CashFlow"
+export type ReportTab = "GL" | "TrialBalance" | "BalanceSheet" | "IncomeStatement" | "CashFlow"
 
 export default function FinancialReports() {
   const { showToast } = useFeedback()
@@ -76,35 +62,6 @@ export default function FinancialReports() {
   const [glFromDate, setGlFromDate] = useState<string>("")
   const [glToDate, setGlToDate] = useState<string>("")
   const [glSearchQuery, setGlSearchQuery] = useState<string>("")
-
-  // AR/AP Aging state
-  const [agingType, setAgingType] = useState<"receivables" | "payables">("receivables")
-  const [agingBucketFilter, setAgingBucketFilter] = useState<"ALL" | "current" | "31-60" | "61-90" | "90+">("ALL")
-  const [agingSearch, setAgingSearch] = useState("")
-  const invoices = store.getInvoices()
-  const receivables: AgingRecord[] = invoices.filter((invoice) => invoice.balance_due > 0 && invoice.status !== "Void" && invoice.status !== "Cancelled").map((invoice) => {
-    const daysOverdue = Math.max(0, Math.floor((Date.now() - new Date(`${invoice.due_date}T00:00:00`).getTime()) / 86_400_000))
-    const category = daysOverdue <= 30 ? "current" : daysOverdue <= 60 ? "31-60" : daysOverdue <= 90 ? "61-90" : "90+"
-    return { id: invoice.id, partner: invoice.customer_name, invoiceRef: invoice.invoice_number, category, daysOverdue, amount: invoice.balance_due, dunningLevel: daysOverdue > 90 ? 3 : daysOverdue > 60 ? 2 : daysOverdue > 30 ? 1 : 0 }
-  })
-  const payables: AgingRecord[] = []
-
-  const agingColumns: TableColumn[] = [
-    { key: "partner", label: "Partner / Organization" },
-    { key: "invoiceRef", label: "Invoice Ref" },
-    { key: "category", label: "Aging Bucket" },
-    { key: "daysOverdue", label: "Days Overdue" },
-    { key: "amount", label: "Outstanding Balance", align: "right" },
-    { key: "dunningLevel", label: "Dunning Status", align: "center" },
-    { key: "_actions", label: "Actions", align: "right", noSort: true },
-  ]
-  const agingRows = (agingType === "receivables" ? receivables : payables).filter((rec) => {
-    if (agingBucketFilter !== "ALL" && rec.category !== agingBucketFilter) return false
-    if (!agingSearch.trim()) return true
-    const q = agingSearch.toLowerCase()
-    return rec.partner.toLowerCase().includes(q) || rec.invoiceRef.toLowerCase().includes(q) || rec.id.toLowerCase().includes(q)
-  })
-  const agingTable = useResizableTable(agingColumns, agingRows)
 
   // General Ledger Column Resizing & Sorting State
   const defaultGlColWidths: Record<string, number> = {
@@ -451,10 +408,6 @@ export default function FinancialReports() {
   const chartColors = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899"]
   const plExpenseCategoryData = accountsByType.Expense.map((account, index) => ({ name: `${account.code} ${account.name}`, value: accountBalance(account), color: chartColors[index % chartColors.length] })).filter((item) => item.value !== 0)
 
-  const handleSendDunningNotice = (rec: AgingRecord) => {
-    showToast(`Dunning Level ${rec.dunningLevel + 1} notice dispatched to ${rec.partner} for ${rec.invoiceRef}`, "success")
-  }
-
   const handleExportPDF = () => {
     showToast("Report exported as PDF statement successfully", "success")
   }
@@ -462,6 +415,14 @@ export default function FinancialReports() {
   return (
     <div className="min-h-screen page-gradient text-black">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      {store.getLoadError() && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-xs font-bold text-rose-800 shadow-lg flex items-center gap-3">
+            <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+            Server unavailable — financial reports cannot be loaded. {store.getLoadError()}
+          </div>
+        </div>
+      )}
 
       <motion.div
         variants={stagger}
@@ -487,7 +448,6 @@ export default function FinancialReports() {
           <div className="flex gap-1 min-w-max">
             {[
               { id: "GL", label: "General Ledger", icon: BookOpen },
-              { id: "Aging", label: "AR / AP Aging Analysis", icon: Calendar },
               { id: "TrialBalance", label: "Trial Balance", icon: Scale },
               { id: "BalanceSheet", label: "Balance Sheet", icon: Landmark },
               { id: "IncomeStatement", label: "Profit & Loss", icon: TrendingUp },
@@ -925,219 +885,6 @@ export default function FinancialReports() {
               </GlassCard>
             </motion.div>
           )}
-          {/* TAB 1: AR / AP Aging Analysis */}
-          {activeTab === "Aging" && (
-            <motion.div
-              key="aging-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
-              <GlassCard className="p-4 flex items-center justify-between flex-wrap gap-4">
-                <div>
-                  <h3 className="text-sm font-bold text-zinc-900">Sub-Ledger Aging & Dunning Management</h3>
-                  <p className="text-xs text-zinc-500">Track overdue customer receivables and vendor payables across 30/60/90+ day buckets.</p>
-                </div>
-                <div className="flex bg-zinc-100 p-1 rounded-full text-xs font-bold">
-                  <button
-                    onClick={() => setAgingType("receivables")}
-                    className={`px-4 py-1.5 rounded-full transition-all ${agingType === "receivables" ? "bg-black text-white shadow-xs" : "text-zinc-600 hover:text-black"}`}
-                  >
-                    Accounts Receivable (AR)
-                  </button>
-                  <button
-                    onClick={() => setAgingType("payables")}
-                    className={`px-4 py-1.5 rounded-full transition-all ${agingType === "payables" ? "bg-black text-white shadow-xs" : "text-zinc-600 hover:text-black"}`}
-                  >
-                    Accounts Payable (AP)
-                  </button>
-                </div>
-              </GlassCard>
-
-              {/* Horizontal Distribution Bar & Interactive Filter Banner */}
-              {(() => {
-                const data = agingType === "receivables" ? receivables : payables
-                const buckets = [
-                  { label: "Current (0-30 Days)", cat: "current" as const, color: "bg-emerald-500", border: "border-emerald-300", text: "text-emerald-700", bgLight: "bg-emerald-50" },
-                  { label: "31-60 Days Overdue", cat: "31-60" as const, color: "bg-amber-400", border: "border-amber-300", text: "text-amber-700", bgLight: "bg-amber-50" },
-                  { label: "61-90 Days Overdue", cat: "61-90" as const, color: "bg-orange-500", border: "border-orange-300", text: "text-orange-700", bgLight: "bg-orange-50" },
-                  { label: "90+ Days Overdue", cat: "90+" as const, color: "bg-rose-500", border: "border-rose-300", text: "text-rose-700", bgLight: "bg-rose-50" },
-                ]
-
-                const totalOutstanding = data.reduce((s, r) => s + r.amount, 0)
-                const bucketStats = buckets.map((b) => {
-                  const filtered = data.filter((r) => r.category === b.cat)
-                  const sum = filtered.reduce((s, r) => s + r.amount, 0)
-                  const pct = totalOutstanding > 0 ? (sum / totalOutstanding) * 100 : 0
-                  return { ...b, sum, count: filtered.length, pct }
-                })
-
-                return (
-                  <GlassCard className="p-4 flex flex-col gap-4">
-                    {/* Top row label & active status */}
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <LucidePieChart className="size-4 text-emerald-600" />
-                        <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900">
-                          {agingType === "receivables" ? "Receivables" : "Payables"} Timeline Distribution
-                        </h4>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-zinc-500">
-                          Total Outstanding:{" "}
-                          <span className="font-mono font-black text-zinc-900">
-                            ETB {totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </span>
-                        </span>
-                        {agingBucketFilter !== "ALL" && (
-                          <button
-                            onClick={() => setAgingBucketFilter("ALL")}
-                            className="text-[11px] font-bold text-zinc-600 hover:text-black bg-zinc-100 hover:bg-zinc-200 px-2.5 py-0.5 rounded-full transition-colors inline-flex items-center gap-1"
-                          >
-                            <X className="size-3" /> Show All Timelines
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* The Main Horizontal Proportion Segmented Bar */}
-                    <div className="w-full bg-zinc-100/90 p-1 rounded-2xl border border-zinc-200/80 shadow-inner">
-                      <div className="h-7 w-full flex rounded-xl overflow-hidden gap-1">
-                        {bucketStats.map((b) => {
-                          if (b.pct <= 0) return null
-                          const isSelected = agingBucketFilter === b.cat
-                          const isOtherSelected = agingBucketFilter !== "ALL" && !isSelected
-                          return (
-                            <motion.button
-                              key={b.cat}
-                              onClick={() => setAgingBucketFilter(agingBucketFilter === b.cat ? "ALL" : b.cat)}
-                              initial={{ width: 0 }}
-                              animate={{ width: `${b.pct}%`, opacity: isOtherSelected ? 0.35 : 1 }}
-                              transition={{ duration: 0.5, ease: "easeOut" }}
-                              className={`${b.color} relative group h-full flex items-center justify-center transition-all cursor-pointer hover:brightness-110 focus:outline-none`}
-                              title={`${b.label}: ETB ${b.sum.toLocaleString()} (${b.pct.toFixed(1)}%)`}
-                            >
-                              {b.pct >= 8 && (
-                                <span className="text-[10px] font-black text-white drop-shadow-xs font-mono px-1 whitespace-nowrap overflow-hidden">
-                                  {b.pct.toFixed(1)}%
-                                </span>
-                              )}
-                            </motion.button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Bucket Legend & Interactive Cards Row */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {bucketStats.map((b) => {
-                        const isSelected = agingBucketFilter === b.cat
-                        return (
-                          <button
-                            key={b.cat}
-                            onClick={() => setAgingBucketFilter(agingBucketFilter === b.cat ? "ALL" : b.cat)}
-                            className={`p-3 rounded-xl text-left border transition-all relative cursor-pointer ${
-                              isSelected
-                                ? `bg-white ${b.border} ring-2 ring-emerald-500/30 shadow-md`
-                                : "bg-white/60 border-zinc-200/80 hover:bg-white hover:border-zinc-300"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`size-2.5 rounded-full ${b.color}`} />
-                                <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">
-                                  {b.label}
-                                </span>
-                              </div>
-                              <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${b.bgLight} ${b.text}`}>
-                                {b.pct.toFixed(1)}%
-                              </span>
-                            </div>
-                            <div className="text-sm font-black font-mono text-zinc-950">
-                              ETB {b.sum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </div>
-                            <div className="text-[10px] font-semibold text-zinc-400 mt-0.5">
-                              {b.count} {b.count === 1 ? "invoice" : "invoices"}
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </GlassCard>
-                )
-              })()}
-
-              {/* Table */}
-              <GlassCard className="flex flex-col overflow-hidden">
-                <FinanceTableToolbar
-                  title={agingType === "receivables" ? "Accounts Receivable Aging" : "Accounts Payable Aging"}
-                  subtitle={`${agingTable.sorted().length} ${agingType === "receivables" ? "customer" : "vendor"} records • showing ${agingBucketFilter === "ALL" ? "all buckets" : agingBucketFilter + " days overdue"}`}
-                  searchValue={agingSearch}
-                  onSearchChange={setAgingSearch}
-                  searchPlaceholder="Search partner, invoice ref..."
-                />
-                <div className="overflow-x-auto -mx-2 px-2">
-                  <table className="w-full text-left border-collapse table-fixed">
-                    <thead>
-                      <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
-                        {agingColumns.map((col) => (
-                          <ResizableTh
-                            key={col.key}
-                            col={col}
-                            width={agingTable.colWidths[col.key] ?? 140}
-                            sortKey={agingTable.sortKey}
-                            sortDir={agingTable.sortDir}
-                            openMenuCol={agingTable.openMenuCol}
-                            onResizeStart={agingTable.handleResizeStart}
-                            onToggleMenu={agingTable.toggleMenu}
-                            onSortAsc={agingTable.setSortAsc}
-                            onSortDesc={agingTable.setSortDesc}
-                            onClearSort={agingTable.clearSort}
-                          />
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100 text-xs">
-                      {agingTable.sorted().map((rec) => (
-                        <tr key={rec.id} className="hover:bg-zinc-50/60 transition-colors">
-                          <td className="px-4 py-3 font-bold text-zinc-900">{rec.partner}</td>
-                          <td className="px-4 py-3 font-mono text-zinc-600">{rec.invoiceRef}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                              rec.category === "current" ? "bg-emerald-50 text-emerald-700" :
-                              rec.category === "31-60" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"
-                            }`}>
-                              {rec.category}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 font-mono font-semibold text-zinc-700">{rec.daysOverdue} days</td>
-                          <td className="px-4 py-3 text-right font-mono font-bold text-zinc-900">
-                            ETB {rec.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span className="text-[10px] font-bold bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded-full">
-                              Level {rec.dunningLevel} Notice
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right pr-4">
-                            <button
-                              onClick={() => handleSendDunningNotice(rec)}
-                              className="text-[11px] font-bold text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1 rounded-full transition-all"
-                            >
-                              Send Dunning Notice
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-                </div>
-              </GlassCard>
-            </motion.div>
-          )}
-
           {/* TAB 3: Trial Balance */}
           {activeTab === "TrialBalance" && (
             <motion.div
@@ -1838,7 +1585,7 @@ export default function FinancialReports() {
                   <div className="flex items-center justify-between border-b border-zinc-200/80 pb-3">
                     <div>
                       <h4 className="text-sm font-black text-zinc-950 uppercase tracking-tight flex items-center gap-2">
-                        <LucidePieChart className="size-4 text-purple-600" /> Expense Allocation
+                        <BarChart3 className="size-4 text-purple-600" /> Expense Allocation
                       </h4>
                       <p className="text-[11px] text-zinc-500">6000 Series Operating Expenses</p>
                     </div>

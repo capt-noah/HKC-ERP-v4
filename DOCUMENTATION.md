@@ -78,7 +78,7 @@ The system uses a full-screen layout split into five main operational domains:
                       ├── /finance/banking (Bank Accounts & Reconciliations)
                       ├── /finance/assets (Fixed Assets Register & Depreciation Schedule)
                       ├── /finance/taxes (Tax Templates & Rates)
-                      └── /finance/reports (Financial Statements, Trial Balance & AR/AP Aging)
+                      └── /finance/reports (Financial Statements, General Ledger & Trial Balance)
 
 /hr ────────────────► /hr (Overview & Team KPIs)
                       ├── /hr/employees (Staff Roster)
@@ -107,11 +107,14 @@ Navigation labels and child routes are defined in `src/lib/nav-config.ts`. All r
 These rules exist to prevent fake data from reappearing in production screens:
 
 1. **Do not add business seed JSON back into `data/`.** The old JSON records were removed intentionally. If a page needs data, load it through `/api/:resource` and let Supabase be the source of truth.
-2. **Do not hardcode fallback records in React components or stores.** Empty Supabase tables must render empty states, not placeholder customers, invoices, HR employees, warehouses, stock items, or admin users.
-3. **Do not add default Supabase project credentials in code or docs.** Configure `SUPABASE_REST_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` through `.env` only. Never commit service-role keys, database passwords, or generated credential notes.
-4. **Do not bypass the Node API from the browser for privileged writes.** The browser calls local app routes like `/api/invoices`; the Node server owns Supabase REST calls and keeps service-role credentials server-side.
-5. **Finance screens are derived screens.** Cash position, reports, unpaid invoices, invoice timelines, banking, and GL views must derive from persisted invoices, payments, accounts, and journal-entry lines.
-6. **When a persistence write fails, do not keep optimistic fake state.** Reload from Supabase or show a safe error state.
+2. **Do not hardcode fallback records in React components or stores.** Empty Supabase tables must render clean empty states with loading skeletons, not placeholder customers, invoices, HR employees, warehouses, stock items, or admin users.
+3. **Use Glassmorphism Loading Skeletons (`Skeleton`).** All domain pages (Finance, Inventory, Sales, HR) must check `store.isLoading()` and render pulse skeleton states (`import { Skeleton } from "@/components/ui/skeleton"`) while hydrating from Supabase.
+4. **Do not add default Supabase project credentials in code or docs.** Configure `SUPABASE_REST_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` through `.env` only. Never commit service-role keys, database passwords, or generated credential notes.
+5. **Do not bypass the Node API from the browser for privileged writes.** The browser calls local app routes like `/api/invoices`; the Node server owns Supabase REST calls and keeps service-role credentials server-side.
+6. **Atomic Bulk Upserts (`resolution=merge-duplicates`).** All resource batch replacements in `server/supabaseRest.js` issue an atomic single `POST` request with PostgREST `resolution=merge-duplicates` header to prevent multi-tab or concurrent user race conditions.
+7. **Mandatory Party References on AR/AP/Payroll Accounts:** Any double-entry GL journal entry touching Accounts Receivable (`1200`), Accounts Payable (`2100`), or Payroll Payable (`2300`) must specify a party reference (`party_id` or `party_name`) for sub-ledger audit compliance.
+8. **Finance screens are derived screens.** Cash position, reports, unpaid invoices, invoice timelines, banking, and GL views must derive from persisted invoices, payments, accounts, and journal-entry lines.
+9. **When a persistence write fails, do not keep optimistic fake state.** Reload from Supabase or show a safe error state.
 
 ### Cross-Module Posting Rules
 
@@ -129,9 +132,20 @@ The modules are connected through persisted Supabase records and backend posting
 | `useErpStore()` | `src/lib/erpStore.ts` | Sales & Inventory module — products, multi-warehouse tracking, stock movements audit log, inter-warehouse transfers, sales orders, purchase orders with GL accruals, customers, suppliers |
 | `useFeedback()` | `src/context/FeedbackContext.tsx` | Global toasts and confirmation dialogs (wraps the app in `main.tsx`) |
 
-### Supabase Configuration
+### Supabase Database & Performance Schema
 
-The current Supabase project must be configured through environment variables. The application no longer ships with a default/demo Supabase project or local business-data JSON fallbacks.
+The Supabase database manages 50+ business resource tables using JSONB document storage with high-performance PostgreSQL expression indexes defined in `server/supabase.schema.sql`:
+
+| Table Name | Indexed Expressions / Keys | Purpose |
+| :--- | :--- | :--- |
+| `journal_entries` | `((payload->>'entry_date'))`, `((payload->>'source_type'), (payload->>'source_id'))` | Fast ledger date range filtering and source voucher lookups |
+| `journal_entry_lines` | `((payload->>'account_id'), (payload->>'journal_entry_id'))` | Instant account balance aggregation and trial balance computation |
+| `invoices` | `((payload->>'status'), (payload->>'customer_id'))` | AR customer exposure and overdue billing timeline queries |
+| `expenses` | `((payload->>'status'), (payload->>'category'))` | Claim status tracking and cost center expense audits |
+| `fixed_assets` | `((payload->>'status'))` | Active capital asset asset register filtering |
+| `employees` | `((payload->>'employee_number'))` unique | Personnel identification lookup |
+| `attendance_records` | `((payload->>'employee_id'), (payload->>'attendance_date'))` unique | Daily attendance log matrix |
+| `payroll_records` | `((payload->>'payroll_period_id'), (payload->>'employee_id'))` unique | Idempotent salary disbursement validation |
 
 | Setting | Value |
 | :--- | :--- |
@@ -145,9 +159,9 @@ The current Supabase project must be configured through environment variables. T
 
 **Local development startup:** run `npm run server` for the Node API and `npm run dev` for Vite. The expected local URLs are `http://127.0.0.1:8787` for the API and `http://localhost:3000/` for the app.
 
-**Required validation before pushing changes:** run `npm run build`, `npm test`, and `git diff --check`. If a change touches Supabase posting logic, also test the relevant local API endpoint against the configured Supabase project.
+**Required validation before pushing changes:** run `npm run build`, `node node_modules/typescript/bin/tsc --noEmit`, and `git diff --check`. If a change touches Supabase posting logic, also test the relevant local API endpoint against the configured Supabase project.
 
-**Design intent:** Module workflows and GL posting rules are modeled after ERPNext concepts (double-entry vouchers, COA hierarchy, AR/AP aging, etc.) but implemented as original code — not a fork or copy of ERPNext — so the system can be licensed and sold as a standalone product.
+**Design intent:** Module workflows and GL posting rules are modeled after ERPNext concepts (double-entry vouchers, COA hierarchy, financial statements, etc.) but implemented as original code — not a fork or copy of ERPNext — so the system can be licensed and sold as a standalone product.
 
 **Removed legacy files:** `AssetsAndTax.tsx` (superseded by `Assets.tsx` + `Taxes.tsx`), `SharedNav.tsx`, `Toast.tsx`, and `PlaceholderPage.tsx`.
 
@@ -172,7 +186,7 @@ This section details the functional purpose, database/state contents, and specif
   - **Executive Metric Cards:** High-contrast glass cards with trend icons and quick action triggers.
 
 #### 2. Purchase Orders (`/sales/purchase-orders`)
-- **Functional Purpose:** Tracks incoming supply chain procurement orders, complete PO lifecycle (`DRAFT` → `IN TRANSIT` → `RECEIVED`), supplier delivery tracking, and automated GL asset accruals (`ACC-1300` Stock in Hand / `ACC-2100` Accounts Payable) via `useErpStore()`.
+- **Functional Purpose:** Tracks incoming supply chain procurement orders, complete PO lifecycle (`DRAFT` → `IN TRANSIT` → `RECEIVED`), supplier delivery tracking, and automated GL asset accruals (`ACC-1410` Stock in Hand / `ACC-2100` Accounts Payable) via `useErpStore()`.
 - **Contents (Data & States):**
   - **Procurement KPIs:** Draft POs, In Transit POs, Delayed POs.
   - **Purchase Order List:** Supplier partners, transit state (`DRAFT`, `IN TRANSIT`, `RECEIVED`), document dates, itemized procurement lines, total capital allocations, and billing status.
@@ -206,7 +220,7 @@ This section details the functional purpose, database/state contents, and specif
 - **Functional Purpose:** Catalog of active inventory products with SKU tracking, reorder levels, valuation rates, multi-warehouse distribution breakdowns, regulatory compliance documentation (Certificates of Analysis), inter-warehouse Store Transfers with GL voucher generation, and real-time automated Stock Movement Audit Logs.
 - **Contents (Data & States):**
   - **Active Products:** Product codes, SKUs, categories, warehouse allocations, reorder levels, valuation rates, physical stock, active batch tags, and expiry horizons.
-  - **Store Transfers:** Material Transfer Note tracking ledger with issue/receipt workflows that automatically log stock movements and post double-entry GL journal vouchers (`ACC-1300`).
+  - **Store Transfers:** Material Transfer Note tracking ledger with issue/receipt workflows that automatically log stock movements and post double-entry GL journal vouchers (`ACC-1410`).
   - **Stock Movements Audit Log:** Automated real-time log tracking receipts, transfers, sales dispatches, and inventory audit adjustments with linked journal entry IDs.
   - **Regulatory Docs:** Official CoAs and laboratory compliance licenses.
 - **How it is Showed (Visualizations):**
@@ -279,22 +293,20 @@ This section details the functional purpose, database/state contents, and specif
   - **Add / Edit Tax Rule Modals:** Form dialogs for rate, type, account mapping, and inclusive toggle.
 
 #### 6. Financial Statements & Reports (`/finance/reports`)
-- **Functional Purpose:** Enterprise financial reporting engine generating live account-wise General Ledger reports, AR/AP aging subledgers, trial balance worksheet, and standalone official financial statements (Balance Sheet, Profit & Loss, Cash Flow) directly from GL postings.
-- **Active Sub-Tabs (6):** *General Ledger*, *AR / AP Aging Analysis*, *Trial Balance*, *Balance Sheet*, *Profit & Loss*, *Cash Flow*.
+- **Functional Purpose:** Enterprise financial reporting engine generating live account-wise General Ledger reports, trial balance worksheet, and standalone official financial statements (Balance Sheet, Profit & Loss, Cash Flow) directly from GL postings.
+- **Active Sub-Tabs (5):** *General Ledger*, *Trial Balance*, *Balance Sheet*, *Profit & Loss*, *Cash Flow*.
 - **Contents (Data & States):**
   - **Account-Wise General Ledger (GL):** ERPNext-standard transaction ledger report with multi-criteria filtering (Account Code, Voucher Type, Party Name, Date Range, Keyword Search), against-account tracking, opening balance calculations, and cumulative line-by-line running balances.
   - **Trial Balance Worksheet:** Comprehensive 5-category trial balance statement verifying fundamental accounting equality (`Total Debits == Total Credits`). Features separate account code and account name columns, category filtering across all 5 account types (*Assets*, *Liabilities*, *Equity*, *Revenue*, *Expenses*), balance status filters (*All*, *Non-Zero*, *Debit Only*, *Credit Only*), and keyword search.
   - **Balance Sheet Tab:** Live **Balance Sheet** featuring a clean 3-card top summary strip (**Assets**, **Liabilities**, **Equity**), dedicated account category subledgers, and a clean **Balance Sheet Summary Banner** (`Assets = Liabilities + Equity`).
-  - **Profit & Loss Tab:** ERPNext-aligned **Income Statement (Profit & Loss)** featuring interactive trend graphs (Monthly Revenue vs COGS vs Expenses BarChart and Operating Expense Donut Allocation) alongside structured account group ledgers (4000 Revenue, 5000 COGS, Gross Profit Margin %, 6000 Operating Expenses, and Net Operating Income EBIT).
+  - **Profit & Loss Tab:** ERPNext-aligned **Income Statement (Profit & Loss)** featuring interactive trend graphs (Monthly Revenue vs COGS vs Expenses BarChart and Operating Expense Donut Allocation) alongside structured account group ledgers (4000 Revenue, 5000 COGS, Gross Profit Margin %, 5100-5400 Operating Expenses, and Net Operating Income EBIT).
   - **Cash Flow Tab:** ERPNext-aligned **Statement of Cash Flows (Direct Method)** featuring interactive liquidity graphs (Monthly Cash Activity BarChart and Cumulative Cash Reserve Growth AreaChart) alongside operating, investing, and financing cash movement tables.
-  - **Accounts Receivable & Payable Aging:** Detailed customer and supplier sub-ledgers with aging buckets (Current, 1-30 days, 31-60 days, 61-90 days, 90+ days) and dunning notice dispatch tracking.
 - **How it is Showed (Visualizations):**
   - **Trial Balance Table & Resizing Engine:** Full-featured interactive table with draggable column resizing handles, popover column sorting (ascending/descending per column), category badge pills, balance status chips, search input, and real-time grand totals footer.
   - **General Ledger Account Report Tab:** Tabular transaction view displaying Posting Date, Account Code & Name, Voucher Type & Reference, Party / Remarks, Contra Against-Account, Debit, Credit, and Running Balance with live KPI metric strip.
   - **Separated Balance Sheet Layout:** Three distinct cards separating Assets (1000 Series), Liabilities (2000 Series), and Shareholder Equity (3000 Series), with real-time balance totals and an executive glassmorphism Balance Sheet status check banner (`Assets = Liabilities + Equity`).
   - **ERPNext Analytics Graphs:** Interactive Recharts visualizers including Revenue vs Cost bar charts, expense pie distributions, cash activity bars, and cumulative cash reserve gradient area charts.
   - **Interactive Report Views:** Standalone top-level tabs for Balance Sheet, Profit & Loss, and Cash Flow with expandable account subtotals, net profit calculations, and one-click PDF/CSV export triggers.
-  - **Aging Heatmap & FinanceTableToolbar Integration:** Color-coded aging buckets highlighting overdue receivables, live search bar via `FinanceTableToolbar`, and one-click dunning notice generation.
 
 #### 7. Invoices Engine (`/finance/invoices`)
 - **Functional Purpose:** Full-lifecycle invoicing management for customer Accounts Receivable (AR) Invoices, integrated with tax templates, payment terms, discount structures, draft status handling, and automatic GL journal entry posting via `useFinanceStore()`.
