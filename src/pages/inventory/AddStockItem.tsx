@@ -10,30 +10,7 @@ import { useErpStore, type Product } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 
-const packagingUnits = [
-  "Boxes",
-  "Bottles",
-  "Bottle",
-  "Vial",
-  "Pack",
-  "Carton",
-  "Pieces",
-  "Sachet",
-  "Tube",
-  "Ampoule",
-  "Bag",
-  "Strip",
-  "Kit",
-  "Kilogram (Kg)",
-  "Gram (g)",
-  "Liter (L)",
-  "Milliliter (mL)",
-  "Meter",
-  "Roll",
-  "Pair",
-  "Dozen",
-  "Other",
-]
+const packagingUnits = ["Box", "Bottle", "Vial"]
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 
@@ -49,14 +26,7 @@ function daysBetween(start: string, end: string) {
   return Math.ceil((endDate.getTime() - startDate.getTime()) / 86_400_000)
 }
 
-function daysUntil(end: string) {
-  if (!end) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const endDate = new Date(`${end}T00:00:00`)
-  if (Number.isNaN(endDate.getTime())) return null
-  return Math.ceil((endDate.getTime() - today.getTime()) / 86_400_000)
-}
+
 
 function FieldLabel({ children, required = false }: { children: string; required?: boolean }) {
   return (
@@ -88,7 +58,6 @@ export default function AddStockItem() {
   const totalStockValue = totalQuantity * Number(unitPrice || 0)
   const shelfLifeDays = daysBetween(manufacturingDate, expiryDate)
   const shelfLifeMonths = shelfLifeDays === null ? 0 : Math.max(0, Math.round((shelfLifeDays / 30.4375) * 10) / 10)
-  const remainingExpiryDays = daysUntil(expiryDate)
   const dateInvalid = Boolean(shelfLifeDays !== null && shelfLifeDays <= 0)
   const normalizedBatch = batchNumber.trim().toLowerCase()
   const duplicateBatch = Boolean(normalizedBatch) && products.some((product) => {
@@ -109,6 +78,8 @@ export default function AddStockItem() {
       !dateInvalid &&
       !duplicateBatch,
   )
+
+
 
   const resetForm = () => {
     setDescriptionOfGoods("")
@@ -212,10 +183,16 @@ export default function AddStockItem() {
 
               <label className="space-y-1.5">
                 <FieldLabel required>Packaging Unit</FieldLabel>
-                <input list="packaging-unit-options" value={packagingUnit} onChange={(event) => setPackagingUnit(event.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold outline-none focus:border-emerald-500" />
-                <datalist id="packaging-unit-options">
-                  {packagingUnits.map((unit) => <option key={unit} value={unit} />)}
-                </datalist>
+                <select 
+                  value={packagingUnit} 
+                  onChange={(event) => setPackagingUnit(event.target.value)} 
+                  className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
+                >
+                  <option value="">Select packaging unit</option>
+                  {packagingUnits.map((unit) => (
+                    <option key={unit} value={unit}>{unit}</option>
+                  ))}
+                </select>
               </label>
 
               <label className="space-y-1.5">
@@ -249,20 +226,7 @@ export default function AddStockItem() {
                 <input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold outline-none focus:border-emerald-500" />
               </label>
 
-              <div className="grid gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 md:col-span-2 sm:grid-cols-2">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wide text-zinc-400">Shelf Life</p>
-                  <p className="mt-1 text-sm font-black text-zinc-900">
-                    {shelfLifeDays === null ? "Select MFG and EXP dates" : `${shelfLifeDays.toLocaleString()} days (${shelfLifeMonths.toLocaleString()} months)`}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wide text-zinc-400">Expiry Remaining</p>
-                  <p className={`mt-1 text-sm font-black ${remainingExpiryDays !== null && remainingExpiryDays < 0 ? "text-rose-700" : "text-zinc-900"}`}>
-                    {remainingExpiryDays === null ? "Select expiry date" : remainingExpiryDays < 0 ? `Expired ${Math.abs(remainingExpiryDays).toLocaleString()} days ago` : `${remainingExpiryDays.toLocaleString()} days remaining`}
-                  </p>
-                </div>
-              </div>
+
 
               <label className="space-y-1.5">
                 <FieldLabel required>Quantity Per Pack</FieldLabel>

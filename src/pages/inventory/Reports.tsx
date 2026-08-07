@@ -32,7 +32,6 @@ const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, trans
 
 const columns: TableColumn[] = [
   { key: "item", label: "Item" },
-  { key: "warehouse", label: "Warehouse" },
   { key: "batch", label: "Batch" },
   { key: "manufacturingDate", label: "MFG" },
   { key: "expiryDate", label: "EXP" },
@@ -102,7 +101,9 @@ export default function Reports() {
       return batchEntries.flatMap((batch) => {
         return stockEntries.map((stock) => {
           const warehouse = warehouseByKey.get(stock.warehouse)
-          const remainingQuantity = Number(batch.qty || stock.qty || 0)
+          const remainingQuantity = Number(stock.qty !== undefined ? stock.qty : product.quantity || 0)
+          const packSize = Number(product.quantityPerPack || 1)
+          const numberOfCartons = packSize > 0 ? Math.floor(remainingQuantity / packSize) : Number(product.numberOfCartons || 0)
           const unitPrice = Number(product.sellingPrice || product.unitCost || 0)
           return {
             id: `${product.id}-${stock.warehouse}-${batch.batchNo}`,
@@ -112,9 +113,9 @@ export default function Reports() {
             manufacturingDate: displayDate(product.manufacturingDate),
             expiryDate: displayDate(batch.expiry || product.expiry),
             packagingUnit: product.unit,
-            quantityPerPack: Number(product.quantityPerPack || 0),
-            numberOfCartons: Number(product.numberOfCartons || 0),
-            totalQuantity: Number(product.totalQuantity || product.quantity || 0),
+            quantityPerPack: packSize,
+            numberOfCartons,
+            totalQuantity: Number(product.totalQuantity || (product.quantity + (product.quantitySold || 0)) || product.quantity),
             remainingQuantity,
             unitPrice,
             stockValue: remainingQuantity * unitPrice,
@@ -147,7 +148,6 @@ export default function Reports() {
 
   const table = useResizableTable(columns, filteredRows, {
     item: 240,
-    warehouse: 180,
     batch: 140,
     manufacturingDate: 110,
     expiryDate: 110,
@@ -253,7 +253,6 @@ export default function Reports() {
                   table.sorted().map((row) => (
                     <tr key={row.id} className="hover:bg-white/50">
                       <td className="px-3 py-4 text-xs font-black text-zinc-900">{row.item}</td>
-                      <td className="px-3 py-4 text-xs font-bold text-zinc-700">{row.warehouse}</td>
                       <td className="px-3 py-4 font-mono text-xs font-bold text-zinc-700">{row.batch}</td>
                       <td className="px-3 py-4 text-xs font-bold text-zinc-700">{row.manufacturingDate}</td>
                       <td className="px-3 py-4 text-xs font-bold text-zinc-700">{row.expiryDate}</td>

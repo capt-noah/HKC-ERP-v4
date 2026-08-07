@@ -835,6 +835,13 @@ class ErpStore {
     this.notify()
   }
 
+  public updateSalesOrder(updatedSo: SalesOrder) {
+    this.salesOrders = this.salesOrders.map((so) => (so.id === updatedSo.id ? updatedSo : so))
+    financeStore.updateInvoiceFromSalesOrder(updatedSo)
+    this.saveToApi().catch((err) => console.error("Failed to persist updated Sales Order:", err))
+    this.notify()
+  }
+
   public updateSalesOrderStage(id: string, stage: SalesOrder["stage"], progress?: number) {
     this.salesOrders = this.salesOrders.map((so) => {
       if (so.id !== id) return so
@@ -889,14 +896,23 @@ class ErpStore {
       // Deduct Physical Stock from Inventory
       if (prod) {
         const newQty = Math.max(0, prod.quantity - item.qty)
-        const updatedBreakdown = prod.stockBreakdown.map((sb) =>
+        const updatedBreakdown = (prod.stockBreakdown || []).map((sb) =>
           sb.warehouse === so.warehouse ? { ...sb, qty: Math.max(0, sb.qty - item.qty) } : sb
         )
+        const updatedBatches = (prod.batches || []).map((b) => ({
+          ...b,
+          qty: Math.max(0, b.qty - item.qty),
+        }))
+        const packSize = Number(prod.quantityPerPack || 1)
+        const newCartons = packSize > 0 ? Math.max(0, Math.floor(newQty / packSize)) : Math.max(0, (prod.numberOfCartons || 0) - item.qty)
         const updatedStatus = newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock"
 
         this.updateProduct(prod.id, {
           quantity: newQty,
+          quantitySold: (prod.quantitySold || 0) + item.qty,
+          numberOfCartons: newCartons,
           stockBreakdown: updatedBreakdown,
+          batches: updatedBatches,
           status: updatedStatus,
         })
       }
@@ -997,6 +1013,10 @@ class ErpStore {
     const so = this.salesOrders.find((s) => s.id === soId)
     if (!so) return { success: false, error: "Sales Order not found." }
 
+    if (so.billingStatus === "Fully Billed" || (so.invoiceIds && so.invoiceIds.length > 0)) {
+      return { success: false, error: "An invoice has already been generated for this Sales Order." }
+    }
+
     const subtotal = so.amount
     const taxAmount = Math.round((subtotal * (taxPercent / 100)) * 100) / 100
     const total = subtotal + taxAmount
@@ -1016,6 +1036,7 @@ class ErpStore {
 
     const newInv = financeStore.createInvoice({
       invoice_number: invNum,
+      sales_order_id: so.id,
       customer_name: so.customer,
       issue_date: issueDate,
       due_date: dueDate,
@@ -1254,6 +1275,18 @@ class ErpStore {
 
   public processPipeline(so: any, stage: string) {
     return processSalesOrderPipeline(so, stage)
+  }
+
+  public clearAllTestingData() {
+    this.products = []
+    this.salesOrders = []
+    this.purchaseOrders = []
+    this.quotations = []
+    this.deliveryNotes = []
+    this.transfers = []
+    this.stockMovements = []
+    this.notify()
+    financeStore.clearAllTestingData()
   }
 }
 

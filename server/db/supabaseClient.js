@@ -190,6 +190,16 @@ export async function replaceRows({ resource, body, headers = {} }) {
   }
 
   if (body.length === 0) {
+    try {
+      const deleteUrl = new URL(resource.table, config.supabaseRestUrl)
+      deleteUrl.searchParams.set("id", "neq._empty_table_flush_")
+      await fetch(deleteUrl, {
+        method: "DELETE",
+        headers: buildHeaders(headers),
+      })
+    } catch {
+      // Ignore delete error if table is already empty
+    }
     return {
       status: 200,
       headers: {},

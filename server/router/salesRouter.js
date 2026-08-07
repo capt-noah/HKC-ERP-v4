@@ -39,6 +39,24 @@ salesRouter.get(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, nex
   }
 })
 
+salesRouter.patch(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, next) => {
+  try {
+    const result = await salesService.update(req.body, req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+salesRouter.put(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, next) => {
+  try {
+    const result = await salesService.update(req.body, req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
 salesRouter.delete(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, next) => {
   try {
     const result = await salesService.delete(req.params.id)

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
@@ -13,8 +14,12 @@ import {
   ShieldAlert, 
   Box,
   LayoutGrid,
-  Table as TableIcon
+  Table as TableIcon,
+  Pencil,
+  Trash2,
+  AlertTriangle
 } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/GlassCard"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -27,6 +32,27 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
+const CONTAINER_UNITS = ["Box", "Bottle", "Vial"]
+
+function SalesOrdersTableSkeletonRows() {
+  return (
+    <>
+      {Array.from({ length: 6 }).map((_, index) => (
+        <tr key={index} className="border-b border-zinc-150/40">
+          <td className="py-4 px-6"><Skeleton className="h-4 w-20 bg-zinc-200/80" /><Skeleton className="h-3 w-16 mt-1 bg-zinc-200/50" /></td>
+          <td className="py-4 px-4"><Skeleton className="h-4 w-32 bg-zinc-200/80" /><Skeleton className="h-3 w-20 mt-1 bg-zinc-200/50" /></td>
+          <td className="py-4 px-4"><Skeleton className="h-5 w-24 rounded-full bg-zinc-200/80" /></td>
+          <td className="py-4 px-4"><Skeleton className="h-4 w-16 bg-zinc-200/80" /></td>
+          <td className="py-4 px-4"><Skeleton className="h-5 w-28 rounded-full bg-zinc-200/80" /></td>
+          <td className="py-4 px-4"><Skeleton className="h-5 w-24 rounded-full bg-zinc-200/80" /></td>
+          <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-24 ml-auto bg-zinc-200/80" /></td>
+          <td className="py-4 px-4 text-center"><Skeleton className="h-8 w-44 mx-auto rounded-xl bg-zinc-200/80" /></td>
+        </tr>
+      ))}
+    </>
+  )
+}
+
 interface SalesOrdersProps {
   initialTab?: "sales-orders" | "quotations" | "delivery-notes"
 }
@@ -34,6 +60,7 @@ interface SalesOrdersProps {
 export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrdersProps) {
   const { showToast } = useFeedback()
   const erp = useErpStore()
+  const isLoading = erp.isLoading()
   
   const salesOrders = erp.getSalesOrders()
   const quotations = erp.getQuotations()
@@ -49,6 +76,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
     setActiveTab(initialTab)
   }, [initialTab])
 
+  const navigate = useNavigate()
   const [viewMode, setViewMode] = useState<"kanban" | "table">("table")
 
   // Search & Filter states for each table
@@ -67,6 +95,8 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   
   // Modals
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false)
+  const [isEditOrderOpen, setIsEditOrderOpen] = useState(false)
+  const [editingOrder, setEditingOrder] = useState<SalesOrder | null>(null)
   const [isNewQuotationOpen, setIsNewQuotationOpen] = useState(false)
   const [isFulfillModalOpen, setIsFulfillModalOpen] = useState(false)
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
@@ -74,7 +104,6 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   // Dispatch / Fulfillment form state
   const [driverName, setDriverName] = useState("")
   const [vehicleReg, setVehicleReg] = useState("")
-  const [fulfillQtys, setFulfillQtys] = useState<Record<string, number>>({})
 
   // Billing form state
   const [taxPercent, setTaxPercent] = useState(0)
@@ -84,7 +113,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
   const [newCustomerId, setNewCustomerId] = useState("")
   const [newWarehouse, setNewWarehouse] = useState("")
   const [newDesc, setNewDesc] = useState("")
-  const [orderItems] = useState<SalesOrderItem[]>([])
+  const [orderItems, setOrderItems] = useState<SalesOrderItem[]>([])
 
   // New Quotation Form State
   const [quoteCustomerId, setQuoteCustomerId] = useState("")
@@ -167,7 +196,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
     deliveryStatus: 140,
     billingStatus: 130,
     amount: 140,
-    _actions: 140,
+    _actions: 240,
   })
 
   const qtTable = useResizableTable(quotationColumns, filteredQuotations, {
@@ -210,6 +239,145 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
     }
   }
 
+function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{ id: string; code?: string; name?: string }>): string {
+  if (!warehousesList || warehousesList.length === 0) return "WH1"
+  if (!rawWh) return warehousesList[0].code || warehousesList[0].id
+  const clean = rawWh.trim().toLowerCase()
+  const match = warehousesList.find((w) => 
+    (w.code && w.code.toLowerCase() === clean) ||
+    (w.id && w.id.toLowerCase() === clean) ||
+    (w.name && w.name.toLowerCase() === clean) ||
+    (w.code && clean.includes(w.code.toLowerCase())) ||
+    (w.id && clean.includes(w.id.toLowerCase()))
+  )
+  return match ? (match.code || match.id) : (warehousesList[0].code || warehousesList[0].id)
+}
+
+  // Open New Order modal prefilled with default line item and product warehouse
+  const handleOpenNewOrderModal = () => {
+    const defaultProduct = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", sku: "AMX-500", valuationRate: 150, unit: "Box", sellingPrice: 150, warehouse: "WH1" }
+    const loadedPrice = defaultProduct.sellingPrice || defaultProduct.unitCost || defaultProduct.valuationRate || 150
+    
+    // Robustly resolve warehouse code
+    const targetWh = resolveWarehouseCode(defaultProduct.warehouse, warehouses)
+    setNewWarehouse(targetWh)
+
+    setOrderItems([
+      {
+        productId: defaultProduct.id,
+        name: defaultProduct.name,
+        qty: 10,
+        unit: defaultProduct.unit || "Box",
+        unitPrice: loadedPrice,
+        total: loadedPrice * 10,
+      },
+    ])
+    setIsNewOrderOpen(true)
+  }
+
+  // Item Row Handlers for New/Edit Order
+  const handleOrderItemChange = (index: number, field: keyof SalesOrderItem, value: any, isEditing = false) => {
+    const setter = isEditing ? setEditingOrderItems : setOrderItems
+    setter((prev) => {
+      const next = [...prev]
+      const current = { ...next[index] }
+
+      if (field === "productId") {
+        const prod = products.find((p) => p.id === value)
+        if (prod) {
+          const loadedPrice = prod.sellingPrice || prod.unitCost || prod.valuationRate || 150
+          current.productId = prod.id
+          current.name = prod.name
+          current.unit = prod.unit || "Box"
+          current.unitPrice = loadedPrice
+          current.total = current.qty * current.unitPrice
+
+          // Auto-bind warehouse to product's designated stock warehouse
+          if (!isEditing) {
+            const targetWh = resolveWarehouseCode(prod.warehouse, warehouses)
+            setNewWarehouse(targetWh)
+          }
+        }
+      } else if (field === "qty") {
+        const parsed = Math.max(0, Number(value) || 0)
+        current.qty = parsed
+        current.total = current.qty * current.unitPrice
+      } else if (field === "unitPrice") {
+        const parsed = Math.max(0, Number(value) || 0)
+        current.unitPrice = parsed
+        current.total = current.qty * current.unitPrice
+      } else if (field === "unit") {
+        current.unit = String(value)
+      }
+
+      next[index] = current
+      return next
+    })
+  }
+
+  const handleAddOrderItemRow = (isEditing = false) => {
+    const p = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", unit: "Box", valuationRate: 150, sellingPrice: 150 }
+    const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 150
+    const setter = isEditing ? setEditingOrderItems : setOrderItems
+    setter((prev) => [
+      ...prev,
+      {
+        productId: p.id,
+        name: p.name,
+        qty: 10,
+        unit: p.unit || "Box",
+        unitPrice: loadedPrice,
+        total: loadedPrice * 10,
+      },
+    ])
+  }
+
+  const handleRemoveOrderItemRow = (index: number, isEditing = false) => {
+    const setter = isEditing ? setEditingOrderItems : setOrderItems
+    setter((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
+  }
+
+  // State for Editing Sales Order
+  const [editingOrderItems, setEditingOrderItems] = useState<SalesOrderItem[]>([])
+
+  const handleOpenEditModal = (so: SalesOrder) => {
+    setEditingOrder(so)
+    setEditingOrderItems(so.items.length > 0 ? [...so.items] : [
+      {
+        productId: products[0]?.id || "PRD-001",
+        name: products[0]?.name || "Amoxicillin 500mg",
+        qty: 10,
+        unit: products[0]?.unit || "Box",
+        unitPrice: products[0]?.valuationRate || 150,
+        total: (products[0]?.valuationRate || 150) * 10,
+      }
+    ])
+    setIsEditOrderOpen(true)
+  }
+
+  const handleSaveEditOrder = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingOrder) return
+
+    const sanitizedItems: SalesOrderItem[] = editingOrderItems.map((i) => {
+      const q = Math.max(1, Number(i.qty) || 1)
+      const p = Math.max(0, Number(i.unitPrice) || 0)
+      return { ...i, qty: q, unitPrice: p, total: q * p }
+    })
+
+    const totalAmt = sanitizedItems.reduce((sum, i) => sum + i.total, 0)
+    const updatedSo: SalesOrder = {
+      ...editingOrder,
+      items: sanitizedItems,
+      amount: totalAmt,
+    }
+
+    erp.updateSalesOrder(updatedSo)
+    setIsEditOrderOpen(false)
+    setEditingOrder(null)
+    showToast("Sales Order Updated", "success", `Sales Order contract ${updatedSo.id} updated successfully.`)
+  }
+
   // Handle Create Sales Order
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault()
@@ -219,17 +387,22 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
       return
     }
 
-    const defaultItemProduct = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", sku: "AMX-500", valuationRate: 150 }
-    const finalItems: SalesOrderItem[] = orderItems.length > 0 ? orderItems : [
+    const rawItems = orderItems.length > 0 ? orderItems : [
       {
-        productId: defaultItemProduct.id,
-        name: defaultItemProduct.name,
-        qty: 100,
-        unit: "Pcs",
-        unitPrice: defaultItemProduct.valuationRate || 150,
-        total: (defaultItemProduct.valuationRate || 150) * 100,
+        productId: products[0]?.id || "PRD-001",
+        name: products[0]?.name || "Amoxicillin 500mg",
+        qty: 10,
+        unit: products[0]?.unit || "Box",
+        unitPrice: products[0]?.valuationRate || 150,
+        total: (products[0]?.valuationRate || 150) * 10,
       }
     ]
+
+    const finalItems: SalesOrderItem[] = rawItems.map((i) => {
+      const q = Math.max(1, Number(i.qty) || 1)
+      const p = Math.max(0, Number(i.unitPrice) || 0)
+      return { ...i, qty: q, unitPrice: p, total: q * p }
+    })
 
     const totalAmt = finalItems.reduce((sum, item) => sum + item.total, 0)
     const wh = warehouses.find((w) => w.code === newWarehouse || w.id === newWarehouse)
@@ -322,27 +495,16 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
     }
   }
 
-  // Open Fulfill Modal
-  const handleOpenFulfillModal = (so: SalesOrder) => {
-    setSelectedOrder(so)
-    const initialQtys: Record<string, number> = {}
-    so.items.forEach(i => {
-      initialQtys[i.productId] = i.qty
-    })
-    setFulfillQtys(initialQtys)
-    setIsFulfillModalOpen(true)
-  }
+
 
   // Confirm Fulfillment & Create Delivery Note
   const handleConfirmFulfillment = () => {
     if (!selectedOrder) return
 
-    const itemsToFulfill = Object.entries(fulfillQtys)
-      .map(([productId, qty]) => ({
-        productId,
-        qty: Number(qty) || 0,
-      }))
-      .filter((i) => i.qty > 0)
+    const itemsToFulfill = selectedOrder.items.map((i) => ({
+      productId: i.productId,
+      qty: i.qty,
+    }))
 
     if (itemsToFulfill.length === 0) {
       showToast("Dispatch Error", "warning", "Please specify at least 1 item quantity to dispatch.")
@@ -459,7 +621,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                 actions={[
                   {
                     label: "New Order",
-                    onClick: () => setIsNewOrderOpen(true),
+                    onClick: handleOpenNewOrderModal,
                     icon: <Plus className="size-4" />,
                     variant: "primary",
                   },
@@ -480,9 +642,9 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all ${
                       viewMode === "kanban" ? "bg-white text-black shadow-sm font-black" : "hover:text-black text-gray-500"
                     }`}
-                    title="Kanban Board View"
+                    title="Board View"
                   >
-                    <LayoutGrid className="size-3.5" /> Kanban
+                    <LayoutGrid className="size-3.5" /> Board
                   </button>
                 </div>
               </FinanceTableToolbar>
@@ -604,11 +766,11 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                 </div>
               </div>
             ) : (
-              /* Resizable & Sortable Table View for Sales Orders */
+              /* Resizable & Sortable Table View for Sales Orders (Stock Registry Design) */
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse table-fixed">
                   <thead>
-                    <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                    <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                       {salesOrderColumns.map((col) => (
                         <ResizableTh
                           key={col.key}
@@ -626,53 +788,94 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {soTable.sorted().length === 0 ? (
+                  <tbody className="divide-y divide-zinc-150/40">
+                    {isLoading ? (
+                      <SalesOrdersTableSkeletonRows />
+                    ) : soTable.sorted().length === 0 ? (
                       <tr>
-                        <td colSpan={salesOrderColumns.length} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
-                          No sales orders found matching search or filter criteria.
+                        <td colSpan={salesOrderColumns.length} className="text-center py-16 text-zinc-400 text-xs font-medium">
+                          No sales orders match your active search filters.
                         </td>
                       </tr>
                     ) : (
                       soTable.sorted().map((so) => (
-                        <tr key={so.id} className="hover:bg-zinc-50/60 transition-colors text-xs">
-                          <td style={{ width: `${soTable.colWidths.id}px` }} className="px-3 py-3 whitespace-nowrap font-mono font-bold text-zinc-900 truncate">
-                            {so.id}
+                        <motion.tr 
+                          key={so.id}
+                          onClick={() => setSelectedOrder(so)}
+                          className="hover:bg-white/45 cursor-pointer transition-colors"
+                          whileHover={{ scale: 1.001 }}
+                        >
+                          <td style={{ width: `${soTable.colWidths.id}px` }} className="py-4 px-6 overflow-hidden">
+                            <div className="flex flex-col">
+                              <span className="font-black text-zinc-950 text-xs tracking-tight leading-tight mb-0.5 truncate font-mono">
+                                {so.id}
+                              </span>
+                              <span className="font-mono text-[10px] text-zinc-400 font-bold uppercase">
+                                {so.date}
+                              </span>
+                            </div>
                           </td>
-                          <td style={{ width: `${soTable.colWidths.customer}px` }} className="px-3 py-3 truncate">
-                            <div className="font-semibold text-zinc-800 truncate">{so.customer}</div>
-                            <div className="text-[10px] font-mono text-zinc-400 truncate">{so.customerGroup}</div>
+
+                          <td style={{ width: `${soTable.colWidths.customer}px` }} className="py-4 px-4 overflow-hidden">
+                            <div className="flex flex-col">
+                              <span className="font-black text-zinc-950 text-xs tracking-tight leading-tight mb-0.5 truncate">
+                                {so.customer}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 font-bold uppercase truncate">
+                                {so.customerGroup}
+                              </span>
+                            </div>
                           </td>
-                          <td style={{ width: `${soTable.colWidths.warehouse}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-700 truncate">
+
+                          <td style={{ width: `${soTable.colWidths.warehouse}px` }} className="py-4 px-4 overflow-hidden">
+                            <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-tight bg-zinc-100 border border-zinc-200/50 px-2 py-0.5 rounded-full inline-block truncate max-w-full">
                               {so.warehouse}
                             </span>
                           </td>
-                          <td style={{ width: `${soTable.colWidths.stage}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                            <span className="font-semibold text-zinc-800">{so.stage}</span>
+
+                          <td style={{ width: `${soTable.colWidths.stage}px` }} className="py-4 px-4 overflow-hidden">
+                            <span className="text-xs font-black text-zinc-900">
+                              {so.stage}
+                            </span>
                           </td>
-                          <td style={{ width: `${soTable.colWidths.deliveryStatus}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${so.deliveryStatus === "Fully Delivered" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
+
+                          <td style={{ width: `${soTable.colWidths.deliveryStatus}px` }} className="py-4 px-4 overflow-hidden">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${so.deliveryStatus === "Fully Delivered" ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"}`}>
+                              <Truck className="size-2.5 inline mr-1" />
                               {so.deliveryStatus || "Not Delivered"}
                             </span>
                           </td>
-                          <td style={{ width: `${soTable.colWidths.billingStatus}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${so.billingStatus === "Fully Billed" ? "bg-blue-50 text-blue-800" : "bg-zinc-100 text-zinc-700"}`}>
+
+                          <td style={{ width: `${soTable.colWidths.billingStatus}px` }} className="py-4 px-4 overflow-hidden">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${so.billingStatus === "Fully Billed" ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-zinc-100 text-zinc-700 border-zinc-200"}`}>
+                              <FileText className="size-2.5 inline mr-1" />
                               {so.billingStatus || "Not Billed"}
                             </span>
                           </td>
-                          <td style={{ width: `${soTable.colWidths.amount}px` }} className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap truncate">
-                            ETB {so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+
+                          <td style={{ width: `${soTable.colWidths.amount}px` }} className="py-4 px-4 text-right font-mono text-xs overflow-hidden">
+                            <div className="font-black text-zinc-950">ETB {so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</div>
+                            <div className="mt-0.5 text-[9px] font-bold uppercase text-zinc-400">{so.items?.length || 0} items</div>
                           </td>
-                          <td style={{ width: `${soTable.colWidths._actions}px` }} className="px-3 py-3 text-center whitespace-nowrap pr-4">
-                            <button 
-                              onClick={() => setSelectedOrder(so)}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-900 hover:text-black bg-zinc-100 hover:bg-zinc-200 px-2.5 py-1 rounded-full transition-colors"
-                            >
-                              Inspect & Fulfill
-                            </button>
+
+                          <td style={{ width: `${soTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
+                            <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              <button 
+                                onClick={() => handleOpenEditModal(so)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs"
+                                title="Edit Sales Order"
+                              >
+                                <Pencil className="size-3 text-zinc-700" /> Edit
+                              </button>
+                              <button 
+                                onClick={() => setSelectedOrder(so)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] transition-all shadow-xs active:scale-95"
+                              >
+                                <Eye className="size-3.5" /> {so.deliveryStatus === "Fully Delivered" ? "Inspect Order" : "Inspect & Fulfill"}
+                              </button>
+                            </div>
                           </td>
-                        </tr>
+                        </motion.tr>
                       ))
                     )}
                   </tbody>
@@ -913,36 +1116,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                   </button>
                 </div>
 
-                {/* Customer Credit Health & Warehouse Info */}
-                {(() => {
-                  const credit = erp.getCustomerCreditUsage(selectedOrder.customerId)
-                  return (
-                    <div className="p-3.5 bg-zinc-50 rounded-2xl border border-zinc-200/80 mb-5 space-y-2">
-                      <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-zinc-500 flex items-center gap-1">
-                          <Building2 className="size-3.5" /> Customer Credit Health
-                        </span>
-                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${credit.isOverLimit ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>
-                          {credit.isOverLimit ? "EXCEEDED CREDIT LIMIT" : "CREDIT LIMIT SAFE"}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-center pt-1 font-mono text-[11px]">
-                        <div className="bg-white p-2 rounded-xl border border-zinc-100">
-                          <span className="text-[9px] text-zinc-400 block uppercase font-sans">Credit Limit</span>
-                          <span className="font-bold text-zinc-900">ETB {credit.limit.toLocaleString()}</span>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-zinc-100">
-                          <span className="text-[9px] text-zinc-400 block uppercase font-sans">Total Utilized</span>
-                          <span className="font-bold text-amber-700">ETB {credit.used.toLocaleString()}</span>
-                        </div>
-                        <div className="bg-white p-2 rounded-xl border border-zinc-100">
-                          <span className="text-[9px] text-zinc-400 block uppercase font-sans">Available</span>
-                          <span className="font-bold text-emerald-700">ETB {credit.available.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })()}
+
 
                 {/* Line Items Table */}
                 <div className="mb-6">
@@ -1011,18 +1185,18 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
 
               {/* Bottom Action Triggers */}
               <div className="pt-4 border-t border-zinc-200 flex flex-col gap-2">
-                <button 
-                  onClick={() => handleOpenFulfillModal(selectedOrder)}
-                  className="w-full py-2.5 bg-emerald-700 text-white font-bold text-xs rounded-xl hover:bg-emerald-800 shadow-md flex items-center justify-center gap-2"
-                >
-                  <Truck className="size-4" /> Dispatch Stock & Generate Delivery Note (COGS GL)
-                </button>
-                <button 
-                  onClick={() => setIsInvoiceModalOpen(true)}
-                  className="w-full py-2.5 bg-zinc-950 text-white font-bold text-xs rounded-xl hover:bg-zinc-800 shadow-md flex items-center justify-center gap-2"
-                >
-                  <FileText className="size-4" /> Generate Sales Invoice in Finance (AR Ledger)
-                </button>
+                {selectedOrder.deliveryStatus !== "Fully Delivered" ? (
+                  <button 
+                    onClick={() => navigate(`/sales/sales-issued?soId=${selectedOrder.id}`)}
+                    className="w-full py-2.5 bg-emerald-700 text-white font-bold text-xs rounded-xl hover:bg-emerald-800 shadow-md flex items-center justify-center gap-2"
+                  >
+                    <Truck className="size-4" /> Go to Sales Issued to Issue Stock
+                  </button>
+                ) : (
+                  <div className="w-full py-2.5 bg-emerald-50 text-emerald-900 border border-emerald-200/80 font-bold text-xs rounded-xl flex items-center justify-center gap-2">
+                    <CheckCircle2 className="size-4 text-emerald-600" /> Stock Issued & Dispatched
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
@@ -1039,9 +1213,9 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
               exit={{ opacity: 0, scale: 0.95 }}
               className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200"
             >
-              <h2 className="text-xl font-black text-zinc-950 mb-1">Dispatch Stock & Issue Delivery Note</h2>
+              <h2 className="text-xl font-black text-zinc-950 mb-1">Dispatch Stock</h2>
               <p className="text-xs font-semibold text-zinc-500 mb-4">
-                Fulfilling items will automatically decrement inventory levels at warehouse <span className="font-bold text-zinc-800">{selectedOrder.warehouse}</span> and post double-entry COGS GL Voucher to Finance.
+                Fulfilling items will automatically decrement inventory levels at warehouse <span className="font-bold text-zinc-800">{selectedOrder.warehouse}</span> and update store records.
               </p>
 
               <div className="space-y-4 mb-6">
@@ -1067,20 +1241,17 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-2">Quantities to Dispatch</label>
+                  <label className="block text-xs font-bold text-zinc-700 mb-2">Quantities to Dispatch (Contract Fixed)</label>
                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                     {selectedOrder.items.map((item) => (
                       <div key={item.productId} className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl text-xs font-semibold">
                         <div>
                           <div className="font-bold text-zinc-900">{item.name}</div>
-                          <div className="text-[10px] text-zinc-500">Ordered: {item.qty} {item.unit}</div>
+                          <div className="text-[10px] text-zinc-500 font-medium">Contract Item</div>
                         </div>
-                        <input 
-                          type="number" 
-                          value={fulfillQtys[item.productId] ?? item.qty}
-                          onChange={(e) => setFulfillQtys({ ...fulfillQtys, [item.productId]: Number(e.target.value) })}
-                          className="w-20 px-2 py-1 rounded-lg border border-zinc-200 bg-white text-right font-mono font-bold"
-                        />
+                        <div className="font-mono font-black text-xs text-zinc-900 bg-white px-3 py-1.5 rounded-lg border border-zinc-200 shadow-sm">
+                          {item.qty} {item.unit}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1098,7 +1269,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                   onClick={handleConfirmFulfillment}
                   className="px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md"
                 >
-                  Confirm Dispatch & Post COGS
+                  Confirm Dispatch
                 </button>
               </div>
             </motion.div>
@@ -1116,9 +1287,9 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
               exit={{ opacity: 0, scale: 0.95 }}
               className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
             >
-              <h2 className="text-xl font-black text-zinc-950 mb-1">Generate Sales Invoice in Finance</h2>
+              <h2 className="text-xl font-black text-zinc-950 mb-1">Generate Sales Invoice</h2>
               <p className="text-xs font-semibold text-zinc-500 mb-4">
-                Creates an Accounts Receivable invoice in <span className="font-bold text-zinc-800">useFinanceStore</span> for customer <span className="font-bold text-zinc-800">{selectedOrder.customer}</span>.
+                Creates an Accounts Receivable invoice in Finance for customer <span className="font-bold text-zinc-800">{selectedOrder.customer}</span>.
               </p>
 
               <div className="space-y-4 mb-6">
@@ -1174,7 +1345,7 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                   onClick={handleConfirmInvoice}
                   className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
                 >
-                  Create Invoice & AR Entry
+                  Generate Sales Invoice
                 </button>
               </div>
             </motion.div>
@@ -1190,49 +1361,43 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
             >
               <h2 className="text-xl font-black text-zinc-950 mb-1">Create HKC Sales Contract</h2>
-              <p className="text-xs font-semibold text-zinc-500 mb-5">Draft a new sales contract into the Quote pipeline.</p>
+              <p className="text-xs font-semibold text-zinc-500 mb-5">Draft a new sales contract with item quantities, packaging units, and prices.</p>
 
               <form onSubmit={handleCreateOrder} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Select Customer</label>
-                  <select 
-                    value={newCustomerId}
-                    onChange={(e) => setNewCustomerId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                  >
-                    <option value="">Select customer</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
-                    ))}
-                  </select>
-                </div>
-
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Fulfillment Warehouse</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Select Customer</label>
+                    <select 
+                      value={newCustomerId}
+                      onChange={(e) => setNewCustomerId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                    >
+                      <option value="">Select customer</option>
+                      {customers.map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Fulfillment Warehouse <span className="text-[10px] font-normal text-zinc-400 font-mono">(Auto-locked)</span>
+                    </label>
                     <select 
                       value={newWarehouse}
-                      onChange={(e) => setNewWarehouse(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                      disabled={true}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-100 border border-zinc-200 text-xs font-bold outline-none text-zinc-700 cursor-not-allowed"
                     >
                       <option value="">Select warehouse</option>
                       {warehouseOptions.map((warehouse) => (
                         <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
                       ))}
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Item Product</label>
-                    <select 
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    >
-                      {products.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
+                    <span className="text-[10px] text-zinc-400 font-semibold block mt-1">
+                      🔒 Locked: Auto-derived from selected stock item location
+                    </span>
                   </div>
                 </div>
 
@@ -1242,11 +1407,120 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     value={newDesc}
                     onChange={(e) => setNewDesc(e.target.value)}
                     rows={2}
+                    placeholder="Enter sales contract terms or description..."
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-3">
+                {/* Line Items Table */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-black uppercase text-zinc-900 tracking-wide">
+                      Contract Line Items (Products, Quantities & Prices)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleAddOrderItemRow(false)}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 transition-colors"
+                    >
+                      <Plus className="size-3" /> Add Item Row
+                    </button>
+                  </div>
+
+                  <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
+                        <tr>
+                          <th className="px-3 py-2 w-[35%]">Product Item</th>
+                          <th className="px-3 py-2 w-[18%] text-center">Qty</th>
+                          <th className="px-3 py-2 w-[20%] text-center">Unit</th>
+                          <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
+                          <th className="px-3 py-2 w-[7%] text-center"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {orderItems.map((item, index) => {
+                          const p = products.find((prod) => prod.id === item.productId)
+                          const avail = p ? (newWarehouse && newWarehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === newWarehouse)?.qty ?? p.quantity) : p.quantity) : 0
+                          const isOver = item.qty > avail
+                          return (
+                            <tr key={index}>
+                              <td className="p-2">
+                                <select
+                                  value={item.productId}
+                                  onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, false)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
+                                >
+                                  {products.map((prod) => (
+                                    <option key={prod.id} value={prod.id}>{prod.name}</option>
+                                  ))}
+                                </select>
+                                <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
+                                  <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                                  {isOver && (
+                                    <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
+                                      <AlertTriangle className="size-3 text-amber-600 shrink-0" />
+                                      <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2 align-top">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={item.qty === 0 ? "" : item.qty}
+                                  onChange={(e) => handleOrderItemChange(index, "qty", e.target.value, false)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-center"
+                                />
+                              </td>
+                              <td className="p-2 align-top">
+                                <select
+                                  value={item.unit}
+                                  onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, false)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
+                                >
+                                  {CONTAINER_UNITS.map((unit) => (
+                                    <option key={unit} value={unit}>{unit}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="p-2 align-top">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.unitPrice === 0 ? "" : item.unitPrice}
+                                  onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, false)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
+                                />
+                              </td>
+                              <td className="p-2 text-center align-top pt-2.5">
+                                {orderItems.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveOrderItemRow(index, false)}
+                                    className="p-1 text-zinc-400 hover:text-rose-600 transition-colors"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-3 p-3 bg-zinc-50 rounded-2xl border border-zinc-200/80 font-mono text-xs flex justify-between items-center">
+                    <span className="text-zinc-500 font-sans font-bold">Total Contract Amount:</span>
+                    <span className="font-black text-sm text-emerald-800">
+                      ETB {orderItems.reduce((sum, i) => sum + i.total, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
                     onClick={() => setIsNewOrderOpen(false)}
@@ -1259,6 +1533,193 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
                     className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
                   >
                     Create Contract
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: EDIT SALES ORDER */}
+      <AnimatePresence>
+        {isEditOrderOpen && editingOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+            >
+              <h2 className="text-xl font-black text-zinc-950 mb-1">Edit Sales Order ({editingOrder.id})</h2>
+              <p className="text-xs font-semibold text-zinc-500 mb-5">Update contract terms, products, container units, quantities, and prices.</p>
+
+              <form onSubmit={handleSaveEditOrder} className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer</label>
+                    <select 
+                      value={editingOrder.customerId}
+                      onChange={(e) => {
+                        const cust = customers.find((c) => c.id === e.target.value)
+                        setEditingOrder({
+                          ...editingOrder,
+                          customerId: e.target.value,
+                          customer: cust ? cust.name : editingOrder.customer,
+                        })
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                    >
+                      {customers.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Fulfillment Warehouse</label>
+                    <select 
+                      value={editingOrder.warehouse}
+                      onChange={(e) => setEditingOrder({ ...editingOrder, warehouse: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                    >
+                      {warehouseOptions.map((warehouse) => (
+                        <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
+                  <textarea 
+                    value={editingOrder.desc}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, desc: e.target.value })}
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
+                  />
+                </div>
+
+                {/* Line Items Table */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-black uppercase text-zinc-900 tracking-wide">
+                      Contract Line Items
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleAddOrderItemRow(true)}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 transition-colors"
+                    >
+                      <Plus className="size-3" /> Add Item Row
+                    </button>
+                  </div>
+
+                  <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
+                        <tr>
+                          <th className="px-3 py-2 w-[35%]">Product Item</th>
+                          <th className="px-3 py-2 w-[18%] text-center">Qty</th>
+                          <th className="px-3 py-2 w-[20%] text-center">Unit</th>
+                          <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
+                          <th className="px-3 py-2 w-[7%] text-center"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {editingOrderItems.map((item, index) => {
+                          const p = products.find((prod) => prod.id === item.productId)
+                          const avail = p ? (editingOrder.warehouse && editingOrder.warehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === editingOrder.warehouse)?.qty ?? p.quantity) : p.quantity) : 0
+                          const isOver = item.qty > avail
+                          return (
+                            <tr key={index}>
+                              <td className="p-2">
+                                <select
+                                  value={item.productId}
+                                  onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, true)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
+                                >
+                                  {products.map((prod) => (
+                                    <option key={prod.id} value={prod.id}>{prod.name}</option>
+                                  ))}
+                                </select>
+                                <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
+                                  <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                                  {isOver && (
+                                    <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
+                                      <AlertTriangle className="size-3 text-amber-600 shrink-0" />
+                                      <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2 align-top">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={item.qty === 0 ? "" : item.qty}
+                                  onChange={(e) => handleOrderItemChange(index, "qty", e.target.value, true)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-center"
+                                />
+                              </td>
+                              <td className="p-2 align-top">
+                                <select
+                                  value={item.unit}
+                                  onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, true)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
+                                >
+                                  {CONTAINER_UNITS.map((unit) => (
+                                    <option key={unit} value={unit}>{unit}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="p-2 align-top">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.unitPrice === 0 ? "" : item.unitPrice}
+                                  onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, true)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
+                                />
+                              </td>
+                              <td className="p-2 text-center align-top pt-2.5">
+                                {editingOrderItems.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveOrderItemRow(index, true)}
+                                    className="p-1 text-zinc-400 hover:text-rose-600 transition-colors"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-3 p-3 bg-zinc-50 rounded-2xl border border-zinc-200/80 font-mono text-xs flex justify-between items-center">
+                    <span className="text-zinc-500 font-sans font-bold">Total Contract Amount:</span>
+                    <span className="font-black text-sm text-emerald-800">
+                      ETB {editingOrderItems.reduce((sum, i) => sum + i.total, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsEditOrderOpen(false)}
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md"
+                  >
+                    Save Order Changes
                   </button>
                 </div>
               </form>

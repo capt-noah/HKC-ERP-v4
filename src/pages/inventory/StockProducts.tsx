@@ -1049,10 +1049,6 @@ export default function StockProducts() {
                   <input value={editForm.sku} onChange={(e) => updateEditForm({ sku: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
                 </label>
                 <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Category</span>
-                  <input value={editForm.category} onChange={(e) => updateEditForm({ category: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
-                </label>
-                <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Warehouse</span>
                   <select value={editForm.warehouse} onChange={(e) => updateEditForm({ warehouse: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold">
                     {warehouseOptions.filter((warehouse) => warehouse.value !== "ALL").map((warehouse) => (
@@ -1070,7 +1066,15 @@ export default function StockProducts() {
                 </label>
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Unit</span>
-                  <input value={editForm.unit} onChange={(e) => updateEditForm({ unit: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                  <select 
+                    value={editForm.unit} 
+                    onChange={(e) => updateEditForm({ unit: e.target.value })} 
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Box">Box</option>
+                    <option value="Bottle">Bottle</option>
+                    <option value="Vial">Vial</option>
+                  </select>
                 </label>
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Cost Price</span>
@@ -1079,10 +1083,6 @@ export default function StockProducts() {
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Selling Price</span>
                   <input type="number" min="0" value={editForm.sellingPrice} onChange={(e) => updateEditForm({ sellingPrice: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
-                </label>
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Reorder Level</span>
-                  <input type="number" min="0" value={editForm.reorderLevel} onChange={(e) => updateEditForm({ reorderLevel: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
                 </label>
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Compliance Status</span>

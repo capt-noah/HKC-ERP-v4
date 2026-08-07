@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Edit3, Eye, FileText, Plus, Printer, Send, Trash2, X } from "lucide-react"
+import { Edit3, Eye, FileText, Plus, Printer, Send, Trash2, X, Check, Download } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -35,12 +35,7 @@ function blankItem(): SalesIssueItem {
   return { item_id: "", item_name: "", batch_id: "", batch_no: "", packaging_unit: "", available_quantity: 0, quantity: 0, unit_price: 0, amount: 0 }
 }
 
-function displayDate(value?: string) {
-  if (!value) return "-"
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toISOString().slice(0, 10)
-}
+
 
 function SalesIssuedSkeletonRows() {
   return (
@@ -86,6 +81,7 @@ export default function SalesIssued() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<SalesIssue | null>(null)
   const [batchOptions, setBatchOptions] = useState<Record<number, AvailableBatch[]>>({})
+  const [selectedSoIds, setSelectedSoIds] = useState<string[]>([])
 
   const [fsNo, setFsNo] = useState("")
   const [referenceNo, setReferenceNo] = useState("")
@@ -95,9 +91,62 @@ export default function SalesIssued() {
   const [paymentType, setPaymentType] = useState<PaymentType>("Cash")
   const [items, setItems] = useState<SalesIssueItem[]>([blankItem()])
 
+  const salesOrders = erp.getSalesOrders()
+  const pendingSalesOrders = useMemo(() => {
+    return salesOrders.filter((so) => so.deliveryStatus !== "Fully Delivered")
+  }, [salesOrders])
+
   const canonicalWarehouseId = (value: string) => {
     const warehouse = warehouses.find((entry) => entry.id === value || entry.code === value || entry.name === value)
     return warehouse?.id || value
+  }
+
+  const handleTogglePullSalesOrder = (so: any) => {
+    let nextSelected = [...selectedSoIds]
+    if (nextSelected.includes(so.id)) {
+      nextSelected = nextSelected.filter((id) => id !== so.id)
+    } else {
+      nextSelected.push(so.id)
+    }
+    setSelectedSoIds(nextSelected)
+
+    const activeOrders = pendingSalesOrders.filter((s) => nextSelected.includes(s.id))
+    if (activeOrders.length === 0) {
+      setCustomerName("")
+      setWarehouseId("")
+      setReferenceNo("")
+      setItems([blankItem()])
+      return
+    }
+
+    const firstSo = activeOrders[0]
+    setCustomerName(firstSo.customer)
+    const matchedWh = warehouses.find((w) => w.code === firstSo.warehouse || w.id === firstSo.warehouse || w.name === firstSo.warehouse)
+    const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(firstSo.warehouse)
+    setWarehouseId(targetWhId)
+    setReferenceNo("")
+    if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
+
+    const pulledItems: SalesIssueItem[] = []
+    activeOrders.forEach((order) => {
+      order.items.forEach((line) => {
+        const prod = products.find((p) => p.id === line.productId || p.name === line.name)
+        const batchNo = prod?.batch || "BATCH-MAIN"
+        pulledItems.push({
+          item_id: prod?.id || line.productId,
+          item_name: line.name || prod?.name || "Product",
+          batch_id: batchNo,
+          batch_no: batchNo,
+          packaging_unit: line.unit || prod?.unit || "Box",
+          available_quantity: prod?.quantity || 1000,
+          quantity: line.qty,
+          unit_price: line.unitPrice,
+          amount: line.total || line.qty * line.unitPrice,
+        })
+      })
+    })
+
+    setItems(pulledItems.length > 0 ? pulledItems : [blankItem()])
   }
 
   const load = async () => {
@@ -140,40 +189,113 @@ export default function SalesIssued() {
   const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
   const grandTotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0)
 
-  const openCreate = () => {
+  const openCreate = (preselectedSo?: any) => {
     setEditing(null)
     setFsNo("")
+
+    const isRealSo = Boolean(preselectedSo && typeof preselectedSo === "object" && Array.isArray(preselectedSo.items))
     setReferenceNo("")
-    setSaleDate("")
-    setCustomerName("")
-    setWarehouseId("")
+    setSaleDate(new Date().toISOString().split("T")[0])
+    setCustomerName(isRealSo ? preselectedSo.customer : "")
+    
+    if (isRealSo) {
+      const matchedWh = warehouses.find((w) => w.code === preselectedSo.warehouse || w.id === preselectedSo.warehouse || w.name === preselectedSo.warehouse)
+      setWarehouseId(matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse))
+      setSelectedSoIds([preselectedSo.id])
+      const pulledItems: SalesIssueItem[] = (preselectedSo.items || []).map((line: any) => {
+        const prod = products.find((p) => p.id === line.productId || p.name === line.name)
+        const batchNo = prod?.batch || "BATCH-MAIN"
+        return {
+          item_id: prod?.id || line.productId,
+          item_name: line.name || prod?.name || "Product",
+          batch_id: batchNo,
+          batch_no: batchNo,
+          packaging_unit: line.unit || prod?.unit || "Box",
+          available_quantity: prod?.quantity || 1000,
+          quantity: line.qty,
+          unit_price: line.unitPrice,
+          amount: line.total || line.qty * line.unitPrice,
+        }
+      })
+      setItems(pulledItems.length > 0 ? pulledItems : [blankItem()])
+    } else {
+      setWarehouseId("")
+      setSelectedSoIds([])
+      setItems([blankItem()])
+    }
+
     setPaymentType("Cash")
-    setItems([blankItem()])
     setBatchOptions({})
     setFormOpen(true)
   }
 
+  // Handle URL pre-selected Sales Order query parameter ?soId=SO-xxxx
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const urlSoId = urlParams.get("soId")
+    if (urlSoId) {
+      const targetSo = salesOrders.find((s) => s.id === urlSoId)
+      if (targetSo) {
+        openCreate(targetSo)
+      }
+    }
+  }, [salesOrders])
+
   const openEdit = async (issue: SalesIssue) => {
-    if (issue.status !== "Draft") {
+    const statusLower = (issue.status || "").toLowerCase()
+    if (statusLower === "posted") {
       showToast("Posted record locked", "warning", "Posted sales issues cannot be edited directly.")
       return
     }
     try {
-      const detail = await getSalesIssue(issue.id)
-      const normalizedWarehouseId = canonicalWarehouseId(detail.warehouse_id)
-      const options = await Promise.all((detail.items || []).map((row) => row.item_id ? getAvailableBatches(row.item_id, normalizedWarehouseId).catch(() => []) : Promise.resolve([])))
+      let detail = issue
+      try {
+        const fetchRes = await getSalesIssue(issue.id)
+        if (fetchRes && typeof fetchRes === "object" && fetchRes.id) {
+          detail = fetchRes
+        }
+      } catch {
+        detail = issue
+      }
+
+      const targetWh = detail.warehouse_id || (detail as any).warehouse || issue.warehouse_id || (issue as any).warehouse || ""
+      const normalizedWarehouseId = canonicalWarehouseId(targetWh)
+
       setEditing(detail)
-      setFsNo(detail.fs_no)
-      setReferenceNo(detail.reference_no)
-      setSaleDate(detail.sale_date)
-      setCustomerName(detail.customer_name || detail.customer_id)
+      setFsNo(detail.fs_no || (detail as any).fsNo || issue.fs_no || "")
+      setReferenceNo(detail.reference_no || (detail as any).referenceNo || issue.reference_no || "")
+      setSaleDate(detail.sale_date || (detail as any).issueDate || issue.sale_date || new Date().toISOString().split("T")[0])
+      setCustomerName(detail.customer_name || (detail as any).customer || detail.customer_id || issue.customer_name || "")
       setWarehouseId(normalizedWarehouseId)
-      setPaymentType(detail.payment_type)
-      setItems(detail.items?.length ? detail.items.map((item) => {
-        const product = products.find((entry) => entry.id === item.item_id)
-        return { ...item, packaging_unit: item.packaging_unit || product?.unit || "" }
-      }) : [blankItem()])
-      setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
+      setPaymentType(((detail.payment_type || (detail as any).paymentType || issue.payment_type || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
+
+      const rawItems = (detail.items && detail.items.length > 0) ? detail.items : (issue.items && issue.items.length > 0) ? issue.items : [blankItem()]
+      const populatedItems = rawItems.map((item) => {
+        const product = products.find((entry) => entry.id === item.item_id || entry.name === item.item_name)
+        return {
+          ...item,
+          item_id: item.item_id || product?.id || "",
+          item_name: item.item_name || product?.name || "",
+          batch_no: item.batch_no || product?.batch || "BATCH-MAIN",
+          batch_id: item.batch_id || item.batch_no || product?.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || product?.unit || "Box",
+          quantity: Number(item.quantity || (item as any).qty || 1),
+          unit_price: Number(item.unit_price ?? (item as any).price ?? product?.sellingPrice ?? 0),
+          amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
+        }
+      })
+
+      setItems(populatedItems)
+
+      if (normalizedWarehouseId) {
+        const options = await Promise.all(
+          populatedItems.map((row) =>
+            row.item_id ? getAvailableBatches(row.item_id, normalizedWarehouseId).catch(() => []) : Promise.resolve([])
+          )
+        )
+        setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
+      }
+
       setFormOpen(true)
     } catch (err) {
       showToast("Load failed", "warning", err instanceof Error ? err.message : "Could not load sales issue details.")
@@ -208,32 +330,43 @@ export default function SalesIssued() {
     setBatchOptions({})
   }
 
-  const saveDraft = async () => {
-    if (!fsNo || !referenceNo || !saleDate || !customerName.trim() || !warehouseId) {
-      showToast("Missing details", "warning", "FS No, reference, date, customer, and warehouse are required.")
+  const handleSave = async () => {
+    if (!fsNo.trim() || !saleDate || !customerName.trim() || !warehouseId) {
+      showToast("Missing details", "warning", "FS No, date, customer, and warehouse are required.")
       return
     }
-    const invalidItem = items.find((item) => !item.item_id || !item.batch_no || Number(item.quantity) <= 0 || Number(item.unit_price) < 0 || (Number(item.available_quantity || 0) > 0 && Number(item.quantity) > Number(item.available_quantity)))
+    const invalidItem = items.find((item) => {
+      const hasItem = Boolean(item.item_id || item.item_name)
+      const hasBatch = Boolean(item.batch_no)
+      const validQty = Number(item.quantity) > 0
+      const validPrice = Number(item.unit_price) >= 0
+      return !hasItem || !hasBatch || !validQty || !validPrice
+    })
     if (invalidItem) {
-      showToast("Check item rows", "warning", "Each row needs an item, batch, valid quantity, and non-negative unit price.")
+      showToast("Check item rows", "warning", "Each row needs an item, batch number, valid quantity (> 0), and price.")
       return
     }
     const enteredCustomer = customerName.trim()
     const payload = {
       id: editing?.id,
-      fs_no: fsNo,
-      reference_no: referenceNo,
+      fs_no: fsNo.trim(),
+      reference_no: referenceNo.trim() || `REF-${fsNo.trim()}`,
       sale_date: saleDate,
       customer_id: enteredCustomer,
       customer_name: enteredCustomer,
       warehouse_id: canonicalWarehouseId(warehouseId),
       payment_type: paymentType,
-      items: items.map((item, index) => ({ ...item, id: item.id || `${editing?.id || fsNo}-ITEM-${index + 1}` })),
+      items: items.map((item, index) => ({
+        ...item,
+        id: item.id || `${editing?.id || fsNo}-ITEM-${index + 1}`,
+        batch_no: item.batch_no || "BATCH-MAIN",
+        batch_id: item.batch_id || item.batch_no || "BATCH-MAIN",
+      })),
     }
     try {
       if (editing) await updateSalesIssue(editing.id, payload)
       else await createSalesIssue(payload)
-      showToast("Sales issue saved", "success", `${fsNo} saved as draft.`)
+      showToast("Sales Issue Saved", "success", `Sales issue ${fsNo} saved successfully.`)
       setFormOpen(false)
       await load()
     } catch (err) {
@@ -242,15 +375,44 @@ export default function SalesIssued() {
   }
 
   useEffect(() => {
-    if (!formOpen) return
+    if (!formOpen || !warehouseId) return
     let cancelled = false
     const refresh = async () => {
-      const options = await Promise.all(items.map((item) => item.item_id ? getAvailableBatches(item.item_id, canonicalWarehouseId(warehouseId)).catch(() => []) : Promise.resolve([])))
-      if (!cancelled) setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
+      const options = await Promise.all(
+        items.map((item) =>
+          item.item_id
+            ? getAvailableBatches(item.item_id, canonicalWarehouseId(warehouseId)).catch(() => [])
+            : Promise.resolve([])
+        )
+      )
+      if (!cancelled) {
+        const batchMap = Object.fromEntries(options.map((batches, index) => [index, batches]))
+        setBatchOptions(batchMap)
+
+        // Auto-select the first available batch if item has no batch selected yet
+        setItems((currentItems) =>
+          currentItems.map((row, idx) => {
+            const availableForIdx = options[idx] || []
+            if (!row.batch_no && availableForIdx.length > 0) {
+              const firstBatch = availableForIdx[0]
+              return {
+                ...row,
+                batch_no: firstBatch.batch_no,
+                batch_id: firstBatch.batch_no,
+                available_quantity: firstBatch.available_quantity,
+                unit_price: firstBatch.unit_price ?? row.unit_price,
+              }
+            }
+            return row
+          })
+        )
+      }
     }
     void refresh()
-    return () => { cancelled = true }
-  }, [warehouseId, formOpen])
+    return () => {
+      cancelled = true
+    }
+  }, [warehouseId, formOpen, items.map((i) => i.item_id).join(",")])
 
   const doPost = (issue: SalesIssue) => {
     confirm({
@@ -260,7 +422,15 @@ export default function SalesIssued() {
       onConfirm: async () => {
         try {
           await postSalesIssue(issue.id)
-          showToast("Sales issue posted", "success", `${issue.fs_no} posted and stock reduced.`)
+          
+          // Mark any linked Sales Orders in reference_no as Fully Delivered
+          const refStr = issue.reference_no || ""
+          const matchingOrders = salesOrders.filter((so) => refStr.includes(so.id))
+          matchingOrders.forEach((so) => {
+            erp.updateSalesOrderStage(so.id, "Shipped")
+          })
+
+          showToast("Sales issue posted", "success", `${issue.fs_no} posted, inventory stock reduced, and linked Sales Orders fulfilled.`)
           await erp.reloadFromApi()
           await financeStore.reloadFromApi()
           await load()
@@ -405,6 +575,50 @@ export default function SalesIssued() {
                 <div><h2 className="text-xl font-black">{editing ? "Edit Sales Issue" : "Add Sales Issue"}</h2><p className="text-xs font-semibold text-zinc-500">Amount is calculated automatically per row.</p></div>
                 <button onClick={() => setFormOpen(false)} className="rounded-xl border border-zinc-200 p-2"><X className="size-4" /></button>
               </div>
+
+              {/* PULL PENDING SALES ORDERS PICKER BAR */}
+              {!editing && pendingSalesOrders.length > 0 && (
+                <div className="mb-6 p-4 bg-emerald-50/90 border border-emerald-200/80 rounded-2xl">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Download className="size-4 text-emerald-700" />
+                      <span className="text-xs font-black uppercase text-emerald-950 tracking-wide">
+                        Pull From Pending Sales Orders ({pendingSalesOrders.length} Available)
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700">
+                      Select 1 or multiple orders to auto-fill contract items
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                    {pendingSalesOrders.map((so) => {
+                      const isSelected = selectedSoIds.includes(so.id)
+                      return (
+                        <button
+                          key={so.id}
+                          type="button"
+                          onClick={() => handleTogglePullSalesOrder(so)}
+                          className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold text-left transition-all ${
+                            isSelected 
+                              ? "bg-emerald-700 text-white border-emerald-700 shadow-sm" 
+                              : "bg-white text-zinc-800 border-zinc-200 hover:bg-zinc-100"
+                          }`}
+                        >
+                          <div>
+                            <div className="font-bold font-mono text-xs">{so.id} • {so.customer}</div>
+                            <div className={`text-[10px] mt-0.5 ${isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
+                              {so.warehouse} • ETB {so.amount.toLocaleString()} ({so.items.length} contract items)
+                            </div>
+                          </div>
+                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "bg-white text-emerald-700 border-white" : "border-zinc-300"}`}>
+                            {isSelected && <Check className="size-3 stroke-[3]" />}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-4 md:grid-cols-3">
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">FS Number</span>
@@ -446,47 +660,53 @@ export default function SalesIssued() {
                       <button disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35" title="Remove row"><Trash2 className="size-3.5" /></button>
                     </div>
                     <div className="grid gap-3 md:grid-cols-12">
-                      <label className="md:col-span-3">
+                      <label className="md:col-span-6">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Item</span>
                         <select disabled={!warehouseId} value={item.item_id} onChange={(e) => { const product = selectableProducts.find((p) => p.id === e.target.value); void updateItem(index, { item_id: e.target.value, item_name: product?.name || "", packaging_unit: product?.unit || "", unit_price: product?.sellingPrice || 0, batch_id: "", batch_no: "", available_quantity: 0 }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100">
                           <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>{selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       </label>
-                      <label className="md:col-span-3">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Item Name</span>
-                        <input readOnly value={item.item_name || ""} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700" />
-                      </label>
                       <label className="md:col-span-2">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Batch No</span>
-                        <select value={item.batch_no} onChange={(e) => { const batch = (batchOptions[index] || []).find((b) => b.batch_no === e.target.value); void updateItem(index, { batch_no: e.target.value, batch_id: e.target.value, packaging_unit: batch?.packaging_unit || item.packaging_unit, available_quantity: batch?.available_quantity || 0, unit_price: batch?.unit_price ?? item.unit_price }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold">
-                          <option value="">Select batch</option>{(batchOptions[index] || []).map((b) => <option key={b.batch_no} value={b.batch_no}>{b.batch_no} | {Number(b.available_quantity).toLocaleString()}</option>)}
+                        <select
+                          value={item.batch_no}
+                          onChange={(e) => {
+                            const rawOpts = batchOptions[index] || []
+                            const batch = rawOpts.find((b) => b.batch_no === e.target.value)
+                            void updateItem(index, {
+                              batch_no: e.target.value,
+                              batch_id: e.target.value,
+                              packaging_unit: batch?.packaging_unit || item.packaging_unit,
+                              available_quantity: batch?.available_quantity || item.available_quantity || 1000,
+                              unit_price: batch?.unit_price ?? item.unit_price,
+                            })
+                          }}
+                          className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold"
+                        >
+                          <option value="">Select batch</option>
+                          {(() => {
+                            const opts = batchOptions[index] || []
+                            const hasSelected = opts.some((b) => b.batch_no === item.batch_no)
+                            const displayOpts = item.batch_no && !hasSelected
+                              ? [{ batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
+                              : opts
+                            return displayOpts.map((b) => (
+                              <option key={b.batch_no} value={b.batch_no}>
+                                {b.batch_no}
+                              </option>
+                            ))
+                          })()}
                         </select>
-                      </label>
-                      <label className="md:col-span-2">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Packaging Unit</span>
-                        <input readOnly value={item.packaging_unit || ""} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold text-zinc-700" />
-                      </label>
-                      <label className="md:col-span-2">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Available</span>
-                        <input readOnly value={Number(item.available_quantity || 0).toLocaleString()} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-black text-zinc-700" />
-                      </label>
-                      <label className="md:col-span-2">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">MFG Date</span>
-                        <input readOnly value={displayDate((batchOptions[index] || []).find((b) => b.batch_no === item.batch_no)?.manufacturing_date)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 font-mono text-xs font-bold text-zinc-700" />
-                      </label>
-                      <label className="md:col-span-2">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Expiry Date</span>
-                        <input readOnly value={displayDate((batchOptions[index] || []).find((b) => b.batch_no === item.batch_no)?.expiry_date || (batchOptions[index] || []).find((b) => b.batch_no === item.batch_no)?.expiry)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 font-mono text-xs font-bold text-zinc-700" />
                       </label>
                       <label className="md:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Qty</span>
-                        <input type="number" min="1" max={item.available_quantity || undefined} value={item.quantity} onChange={(e) => void updateItem(index, { quantity: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold" />
+                        <input type="number" min="1" value={item.quantity} onChange={(e) => void updateItem(index, { quantity: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold" />
                       </label>
                       <label className="md:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Price</span>
                         <input readOnly value={money(item.unit_price)} className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2 text-right font-mono text-xs font-black text-zinc-700" />
                       </label>
-                      <label className="md:col-span-1">
+                      <label className="md:col-span-2">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Amount</span>
                         <input readOnly value={money(item.amount)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-black text-zinc-950" />
                       </label>
@@ -500,7 +720,7 @@ export default function SalesIssued() {
               </div>
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
                 <button onClick={() => setFormOpen(false)} className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black">Cancel</button>
-                <button onClick={() => void saveDraft()} className="h-10 rounded-xl bg-emerald-700 px-5 text-xs font-black text-white">Save Draft</button>
+                <button onClick={() => void handleSave()} className="h-10 rounded-xl bg-emerald-700 px-5 text-xs font-black text-white">Save</button>
               </div>
             </motion.div>
           </div>

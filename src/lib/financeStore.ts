@@ -60,6 +60,7 @@ export interface InvoiceLineItem {
 export interface Invoice {
   id: string
   invoice_number: string
+  sales_order_id?: string
   customer_name: string
   issue_date: string
   due_date: string
@@ -393,7 +394,7 @@ class FinanceStore {
       // CROSS-MODULE LIVE FINANCE SYNC ENGINE:
       // Fetch source module records and ensure all Sales Issues, Sales Orders, Purchase Orders, Expense Claims, and Payroll Records appear in Finance
       try {
-        const [salesIssues, salesOrders, purchaseOrders, expenseClaims, payrollRecords] = await Promise.all([
+        const [, , purchaseOrders, expenseClaims, payrollRecords] = await Promise.all([
           loadResource<any>("sales_issues").catch(() => []),
           loadResource<any>("sales_orders").catch(() => []),
           loadResource<any>("purchase_orders").catch(() => []),
@@ -403,119 +404,8 @@ class FinanceStore {
 
         let hasNewSync = false
 
-        // A. Sync Sales Issues -> Invoices & GL Entries
-        salesIssues.forEach((si: any, idx: number) => {
-          const invId = `INV-SI-${si.id || idx + 1}`
-          const jeId = `JE-SI-${si.id || idx + 1}`
-          const invAmt = Number(si.total_amount || si.totalAmount || si.amount || 1000)
-          const taxAmt = Math.round(invAmt * 0.15)
-          const totalAmt = Math.round(invAmt * 1.15)
-
-          if (!this.invoices.some((i) => i.id === invId || i.invoice_number === invId)) {
-            this.invoices.push({
-              id: invId,
-              invoice_number: invId,
-              customer_name: si.customer_name || si.customer || "Customer",
-              issue_date: si.sale_date || si.issueDate || new Date().toISOString().split("T")[0],
-              due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-              currency: "ETB",
-              line_items: [{ description: `Sales Dispatch #${si.fs_no || si.id}`, quantity: Number(si.total_quantity || 1), unit_price: invAmt, line_total: invAmt }],
-              subtotal: invAmt,
-              tax_amount: taxAmt,
-              discount_amount: 0,
-              payment_terms: si.payment_type || "Net 30",
-              total: totalAmt,
-              amount_paid: si.payment_type === "Cash" ? totalAmt : 0,
-              balance_due: si.payment_type === "Cash" ? 0 : totalAmt,
-              status: si.status === "Posted" ? "Sent" : "Draft",
-            })
-            hasNewSync = true
-          }
-
-          if (!this.entries.some((e) => e.id === jeId || e.source_id === si.id)) {
-            const arAcc = this.accounts.find((a) => a.code === "1200" || a.id === "acc-1200") || this.accounts[0]
-            const salesAcc = this.accounts.find((a) => a.code === "4000" || a.code === "4010" || a.id === "acc-4000") || this.accounts[0]
-            const taxAcc = this.accounts.find((a) => a.code === "2210" || a.id === "acc-2210") || this.accounts[0]
-
-            this.entries.push({
-              id: jeId,
-              entry_date: si.sale_date || new Date().toISOString().split("T")[0],
-              source_type: "Sales Invoice",
-              source_id: si.id,
-              created_by: si.created_by || "Sales Manager",
-              currency: "ETB",
-              exchange_rate: 1.0,
-              description: `Sales Dispatch Entry #${si.fs_no || si.id} for ${si.customer_name || "Customer"}`,
-              is_reversal_of: null,
-            })
-
-            if (arAcc && salesAcc) {
-              this.lines.push(
-                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: arAcc.id, debit_amount: totalAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Customer", party_id: si.customer_id, party_name: si.customer_name },
-                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: salesAcc.id, debit_amount: 0, credit_amount: invAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                { id: `${jeId}-3`, journal_entry_id: jeId, account_id: taxAcc ? taxAcc.id : salesAcc.id, debit_amount: 0, credit_amount: taxAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null }
-              )
-            }
-            hasNewSync = true
-          }
-        })
-
-        // B. Sync Sales Orders -> Invoices & GL Entries
-        salesOrders.forEach((so: any, idx: number) => {
-          const invId = `INV-SO-${so.id || idx + 1}`
-          const jeId = `JE-SO-${so.id || idx + 1}`
-          const invAmt = Number(so.amount || so.total_amount || 15000)
-          const taxAmt = Math.round(invAmt * 0.15)
-          const totalAmt = Math.round(invAmt * 1.15)
-
-          if (!this.invoices.some((i) => i.id === invId || i.invoice_number === invId)) {
-            this.invoices.push({
-              id: invId,
-              invoice_number: invId,
-              customer_name: so.customer || so.customerName || "Customer",
-              issue_date: so.date || new Date().toISOString().split("T")[0],
-              due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-              currency: "ETB",
-              line_items: so.items || [{ description: so.desc || "Sales Order Item", quantity: 1, unit_price: invAmt, line_total: invAmt }],
-              subtotal: invAmt,
-              tax_amount: taxAmt,
-              discount_amount: 0,
-              payment_terms: "Net 30",
-              total: totalAmt,
-              amount_paid: 0,
-              balance_due: totalAmt,
-              status: "Sent",
-            })
-            hasNewSync = true
-          }
-
-          if (!this.entries.some((e) => e.id === jeId || e.source_id === so.id)) {
-            const arAcc = this.accounts.find((a) => a.code === "1200" || a.id === "acc-1200") || this.accounts[0]
-            const salesAcc = this.accounts.find((a) => a.code === "4000" || a.code === "4010" || a.id === "acc-4000") || this.accounts[0]
-            const taxAcc = this.accounts.find((a) => a.code === "2210" || a.id === "acc-2210") || this.accounts[0]
-
-            this.entries.push({
-              id: jeId,
-              entry_date: so.date || new Date().toISOString().split("T")[0],
-              source_type: "Sales Invoice",
-              source_id: so.id,
-              created_by: "Sales Operations Manager",
-              currency: "ETB",
-              exchange_rate: 1.0,
-              description: `Sales Order Contract ${so.id} for ${so.customer || "Customer"}`,
-              is_reversal_of: null,
-            })
-
-            if (arAcc && salesAcc) {
-              this.lines.push(
-                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: arAcc.id, debit_amount: totalAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Customer", party_id: so.customerId || "CUST-001", party_name: so.customer || "Customer" },
-                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: salesAcc.id, debit_amount: 0, credit_amount: invAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                { id: `${jeId}-3`, journal_entry_id: jeId, account_id: taxAcc ? taxAcc.id : salesAcc.id, debit_amount: 0, credit_amount: taxAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null }
-              )
-            }
-            hasNewSync = true
-          }
-        })
+        // Background sync for invoices disabled to prevent duplicate invoice generation.
+        // Invoices are created strictly on-demand via financeStore.createInvoice().
 
         // C. Sync Purchase Orders -> Procurement GL Entries
         purchaseOrders.forEach((po: any, idx: number) => {
@@ -996,6 +886,7 @@ class FinanceStore {
     const newInv: Invoice = {
       id: newId,
       invoice_number: invoiceData.invoice_number,
+      sales_order_id: invoiceData.sales_order_id,
       customer_name: invoiceData.customer_name,
       issue_date: invoiceData.issue_date,
       due_date: invoiceData.due_date,
@@ -1037,7 +928,7 @@ class FinanceStore {
 
       if (tax > 0) {
         rawLines.push({
-          account_id: taxAcc.id,
+          account_id: taxAcc ? taxAcc.id : salesAcc.id,
           debit_amount: 0,
           credit_amount: tax,
         })
@@ -1046,7 +937,7 @@ class FinanceStore {
       this.postJournalEntry(
         {
           entry_date: invoiceData.issue_date,
-          description: `Invoice ${invoiceData.invoice_number} generated for ${invoiceData.customer_name}`,
+          description: `Sales Invoice ${invoiceData.invoice_number} for ${invoiceData.customer_name}`,
           source_type: "Sales Invoice",
           source_id: invoiceData.invoice_number,
           created_by: "Billing System",
@@ -1059,6 +950,56 @@ class FinanceStore {
 
     this.notify()
     return newInv
+  }
+
+  public updateInvoiceFromSalesOrder(so: { id: string; customer: string; items: Array<{ name: string; qty: number; unit: string; unitPrice: number; total: number }>; amount: number; invoiceIds?: string[] }) {
+    const lineItems = (so.items || []).map((i) => ({
+      description: `${i.name} (${i.qty} ${i.unit})`,
+      quantity: i.qty,
+      unit_price: i.unitPrice,
+      line_total: i.total,
+    }))
+
+    const subtotal = so.amount
+
+    this.invoices = this.invoices.map((inv) => {
+      const isMatch = (inv.sales_order_id && inv.sales_order_id === so.id) ||
+                      (so.invoiceIds && (so.invoiceIds.includes(inv.id) || so.invoiceIds.includes(inv.invoice_number))) ||
+                      inv.invoice_number.includes(so.id) || inv.id.includes(so.id)
+
+      if (isMatch) {
+        const taxRate = (inv.tax_amount && inv.subtotal > 0) ? (inv.tax_amount / inv.subtotal) : 0.15
+        const tax = Math.round(subtotal * taxRate * 100) / 100
+        const total = subtotal + tax
+        const newBal = Math.max(0, total - inv.amount_paid)
+
+        // Update corresponding Journal Entry lines if found
+        const je = this.entries.find((e) => e.source_id === inv.invoice_number || e.source_id === inv.id || e.source_id === so.id)
+        if (je) {
+          this.lines = this.lines.map((l) => {
+            if (l.journal_entry_id !== je.id) return l
+            if (l.debit_amount > 0) return { ...l, debit_amount: total, party_name: so.customer }
+            if (l.credit_amount === inv.subtotal) return { ...l, credit_amount: subtotal }
+            if (l.credit_amount === inv.tax_amount) return { ...l, credit_amount: tax }
+            return { ...l, credit_amount: subtotal }
+          })
+        }
+
+        return {
+          ...inv,
+          sales_order_id: so.id,
+          customer_name: so.customer,
+          line_items: lineItems,
+          subtotal,
+          tax_amount: tax,
+          total,
+          balance_due: newBal,
+        }
+      }
+      return inv
+    })
+
+    this.notify()
   }
 
   public cancelInvoice(invoiceId: string) {
@@ -2092,6 +2033,16 @@ class FinanceStore {
   public deleteVehicle(id: string) {
     this.vehicles = this.vehicles.filter((v) => v.id !== id)
     void deleteResource("vehicles", id)
+    this.notify()
+  }
+
+  public clearAllTestingData() {
+    this.invoices = []
+    this.entries = []
+    this.lines = []
+    this.payments = []
+    this.recurringSchedules = []
+    this.expenses = []
     this.notify()
   }
 }

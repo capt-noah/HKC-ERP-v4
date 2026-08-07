@@ -89,9 +89,10 @@ export default function Invoices() {
     setSelectedInvoice(matches[0] || null)
   }
 
-  // Determine active invoice for preview
-  const isSelectedInFiltered = selectedInvoice ? filteredInvoices.some((inv) => inv.id === selectedInvoice.id) : false
-  const activeInvoice = isSelectedInFiltered ? selectedInvoice : (filteredInvoices.length > 0 ? filteredInvoices[0] : null)
+  // Determine active invoice for preview (always read live object from store)
+  const liveSelectedInvoice = selectedInvoice ? invoices.find((inv) => inv.id === selectedInvoice.id) || null : null
+  const isSelectedInFiltered = liveSelectedInvoice ? filteredInvoices.some((inv) => inv.id === liveSelectedInvoice.id) : false
+  const activeInvoice = isSelectedInFiltered ? liveSelectedInvoice : (filteredInvoices.length > 0 ? filteredInvoices[0] : null)
 
   // Calculate KPI metrics
   const totalARExposure = invoices.reduce((s, inv) => s + (inv.status !== "Cancelled" && inv.status !== "Void" ? inv.balance_due : 0), 0)

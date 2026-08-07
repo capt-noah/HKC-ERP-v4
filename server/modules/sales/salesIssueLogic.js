@@ -53,22 +53,26 @@ export function availableBatchesForProduct(product, warehouseId, today = new Dat
     })
 }
 
-export function validateSalesIssueDraft(issue, items) {
+export function validateSalesIssueDraft(issue, inputItems) {
+  const items = Array.isArray(inputItems) ? inputItems : Array.isArray(issue?.items) ? issue.items : []
   const errors = []
-  if (!issue.fs_no) errors.push("FS No is required.")
-  if (!issue.reference_no) errors.push("Reference is required.")
-  if (!issue.sale_date) errors.push("Date is required.")
-  if (!issue.customer_id) errors.push("Customer is required.")
-  if (!issue.warehouse_id) errors.push("Warehouse is required.")
-  if (!["Cash", "Credit"].includes(issue.payment_type)) errors.push("Payment Type must be Cash or Credit.")
+  const fsNo = issue?.fs_no || issue?.fsNo || issue?.id
+  const customer = issue?.customer_id || issue?.customer_name || issue?.customer || issue?.customerId
+  const warehouse = issue?.warehouse_id || issue?.warehouse
+  const date = issue?.sale_date || issue?.issueDate || issue?.date
+
+  if (!fsNo) errors.push("FS No is required.")
+  if (!date) errors.push("Date is required.")
+  if (!customer) errors.push("Customer is required.")
+  if (!warehouse) errors.push("Warehouse is required.")
   if (!Array.isArray(items) || items.length === 0) errors.push("At least one item row is required.")
 
-  for (const [index, item] of (items || []).entries()) {
+  for (const [index, item] of items.entries()) {
     const label = `Row ${index + 1}`
-    if (!item.item_id) errors.push(`${label}: Item is required.`)
+    if (!item.item_id && !item.productId && !item.item_name) errors.push(`${label}: Item is required.`)
     if (!item.batch_id && !item.batch_no) errors.push(`${label}: Batch is required.`)
-    if (Number(item.quantity) <= 0) errors.push(`${label}: Quantity must be greater than zero.`)
-    if (Number(item.unit_price) < 0) errors.push(`${label}: Unit price must be greater than or equal to zero.`)
+    if (Number(item.quantity ?? item.qty) <= 0) errors.push(`${label}: Quantity must be greater than zero.`)
+    if (Number(item.unit_price ?? item.price ?? item.unitPrice) < 0) errors.push(`${label}: Unit price must be greater than or equal to zero.`)
   }
 
   return errors
