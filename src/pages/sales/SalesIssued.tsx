@@ -6,6 +6,7 @@ import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore } from "@/lib/erpStore"
 import { financeStore } from "@/lib/financeStore"
@@ -26,6 +27,19 @@ import {
   type SalesIssue,
   type SalesIssueItem,
 } from "@/lib/salesIssuesApi"
+
+const salesIssueColumns: TableColumn[] = [
+  { key: "fs_no", label: "FS No", align: "left" },
+  { key: "reference_no", label: "Reference", align: "left" },
+  { key: "sale_date", label: "Date", align: "left" },
+  { key: "item", label: "Item", align: "left" },
+  { key: "customer_name", label: "Customer", align: "left" },
+  { key: "batch_no", label: "Batch No", align: "left" },
+  { key: "total_quantity", label: "Quantity", align: "right" },
+  { key: "unit_price", label: "Unit Price", align: "right" },
+  { key: "total_amount", label: "Amount", align: "right" },
+  { key: "_actions", label: "Actions", align: "center", noSort: true },
+]
 
 function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -473,6 +487,19 @@ export default function SalesIssued() {
     })
   }
 
+  const salesTable = useResizableTable<SalesIssue>(salesIssueColumns, rows, {
+    fs_no: 120,
+    reference_no: 130,
+    sale_date: 110,
+    item: 180,
+    customer_name: 180,
+    batch_no: 120,
+    total_quantity: 110,
+    unit_price: 110,
+    total_amount: 120,
+    _actions: 140,
+  })
+
   const openAttachment = (issue: SalesIssue) => {
     navigate(`/sales/sales-issued/${encodeURIComponent(issue.id)}/attachment`, { state: { issue } })
   }
@@ -488,9 +515,6 @@ export default function SalesIssued() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <SubPageNav items={getSectionChildren("/sales")} />
-            <button onClick={openCreate} className="inline-flex h-10 items-center gap-2 rounded-full bg-emerald-700 px-4 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-emerald-900/10 hover:bg-emerald-800">
-              <Plus className="size-4" /> Add Sales Issue
-            </button>
           </div>
         </div>
 
@@ -505,6 +529,14 @@ export default function SalesIssued() {
               filters={[
                 { value: itemFilter, onChange: setItemFilter, ariaLabel: "Item", options: [{ value: "ALL", label: "All Items" }, ...products.map((p) => ({ value: p.id, label: p.name.slice(0, 24) }))] },
                 { value: batchFilter, onChange: setBatchFilter, ariaLabel: "Batch", options: [{ value: "ALL", label: "All Batches" }, ...batchFilters.map((b) => ({ value: b, label: b }))] },
+              ]}
+              actions={[
+                {
+                  label: "Add Sales Issue",
+                  onClick: openCreate,
+                  icon: <Plus className="size-4" />,
+                  variant: "primary",
+                },
               ]}
             >
               <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-[38px] rounded-xl border border-transparent bg-black/[0.03] px-3 text-xs font-bold text-zinc-700 outline-none" />
@@ -521,30 +553,44 @@ export default function SalesIssued() {
           {error && <div className="mx-6 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">{error}</div>}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left">
+            <table className="w-full text-left border-collapse table-fixed">
               <thead>
-                <tr className="bg-black/[0.02] border-y border-zinc-200/40 text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                  {["FS No", "Reference", "Date", "Item", "Customer", "Batch No", "Quantity", "Unit Price", "Amount", "Actions"].map((col) => <th key={col} className="px-4 py-3">{col}</th>)}
+                <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
+                  {salesIssueColumns.map((col) => (
+                    <ResizableTh
+                      key={col.key}
+                      col={col}
+                      width={salesTable.colWidths[col.key] || 120}
+                      sortKey={salesTable.sortKey}
+                      sortDir={salesTable.sortDir}
+                      openMenuCol={salesTable.openMenuCol}
+                      onResizeStart={salesTable.handleResizeStart}
+                      onToggleMenu={salesTable.toggleMenu}
+                      onSortAsc={salesTable.setSortAsc}
+                      onSortDesc={salesTable.setSortDesc}
+                      onClearSort={salesTable.clearSort}
+                    />
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100">
+              <tbody className="divide-y divide-zinc-100 font-medium">
                 {loading ? (
                   <SalesIssuedSkeletonRows />
-                ) : rows.length === 0 ? (
-                  <tr><td colSpan={10} className="py-16 text-center text-xs font-bold text-zinc-400">No sales issued records match your filters.</td></tr>
-                ) : rows.map((row) => (
-                  <tr key={row.id} className="hover:bg-white/50">
-                    <td className="px-4 py-4 font-mono text-xs font-black text-zinc-950">{row.fs_no}</td>
-                    <td className="px-4 py-4 font-mono text-xs font-bold text-zinc-700">{row.reference_no}</td>
-                    <td className="px-4 py-4 text-xs font-bold text-zinc-700">{row.sale_date}</td>
-                    <td className="px-4 py-4 text-xs font-black text-zinc-900">{row.items?.[0]?.item_name || "Multiple items"}</td>
-                    <td className="px-4 py-4 text-xs font-bold text-zinc-700">{row.customer_name}</td>
-                    <td className="px-4 py-4 font-mono text-xs font-bold text-zinc-700">{row.items?.[0]?.batch_no || "-"}</td>
-                    <td className="px-4 py-4 text-right font-mono text-xs font-black">{Number(row.total_quantity).toLocaleString()}</td>
-                    <td className="px-4 py-4 text-right font-mono text-xs font-bold">{money(row.items?.[0]?.unit_price || 0)}</td>
-                    <td className="px-4 py-4 text-right font-mono text-xs font-black">{money(row.total_amount)}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-1">
+                ) : salesTable.sorted().length === 0 ? (
+                  <tr><td colSpan={salesIssueColumns.length} className="py-16 text-center text-xs font-bold text-zinc-400">No sales issued records match your filters.</td></tr>
+                ) : salesTable.sorted().map((row) => (
+                  <tr key={row.id} className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs">
+                    <td style={{ width: `${salesTable.colWidths.fs_no}px` }} className="px-3 py-3 font-mono text-xs font-black text-zinc-950 truncate">{row.fs_no}</td>
+                    <td style={{ width: `${salesTable.colWidths.reference_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.reference_no}</td>
+                    <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.sale_date}</td>
+                    <td style={{ width: `${salesTable.colWidths.item}px` }} className="px-3 py-3 text-xs font-black text-zinc-900 truncate">{row.items?.[0]?.item_name || "Multiple items"}</td>
+                    <td style={{ width: `${salesTable.colWidths.customer_name}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.customer_name}</td>
+                    <td style={{ width: `${salesTable.colWidths.batch_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.items?.[0]?.batch_no || "-"}</td>
+                    <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{Number(row.total_quantity).toLocaleString()}</td>
+                    <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
+                    <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
+                    <td style={{ width: `${salesTable.colWidths._actions}px` }} className="px-3 py-3 pr-4 truncate">
+                      <div className="flex items-center gap-1 justify-center">
                         <button onClick={() => setSelected(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="View"><Eye className="size-3.5" /></button>
                         <button disabled={row.status !== "Draft"} onClick={() => void openEdit(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-35" title="Edit"><Edit3 className="size-3.5" /></button>
                         <button onClick={() => openAttachment(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Print Attachment"><Printer className="size-3.5" /></button>

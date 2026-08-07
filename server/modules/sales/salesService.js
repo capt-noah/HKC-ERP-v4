@@ -7,6 +7,22 @@ import {
   listSalesIssues,
   postSalesIssue,
 } from "./salesIssues.js"
+import {
+  assignOfficer,
+  deleteShipmentDoc,
+  listAssignedOfficers,
+  listShipmentDocRules,
+  listShipmentDocs,
+  saveShipmentDoc,
+} from "./shipmentDocuments.js"
+import {
+  createProcessingService,
+  deleteProcessingService,
+  getProcessingService,
+  listProcessingServices,
+  transitionProcessingServiceStage,
+  updateProcessingService,
+} from "./processingServices.js"
 
 export const salesService = {
   list: listSalesIssues,
@@ -17,4 +33,16 @@ export const salesService = {
   post: postSalesIssue,
   cancel: cancelSalesIssue,
   getBatches: getAvailableBatches,
+  listShipmentDocRules,
+  listShipmentDocs,
+  saveShipmentDoc,
+  deleteShipmentDoc,
+  listAssignedOfficers,
+  assignOfficer,
+  listProcessingServices,
+  getProcessingService,
+  createProcessingService,
+  updateProcessingService,
+  deleteProcessingService,
+  transitionProcessingServiceStage,
 }

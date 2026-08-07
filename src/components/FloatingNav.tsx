@@ -12,7 +12,7 @@ export interface NavChild {
 export interface NavSection {
   label: string
   path: string
-  children: NavChild[]
+  children?: NavChild[]
 }
 
 interface FloatingNavProps {
@@ -51,10 +51,15 @@ export function FloatingNav({
     )
   }
 
-  const activeSection = sections.find((s) =>
-    location.pathname.startsWith(s.path) ||
-    s.children.some((c) => location.pathname === c.path)
-  ) ?? sections[0]
+  const activeSection =
+    (sections.find(
+      (s) =>
+        s.path === location.pathname ||
+        (s.children && s.children.some((c) => location.pathname === c.path))
+    ) ||
+    [...sections]
+      .sort((a, b) => b.path.length - a.path.length)
+      .find((s) => location.pathname.startsWith(s.path))) ?? sections[0]
 
   return (
     <div className="fixed top-4 left-0 right-0 z-50 w-full px-4 md:px-6 lg:px-8">

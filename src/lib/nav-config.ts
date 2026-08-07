@@ -8,10 +8,12 @@ export const navSections: NavSection[] = [
       { label: "Dashboard", path: "/sales" },
       { label: "Sales Issued", path: "/sales/sales-issued" },
       { label: "Sales Orders", path: "/sales/sales-orders" },
-      { label: "Quotations", path: "/sales/quotations" },
-      { label: "Delivery Notes", path: "/sales/delivery-notes" },
       { label: "Purchase Orders", path: "/sales/purchase-orders" },
     ],
+  },
+  {
+    label: "HKC Docs",
+    path: "/sales/hkc-docs",
   },
   {
     label: "Inventory",
@@ -19,6 +21,7 @@ export const navSections: NavSection[] = [
     children: [
       { label: "Dashboard", path: "/inventory" },
       { label: "Stock Register", path: "/inventory/stock" },
+      { label: "Processing Services", path: "/inventory/processing-services" },
       { label: "Inventory Reports", path: "/inventory/reports" },
     ],
   },

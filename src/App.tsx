@@ -1,6 +1,8 @@
 import { Routes, Route, Navigate } from "react-router-dom"
 import SalesDashboard from "@/pages/sales/SalesDashboard"
 import SalesIssued from "@/pages/sales/SalesIssued"
+import HkcDocs from "@/pages/sales/HkcDocs"
+import ProcessingServices from "@/pages/sales/ProcessingServices"
 import CreditSalesAttachment from "@/pages/sales/CreditSalesAttachment"
 import PurchaseOrders from "@/pages/PurchaseOrders"
 import SalesOrders from "@/pages/SalesOrders"
@@ -32,16 +34,20 @@ export function App() {
 
       {/* Sales section */}
       <Route path="/sales" element={<SalesDashboard />} />
+      <Route path="/sales/hkc-docs" element={<HkcDocs />} />
+      <Route path="/sales/processing-services" element={<Navigate to="/inventory/processing-services" replace />} />
       <Route path="/sales/sales-issued" element={<SalesIssued />} />
       <Route path="/sales/sales-issued/:id/attachment" element={<CreditSalesAttachment />} />
-      <Route path="/sales/sales-orders" element={<SalesOrders initialTab="sales-orders" />} />
-      <Route path="/sales/quotations" element={<SalesOrders initialTab="quotations" />} />
-      <Route path="/sales/delivery-notes" element={<SalesOrders initialTab="delivery-notes" />} />
+      <Route path="/sales/sales-orders" element={<SalesOrders />} />
+      <Route path="/sales/quotations" element={<Navigate to="/sales/sales-orders" replace />} />
+      <Route path="/sales/delivery-notes" element={<Navigate to="/sales/sales-orders" replace />} />
       <Route path="/sales/purchase-orders" element={<PurchaseOrders />} />
 
       {/* Inventory section */}
       <Route path="/inventory" element={<InventoryDashboard />} />
       <Route path="/inventory/stock" element={<StockProducts />} />
+      <Route path="/inventory/processing-services" element={<ProcessingServices />} />
+      <Route path="/inventory/toll-processing" element={<Navigate to="/inventory/processing-services" replace />} />
       <Route path="/inventory/stock/add-item" element={<AddStockItem />} />
       <Route path="/inventory/reports" element={<Reports />} />
 

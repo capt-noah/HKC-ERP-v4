@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
@@ -13,7 +13,8 @@ import {
   X,
   CreditCard,
   ArrowRight,
-  Boxes
+  Boxes,
+  FileCheck
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -21,6 +22,15 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type PurchaseOrder } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
+import { ShipmentDocChecklist } from "@/components/ShipmentDocChecklist"
+import {
+  evaluateShipmentDocs,
+  fetchShipmentDocs,
+  fetchShipmentDocRules,
+  type ShipmentDocAttachment,
+  type ShipmentDocRule,
+  DEFAULT_FRONTEND_RULES,
+} from "@/lib/shipmentDocumentEngine"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 
@@ -36,6 +46,22 @@ export default function PurchaseOrders() {
   const [selectedPoId, setSelectedPoId] = useState<string>(purchaseOrders[0]?.id || "PO-2026-089")
   const [filterTab, setFilterTab] = useState<"All POs" | "Draft" | "In Transit" | "Received">("All POs")
   const [searchQuery, setSearchQuery] = useState("")
+
+  const [shipmentDocRules, setShipmentDocRules] = useState<ShipmentDocRule[]>(DEFAULT_FRONTEND_RULES)
+  const [poAttachmentsMap, setPoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
+  const [poInspectorTab, setPoInspectorTab] = useState<"Items" | "Import Docs">("Items")
+
+  useEffect(() => {
+    fetchShipmentDocRules("purchase_order").then(setShipmentDocRules)
+  }, [])
+
+  useEffect(() => {
+    if (selectedPoId) {
+      fetchShipmentDocs(selectedPoId, "purchase_order").then((docs) => {
+        setPoAttachmentsMap((prev) => ({ ...prev, [selectedPoId]: docs }))
+      })
+    }
+  }, [selectedPoId])
 
   // Modals
   const [isNewPoOpen, setIsNewPoOpen] = useState(false)
@@ -74,6 +100,26 @@ export default function PurchaseOrders() {
 
   // Action 1: Receive Stock & Post GL Journal Voucher
   const handleReceiveStock = (poId: string) => {
+    const po = purchaseOrders.find((p) => p.id === poId)
+    const docs = poAttachmentsMap[poId] || []
+    const evaluation = evaluateShipmentDocs({
+      record: po,
+      items: po?.items || [],
+      attachments: docs,
+      rules: shipmentDocRules,
+      appliesTo: "purchase_order",
+    })
+
+    if (!evaluation.isComplete) {
+      const missingList = evaluation.missing.map((m) => m.document_type).join(", ")
+      showToast(
+        "Import Clearance Blocked",
+        "warning",
+        `Goods receipt is blocked because mandatory shipment documents are missing: ${missingList}. Attach these files in the Import Docs tab to proceed.`
+      )
+      return
+    }
+
     const res = erp.createPurchaseReceiptForPO(poId)
     if (res.success) {
       showToast(
@@ -367,28 +413,92 @@ export default function PurchaseOrders() {
                 </div>
               </div>
 
-              {/* Items Table */}
-              <div className="mb-6">
-                <div className="grid grid-cols-[1fr_80px_110px_110px] text-[10px] font-black text-zinc-400 uppercase tracking-wider px-2 mb-2">
-                  <span>ITEM / SKU</span>
-                  <span className="text-right">QTY</span>
-                  <span className="text-right">UNIT PRICE</span>
-                  <span className="text-right">TOTAL</span>
-                </div>
-                <div className="divide-y divide-zinc-100 bg-white/80 rounded-2xl border border-zinc-200 overflow-hidden">
-                  {selectedPo.items.map((item, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_80px_110px_110px] items-center p-3">
-                      <div>
-                        <p className="text-xs font-bold text-zinc-900">{item.name}</p>
-                        <p className="text-[10px] font-mono text-zinc-400">{item.sku}</p>
-                      </div>
-                      <p className="text-xs font-extrabold text-zinc-900 text-right font-mono">{item.qty} {item.unit}</p>
-                      <p className="text-xs font-medium text-zinc-600 text-right font-mono">ETB {item.unitPrice.toLocaleString()}</p>
-                      <p className="text-xs font-black text-zinc-950 text-right font-mono">ETB {item.total.toLocaleString()}</p>
-                    </div>
-                  ))}
-                </div>
+              {/* Tab Selector: Items vs Import Docs */}
+              <div className="flex items-center gap-2 mb-4 border-b border-zinc-200 pb-3">
+                <button
+                  onClick={() => setPoInspectorTab("Items")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    poInspectorTab === "Items"
+                      ? "bg-zinc-950 text-white shadow-sm"
+                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                  }`}
+                >
+                  <Package className="w-3.5 h-3.5" /> Ordered Items ({selectedPo.items.length})
+                </button>
+                <button
+                  onClick={() => setPoInspectorTab("Import Docs")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    poInspectorTab === "Import Docs"
+                      ? "bg-zinc-950 text-white shadow-sm"
+                      : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                  }`}
+                >
+                  <FileCheck className="w-3.5 h-3.5" /> Import Docs Checklist
+                  {(() => {
+                    const docs = poAttachmentsMap[selectedPo.id] || []
+                    const evalRes = evaluateShipmentDocs({
+                      record: selectedPo,
+                      items: selectedPo.items || [],
+                      attachments: docs,
+                      rules: shipmentDocRules,
+                      appliesTo: "purchase_order",
+                    })
+                    return (
+                      <span
+                        className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                          evalRes.isComplete ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                        }`}
+                      >
+                        {evalRes.isComplete ? "Complete" : `${evalRes.missingCount} Missing`}
+                      </span>
+                    )
+                  })()}
+                </button>
               </div>
+
+              {poInspectorTab === "Import Docs" ? (
+                <div className="mb-6">
+                  <ShipmentDocChecklist
+                    recordId={selectedPo.id}
+                    recordType="purchase_order"
+                    evaluation={evaluateShipmentDocs({
+                      record: selectedPo,
+                      items: selectedPo.items || [],
+                      attachments: poAttachmentsMap[selectedPo.id] || [],
+                      rules: shipmentDocRules,
+                      appliesTo: "purchase_order",
+                    })}
+                    attachments={poAttachmentsMap[selectedPo.id] || []}
+                    onAttachmentsChange={(updated) => {
+                      setPoAttachmentsMap((prev) => ({ ...prev, [selectedPo.id]: updated }))
+                    }}
+                    readOnly={true}
+                  />
+                </div>
+              ) : (
+                /* Items Table */
+                <div className="mb-6">
+                  <div className="grid grid-cols-[1fr_80px_110px_110px] text-[10px] font-black text-zinc-400 uppercase tracking-wider px-2 mb-2">
+                    <span>ITEM / SKU</span>
+                    <span className="text-right">QTY</span>
+                    <span className="text-right">UNIT PRICE</span>
+                    <span className="text-right">TOTAL</span>
+                  </div>
+                  <div className="divide-y divide-zinc-100 bg-white/80 rounded-2xl border border-zinc-200 overflow-hidden">
+                    {selectedPo.items.map((item, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_80px_110px_110px] items-center p-3">
+                        <div>
+                          <p className="text-xs font-bold text-zinc-900">{item.name}</p>
+                          <p className="text-[10px] font-mono text-zinc-400">{item.sku}</p>
+                        </div>
+                        <p className="text-xs font-extrabold text-zinc-900 text-right font-mono">{item.qty} {item.unit}</p>
+                        <p className="text-xs font-medium text-zinc-600 text-right font-mono">ETB {item.unitPrice.toLocaleString()}</p>
+                        <p className="text-xs font-black text-zinc-950 text-right font-mono">ETB {item.total.toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-zinc-200">

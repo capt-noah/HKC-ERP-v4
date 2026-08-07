@@ -10,14 +10,14 @@ import {
   FileText, 
   Eye, 
   X, 
-  Check, 
   ShieldAlert, 
   Box,
   LayoutGrid,
   Table as TableIcon,
   Pencil,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  FileCheck
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/GlassCard"
@@ -29,6 +29,15 @@ import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { ShipmentDocChecklist } from "@/components/ShipmentDocChecklist"
+import {
+  evaluateShipmentDocs,
+  fetchShipmentDocs,
+  fetchShipmentDocRules,
+  type ShipmentDocAttachment,
+  type ShipmentDocRule,
+  DEFAULT_FRONTEND_RULES,
+} from "@/lib/shipmentDocumentEngine"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -53,45 +62,43 @@ function SalesOrdersTableSkeletonRows() {
   )
 }
 
-interface SalesOrdersProps {
-  initialTab?: "sales-orders" | "quotations" | "delivery-notes"
-}
-
-export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrdersProps) {
+export default function SalesOrders() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
   const isLoading = erp.isLoading()
   
   const salesOrders = erp.getSalesOrders()
-  const quotations = erp.getQuotations()
-  const deliveryNotes = erp.getDeliveryNotes()
   const customers = erp.getCustomers()
   const products = erp.getProducts()
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
   const warehouseOptions = warehouses.map((warehouse) => ({ value: warehouse.code || warehouse.id, label: warehouse.name || warehouse.code || warehouse.id }))
 
-  const [activeTab, setActiveTab] = useState<"sales-orders" | "quotations" | "delivery-notes">(initialTab)
-
-  useEffect(() => {
-    setActiveTab(initialTab)
-  }, [initialTab])
-
   const navigate = useNavigate()
   const [viewMode, setViewMode] = useState<"kanban" | "table">("table")
 
-  // Search & Filter states for each table
+  // Search & Filter states for Sales Orders
   const [soSearch, setSoSearch] = useState("")
   const [soStageFilter, setSoStageFilter] = useState("ALL")
   const [soWhFilter, setSoWhFilter] = useState("ALL")
 
-  const [qtSearch, setQtSearch] = useState("")
-  const [qtStatusFilter, setQtStatusFilter] = useState("ALL")
-
-  const [dnSearch, setDnSearch] = useState("")
-  const [dnWhFilter, setDnWhFilter] = useState("ALL")
-
   // Selected Sales Order for Inspection / Fulfillment / Invoicing
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null)
+
+  const [shipmentDocRules, setShipmentDocRules] = useState<ShipmentDocRule[]>(DEFAULT_FRONTEND_RULES)
+  const [soAttachmentsMap, setSoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
+  const [soInspectorTab, setSoInspectorTab] = useState<"Order Lines" | "Shipping Docs">("Order Lines")
+
+  useEffect(() => {
+    fetchShipmentDocRules("sales_order").then(setShipmentDocRules)
+  }, [])
+
+  useEffect(() => {
+    if (selectedOrder?.id) {
+      fetchShipmentDocs(selectedOrder.id, "sales_order").then((docs) => {
+        setSoAttachmentsMap((prev) => ({ ...prev, [selectedOrder.id]: docs }))
+      })
+    }
+  }, [selectedOrder?.id])
   
   // Modals
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false)
@@ -136,26 +143,6 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
     return true
   })
 
-  const filteredQuotations = quotations.filter((q) => {
-    const matchesSearch =
-      q.customer.toLowerCase().includes(qtSearch.toLowerCase()) ||
-      q.id.toLowerCase().includes(qtSearch.toLowerCase()) ||
-      q.desc.toLowerCase().includes(qtSearch.toLowerCase())
-    if (!matchesSearch) return false
-    if (qtStatusFilter !== "ALL" && q.status !== qtStatusFilter) return false
-    return true
-  })
-
-  const filteredDeliveryNotes = deliveryNotes.filter((dn) => {
-    const matchesSearch =
-      dn.customer.toLowerCase().includes(dnSearch.toLowerCase()) ||
-      dn.id.toLowerCase().includes(dnSearch.toLowerCase()) ||
-      dn.salesOrderId.toLowerCase().includes(dnSearch.toLowerCase())
-    if (!matchesSearch) return false
-    if (dnWhFilter !== "ALL" && dn.warehouse !== dnWhFilter) return false
-    return true
-  })
-
   // Table Columns & Resizable Tables setup
   const salesOrderColumns: TableColumn[] = [
     { key: "id", label: "Order ID", align: "left" },
@@ -168,55 +155,16 @@ export default function SalesOrders({ initialTab = "sales-orders" }: SalesOrders
     { key: "_actions", label: "Action", align: "center", noSort: true },
   ]
 
-  const quotationColumns: TableColumn[] = [
-    { key: "id", label: "Quote ID", align: "left" },
-    { key: "customer", label: "Customer", align: "left" },
-    { key: "warehouse", label: "Target Warehouse", align: "left" },
-    { key: "validTill", label: "Valid Until", align: "left" },
-    { key: "status", label: "Status", align: "left" },
-    { key: "amount", label: "Amount (ETB)", align: "right" },
-    { key: "_actions", label: "Action", align: "center", noSort: true },
-  ]
-
-  const deliveryNoteColumns: TableColumn[] = [
-    { key: "id", label: "DN ID", align: "left" },
-    { key: "salesOrderId", label: "Sales Order", align: "left" },
-    { key: "customer", label: "Customer", align: "left" },
-    { key: "warehouse", label: "Warehouse", align: "left" },
-    { key: "driverName", label: "Logistics Driver", align: "left" },
-    { key: "journalEntryId", label: "GL COGS Voucher", align: "left" },
-    { key: "totalValue", label: "Dispatched Value (ETB)", align: "right" },
-  ]
-
   const soTable = useResizableTable(salesOrderColumns, filteredOrders, {
-    id: 120,
-    customer: 200,
+    id: 110,
+    customer: 220,
     warehouse: 110,
-    stage: 120,
+    stage: 110,
+    itemsSummary: 200,
     deliveryStatus: 140,
     billingStatus: 130,
     amount: 140,
     _actions: 240,
-  })
-
-  const qtTable = useResizableTable(quotationColumns, filteredQuotations, {
-    id: 120,
-    customer: 220,
-    warehouse: 120,
-    validTill: 120,
-    status: 120,
-    amount: 140,
-    _actions: 180,
-  })
-
-  const dnTable = useResizableTable(deliveryNoteColumns, filteredDeliveryNotes, {
-    id: 120,
-    salesOrderId: 130,
-    customer: 200,
-    warehouse: 110,
-    driverName: 180,
-    journalEntryId: 150,
-    totalValue: 150,
   })
 
   // Handle stage advancement
@@ -487,19 +435,28 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setQuoteDesc("")
   }
 
-  // Convert Quotation to Sales Order
-  const handleConvertQuotation = (qtId: string) => {
-    const newSo = erp.convertQuotationToSalesOrder(qtId)
-    if (newSo) {
-      showToast("Quotation Converted", "success", `Quotation ${qtId} converted to confirmed Sales Order ${newSo.id}!`)
-    }
-  }
-
-
-
   // Confirm Fulfillment & Create Delivery Note
   const handleConfirmFulfillment = () => {
     if (!selectedOrder) return
+
+    const docs = soAttachmentsMap[selectedOrder.id] || []
+    const evaluation = evaluateShipmentDocs({
+      record: selectedOrder,
+      items: selectedOrder.items || [],
+      attachments: docs,
+      rules: shipmentDocRules,
+      appliesTo: "sales_order",
+    })
+
+    if (!evaluation.isComplete) {
+      const missingList = evaluation.missing.map((m) => m.document_type).join(", ")
+      showToast(
+        "Shipping Clearance Blocked",
+        "warning",
+        `Stock dispatch is blocked because mandatory shipping documents are missing: ${missingList}. Attach these files in the Shipping Docs tab to proceed.`
+      )
+      return
+    }
 
     const itemsToFulfill = selectedOrder.items.map((i) => ({
       productId: i.productId,
@@ -551,22 +508,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }
   }
 
-  // Header Title & Description based on activeTab
-  const headerInfo = {
-    "sales-orders": {
-      title: "Sales Orders & Contracts",
-      desc: "Manage sales contracts, fulfillment, and invoicing.",
-    },
-    quotations: {
-      title: "Pro-Forma Quotations",
-      desc: "Manage estimates and converted sales orders.",
-    },
-    "delivery-notes": {
-      title: "Delivery & Dispatch Notes",
-      desc: "Track inventory dispatch notes and linked COGS vouchers.",
-    },
-  }[activeTab]
-
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
@@ -576,10 +517,10 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-black text-black tracking-tight">{headerInfo.title}</h1>
+              <h1 className="text-3xl font-black text-black tracking-tight">Sales Orders & Contracts</h1>
             </div>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
-              {headerInfo.desc}
+              Manage sales contracts, fulfillment, and invoicing.
             </p>
           </div>
 
@@ -588,9 +529,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           </div>
         </div>
 
-        {/* TAB 1: SALES ORDERS */}
-        {activeTab === "sales-orders" && (
-          <GlassCard className="flex flex-col overflow-hidden p-0">
+        {/* SALES ORDERS REGISTER */}
+        <GlassCard className="flex flex-col overflow-hidden p-0">
             <div className="px-6 pt-6">
               <FinanceTableToolbar
                 title="Sales Orders Register"
@@ -883,204 +823,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               </div>
             )}
           </GlassCard>
-        )}
-
-        {/* TAB 2: QUOTATIONS */}
-        {activeTab === "quotations" && (
-          <GlassCard className="flex flex-col overflow-hidden p-0">
-            <div className="px-6 pt-6">
-              <FinanceTableToolbar
-                title="Pro-Forma Quotations Register"
-                subtitle={`Total: ${qtTable.sorted().length} active estimates`}
-                searchValue={qtSearch}
-                onSearchChange={setQtSearch}
-                searchPlaceholder="Search quotation ID or customer..."
-                filters={[
-                  {
-                    value: qtStatusFilter,
-                    onChange: setQtStatusFilter,
-                    ariaLabel: "Filter by Status",
-                    options: [
-                      { value: "ALL", label: "All Statuses" },
-                      { value: "Quoted", label: "Status: Quoted" },
-                      { value: "Ordered", label: "Status: Ordered" },
-                    ],
-                  },
-                ]}
-                actions={[
-                  {
-                    label: "New Quote",
-                    onClick: () => setIsNewQuotationOpen(true),
-                    icon: <Plus className="size-4" />,
-                    variant: "primary",
-                  },
-                ]}
-              />
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse table-fixed">
-                <thead>
-                  <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
-                    {quotationColumns.map((col) => (
-                      <ResizableTh
-                        key={col.key}
-                        col={col}
-                        width={qtTable.colWidths[col.key] || 120}
-                        sortKey={qtTable.sortKey}
-                        sortDir={qtTable.sortDir}
-                        openMenuCol={qtTable.openMenuCol}
-                        onResizeStart={qtTable.handleResizeStart}
-                        onToggleMenu={qtTable.toggleMenu}
-                        onSortAsc={qtTable.setSortAsc}
-                        onSortDesc={qtTable.setSortDesc}
-                        onClearSort={qtTable.clearSort}
-                      />
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {qtTable.sorted().length === 0 ? (
-                    <tr>
-                      <td colSpan={quotationColumns.length} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
-                        No quotations found matching search or filter criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    qtTable.sorted().map((q) => (
-                      <tr key={q.id} className="hover:bg-zinc-50/60 transition-colors text-xs">
-                        <td style={{ width: `${qtTable.colWidths.id}px` }} className="px-3 py-3 whitespace-nowrap font-mono font-bold text-zinc-900 truncate">
-                          {q.id}
-                        </td>
-                        <td style={{ width: `${qtTable.colWidths.customer}px` }} className="px-3 py-3 truncate">
-                          <div className="font-semibold text-zinc-800 truncate">{q.customer}</div>
-                          <div className="text-[10px] font-mono text-zinc-400 truncate">{q.desc}</div>
-                        </td>
-                        <td style={{ width: `${qtTable.colWidths.warehouse}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-700 truncate">
-                            {q.warehouse}
-                          </span>
-                        </td>
-                        <td style={{ width: `${qtTable.colWidths.validTill}px` }} className="px-3 py-3 font-mono text-zinc-700 whitespace-nowrap truncate">
-                          {q.validTill}
-                        </td>
-                        <td style={{ width: `${qtTable.colWidths.status}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${q.status === "Ordered" ? "bg-emerald-50 text-emerald-800" : q.status === "Quoted" ? "bg-blue-50 text-blue-800" : "bg-zinc-100 text-zinc-700"}`}>
-                            {q.status}
-                          </span>
-                        </td>
-                        <td style={{ width: `${qtTable.colWidths.amount}px` }} className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap truncate">
-                          ETB {q.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ width: `${qtTable.colWidths._actions}px` }} className="px-3 py-3 text-center whitespace-nowrap pr-4">
-                          {q.status !== "Ordered" ? (
-                            <button 
-                              onClick={() => handleConvertQuotation(q.id)}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-full transition-colors mx-auto shadow-sm"
-                            >
-                              <Check className="size-3" /> Convert to Sales Order
-                            </button>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-                              <CheckCircle2 className="size-3" /> Converted
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-        )}
-
-        {/* TAB 3: DELIVERY NOTES */}
-        {activeTab === "delivery-notes" && (
-          <GlassCard className="flex flex-col overflow-hidden p-0">
-            <div className="px-6 pt-6">
-              <FinanceTableToolbar
-                title="Delivery & Dispatch Register"
-                subtitle={`Total: ${dnTable.sorted().length} dispatched notes`}
-                searchValue={dnSearch}
-                onSearchChange={setDnSearch}
-                searchPlaceholder="Search DN ID, Order ID, driver..."
-                filters={[
-                  {
-                    value: dnWhFilter,
-                    onChange: setDnWhFilter,
-                    ariaLabel: "Filter by Warehouse",
-                    options: [{ value: "ALL", label: "All Warehouses" }, ...warehouseOptions],
-                  },
-                ]}
-              />
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse table-fixed">
-                <thead>
-                  <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
-                    {deliveryNoteColumns.map((col) => (
-                      <ResizableTh
-                        key={col.key}
-                        col={col}
-                        width={dnTable.colWidths[col.key] || 120}
-                        sortKey={dnTable.sortKey}
-                        sortDir={dnTable.sortDir}
-                        openMenuCol={dnTable.openMenuCol}
-                        onResizeStart={dnTable.handleResizeStart}
-                        onToggleMenu={dnTable.toggleMenu}
-                        onSortAsc={dnTable.setSortAsc}
-                        onSortDesc={dnTable.setSortDesc}
-                        onClearSort={dnTable.clearSort}
-                      />
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {dnTable.sorted().length === 0 ? (
-                    <tr>
-                      <td colSpan={deliveryNoteColumns.length} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
-                        No delivery notes recorded matching search or filter criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    dnTable.sorted().map((dn) => (
-                      <tr key={dn.id} className="hover:bg-zinc-50/60 transition-colors text-xs">
-                        <td style={{ width: `${dnTable.colWidths.id}px` }} className="px-3 py-3 whitespace-nowrap font-mono font-bold text-zinc-900 truncate">
-                          {dn.id}
-                        </td>
-                        <td style={{ width: `${dnTable.colWidths.salesOrderId}px` }} className="px-3 py-3 font-mono text-zinc-600 whitespace-nowrap truncate">
-                          {dn.salesOrderId}
-                        </td>
-                        <td style={{ width: `${dnTable.colWidths.customer}px` }} className="px-3 py-3 truncate">
-                          <div className="font-semibold text-zinc-800 truncate">{dn.customer}</div>
-                        </td>
-                        <td style={{ width: `${dnTable.colWidths.warehouse}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-700 truncate">
-                            {dn.warehouse}
-                          </span>
-                        </td>
-                        <td style={{ width: `${dnTable.colWidths.driverName}px` }} className="px-3 py-3 truncate">
-                          <div className="font-semibold text-zinc-800 truncate">{dn.driverName || "Standard Courier"}</div>
-                          <div className="text-[10px] font-mono text-zinc-400 truncate">{dn.vehicleReg}</div>
-                        </td>
-                        <td style={{ width: `${dnTable.colWidths.journalEntryId}px` }} className="px-3 py-3 whitespace-nowrap truncate">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/60 truncate">
-                            {dn.journalEntryId || "JE-POSTED"}
-                          </span>
-                        </td>
-                        <td style={{ width: `${dnTable.colWidths.totalValue}px` }} className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap truncate pr-4">
-                          ETB {dn.totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
-        )}
       </motion.div>
 
       {/* SALES ORDER INSPECTION / FULFILLMENT SLIDE-OVER DRAWER */}
@@ -1118,44 +860,108 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
 
 
-                {/* Line Items Table */}
-                <div className="mb-6">
-                  <h3 className="text-xs font-black uppercase text-zinc-900 mb-2 flex items-center gap-1.5">
-                    <Box className="size-3.5 text-zinc-500" /> Contract Line Items & Warehouse Stock
-                  </h3>
-                  <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
-                    <table className="w-full text-left">
-                      <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
-                        <tr>
-                          <th className="px-3 py-2">Product Item</th>
-                          <th className="px-3 py-2 text-center">Ordered</th>
-                          <th className="px-3 py-2 text-right">Unit Price</th>
-                          <th className="px-3 py-2 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100 font-medium">
-                        {selectedOrder.items.map((item, idx) => {
-                          const p = products.find(prod => prod.id === item.productId)
-                          return (
-                            <tr key={idx}>
-                              <td className="px-3 py-2.5">
-                                <div className="font-bold text-zinc-900">{item.name}</div>
-                                <div className="text-[10px] text-zinc-500 font-mono">
-                                  Warehouse Stock: <span className="font-bold text-zinc-700">{p ? p.quantity : "N/A"} {item.unit}</span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2.5 text-center font-bold">{item.qty} {item.unit}</td>
-                              <td className="px-3 py-2.5 text-right font-mono">ETB {item.unitPrice.toLocaleString()}</td>
-                              <td className="px-3 py-2.5 text-right font-mono font-bold text-zinc-900">
-                                ETB {item.total.toLocaleString()}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                {/* Tab Selector: Order Lines vs Shipping Docs */}
+                <div className="flex items-center gap-2 mb-4 border-b border-zinc-200 pb-3">
+                  <button
+                    onClick={() => setSoInspectorTab("Order Lines")}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      soInspectorTab === "Order Lines"
+                        ? "bg-zinc-950 text-white shadow-sm"
+                        : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                    }`}
+                  >
+                    <Box className="w-3.5 h-3.5" /> Order Lines ({selectedOrder.items.length})
+                  </button>
+                  <button
+                    onClick={() => setSoInspectorTab("Shipping Docs")}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      soInspectorTab === "Shipping Docs"
+                        ? "bg-zinc-950 text-white shadow-sm"
+                        : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                    }`}
+                  >
+                    <FileCheck className="w-3.5 h-3.5" /> Shipping Docs Checklist
+                    {(() => {
+                      const docs = soAttachmentsMap[selectedOrder.id] || []
+                      const evalRes = evaluateShipmentDocs({
+                        record: selectedOrder,
+                        items: selectedOrder.items || [],
+                        attachments: docs,
+                        rules: shipmentDocRules,
+                        appliesTo: "sales_order",
+                      })
+                      return (
+                        <span
+                          className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                            evalRes.isComplete ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                          }`}
+                        >
+                          {evalRes.isComplete ? "Complete" : `${evalRes.missingCount} Missing`}
+                        </span>
+                      )
+                    })()}
+                  </button>
                 </div>
+
+                {soInspectorTab === "Shipping Docs" ? (
+                  <div className="mb-6">
+                    <ShipmentDocChecklist
+                      recordId={selectedOrder.id}
+                      recordType="sales_order"
+                      evaluation={evaluateShipmentDocs({
+                        record: selectedOrder,
+                        items: selectedOrder.items || [],
+                        attachments: soAttachmentsMap[selectedOrder.id] || [],
+                        rules: shipmentDocRules,
+                        appliesTo: "sales_order",
+                      })}
+                      attachments={soAttachmentsMap[selectedOrder.id] || []}
+                      onAttachmentsChange={(updated) => {
+                        setSoAttachmentsMap((prev) => ({ ...prev, [selectedOrder.id]: updated }))
+                      }}
+                      readOnly={true}
+                    />
+                  </div>
+                ) : (
+                  /* Line Items Table */
+                  <div className="mb-6">
+                    <h3 className="text-xs font-black uppercase text-zinc-900 mb-2 flex items-center gap-1.5">
+                      <Box className="size-3.5 text-zinc-500" /> Contract Line Items & Warehouse Stock
+                    </h3>
+                    <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
+                      <table className="w-full text-left">
+                        <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
+                          <tr>
+                            <th className="px-3 py-2">Product Item</th>
+                            <th className="px-3 py-2 text-center">Ordered</th>
+                            <th className="px-3 py-2 text-right">Unit Price</th>
+                            <th className="px-3 py-2 text-right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 font-medium">
+                          {selectedOrder.items.map((item, idx) => {
+                            const p = products.find(prod => prod.id === item.productId)
+                            return (
+                              <tr key={idx}>
+                                <td className="px-3 py-2.5">
+                                  <div className="font-bold text-zinc-900">{item.name}</div>
+                                  <div className="text-[10px] text-zinc-500 font-mono">
+                                    Warehouse Stock: <span className="font-bold text-zinc-700">{p ? p.quantity : "N/A"} {item.unit}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-bold">{item.qty} {item.unit}</td>
+                                <td className="px-3 py-2.5 text-right font-mono">ETB {item.unitPrice.toLocaleString()}</td>
+                                <td className="px-3 py-2.5 text-right font-mono font-bold text-zinc-900">
+                                  ETB {item.total.toLocaleString()}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* Linked Documents Status */}
                 <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-3 mb-6">
