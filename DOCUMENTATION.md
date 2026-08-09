@@ -229,10 +229,13 @@ The Express server features a standard production logging module ([`server/logge
 
 #### 3. Sales Orders (`/sales/sales-orders`)
 - **Functional Purpose:** Manages sales contracts, customer commitments, fulfillment, and invoicing. Enforces strict architectural separation of duties: Sales Orders represent sales contracts (0 stock deducted), while physical stock dispatch is exclusively executed on Sales Issued (`/sales/issued`). Unneeded Quotations and Delivery Notes tabs have been removed to keep the workspace 100% focused on sales contract execution.
+- **Document Requirements & HKC Docs Sync:** Sales Orders enforce exactly two mandatory trade document attachments: **Trade License** and **Payment Advice** (the Business Permit requirement was removed to eliminate redundancy). Documents attached to Sales Orders automatically sync end-to-end with the **HKC Docs** legal compliance engine (`/sales/hkc-docs`).
+- **Table & Modal Action Standards:** Inline X/delete buttons and eye buttons are removed from table rows. Edit modal headers use `<EditModalHeader>` with a 3-dot (`···`) dropdown containing "Delete Record". Delete confirmation is handled by `<RecordDeleteModal>` configured at `z-[200]` to overlay open edit modals cleanly.
 
 #### 4. Sales Issued & Warehouse Stock Dispatch (`/sales/issued`)
 - **Functional Purpose:** Physical warehouse dispatch document module. Handles stock issue creation, consolidated multi-sales-order contract pulling, physical inventory deduction from product batches, COGS journal posting, and delivery note generation.
 - **Key Architectural Rules & Engine Behaviors:**
+  - **Single-Row Toolbar Alignment:** The table header, search input, status filters, and `+ Add Sales Issue` primary action button are positioned cleanly on a single row inside `<FinanceTableToolbar />`. Repetitive filters ("All Items", start date, end date, "Newest First") have been eliminated.
   - **1-Click Multi-Sales-Order Pull:** Interactive picker card displaying all pending Sales Orders (`deliveryStatus !== "Fully Delivered"`). Selecting multiple orders automatically aggregates customer info, warehouse location, contract line items, and quantities into the Sales Issue form state. Toggling an order off cleanly resets autofill state.
   - **Streamlined Item Grid:** Displays clean 6-column item selector, quantity, unit price, and total amount. Redundant item names, packaging units, available quantities, MFG dates, and expiry dates are omitted from the form grid. Batch dropdown displays clean batch numbers (`b.batch_no`).
   - **Exclusive Inventory Stock Deduction Rule:**
@@ -248,10 +251,11 @@ The Express server features a standard production logging module ([`server/logge
   - `DELETE /api/sales-issues/:id` – Delete draft sales issue and associated items.
   - `POST /api/sales-issues/:id/post` – Post sales issue and deduct physical stock from `inventory_products`.
   - `POST /api/sales-issues/:id/cancel` – Update status to Cancelled.
+
 #### 5. Shipment Documents & Hard-Block Action Gates Engine (`src/lib/shipmentDocumentEngine.ts`)
-- **Functional Purpose:** Shipment-level trade & compliance document checklist engine. Evaluates mandatory import/export paperwork (Bill of Lading, Commercial Invoice, Packing List, Certificate of Origin, Customs Declaration, Certificate of Analysis) for Purchase Orders and Sales Orders.
+- **Functional Purpose:** Shipment-level trade & compliance document checklist engine. Evaluates mandatory import/export paperwork (Purchase Orders require 5 documents; Sales Orders require 2: Trade License and Payment Advice; Processing Services require 1: Processing Contract).
 - **Key Features & Behavior:**
-  - **Shared Evaluation Engine:** Compares attached files against active compliance rules (`shipment_document_rules`) dynamically conditioned by supplier origin country, destination region, and line-item product category (*Medicine*, *Food*, *General Goods*).
+  - **Shared Evaluation Engine:** Compares attached files against active compliance rules (`shipment_document_rules`) dynamically conditioned by supplier origin country, destination region, and record type.
   - **Piecemeal File Attachments (`<ShipmentDocChecklist />`):** Dedicated **Import Docs** tab on Purchase Orders and **Shipping Docs** tab on Sales Orders. Paperwork can be attached piecemeal as it arrives, even while records are in `DRAFT` status.
   - **Glass Status Badges:** Displays `Complete` (Green) or `Incomplete (N Missing)` (Amber) directly on Purchase Order and Sales Order list cards / rows.
   - **Hard-Block Action Gates:**
@@ -267,12 +271,13 @@ The Express server features a standard production logging module ([`server/logge
 
 ### 🛡️ HKC Docs Top-Level Section (`/sales/hkc-docs`)
 
-- **Functional Purpose:** Centralized trade documentation hub promoted to a top-level navbar section. Manages import and export legal compliance, customs declarations, shipping paperwork, and assigned compliance officers.
+- **Functional Purpose:** Centralized trade documentation hub promoted to a top-level navbar section. Manages import/export legal compliance, customs declarations, shipping paperwork, processing contracts, and legal documentation verification.
 - **Key Architectural Rules & Engine Behaviors:**
+  - **Streamlined Table Layout:** Removed redundant columns (`Trade Route`, `Assigned Compliance Officer`), removed gate locked pill, removed repetitive document attachment section, and updated Manage Docs button to the website's light-green badge style (`bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/80`).
+  - **End-to-End Multi-Module Document Sync:** Hydrates shipment documents across Purchase Orders (5 required docs), Sales Orders (2 required docs: Trade License & Payment Advice), and Processing Services (Service Contract).
   - **Stock Register Table Design System:** Implements `<GlassCard className="p-0 border border-white/65 shadow-md">`, `<FinanceTableToolbar />`, `useResizableTable`, and `<ResizableTh />` column resizers matching the Stock Register (`/inventory/stock`).
-  - **100% Full-Width Master Table & Centered Modal Dialog Inspector:** Master trade shipments register expands to 100% container width with trade route details. Selecting any record opens a spacious, backdrop-blurred modal dialog centered on screen for managing assigned compliance specialists and attaching trade documents.
-  - **Assigned Compliance Specialist Routing:** Allows assigning a designated Customs Compliance Officer (e.g. *Tadesse Worku - Customs Compliance Officer*) to each shipment's legal documentation queue.
-  - **Read-Only Scoped Inspection in POs & SOs:** Purchase Orders (`/sales/purchase-orders`) and Sales Orders (`/sales/sales-orders`) display read-only compliance checklists with the assigned officer's badge and a 1-click shortcut button: *"Open HKC Docs"*.
+  - **100% Full-Width Master Table & Centered Modal Dialog Inspector:** Master trade shipments register expands to 100% container width. Selecting any record opens a spacious, backdrop-blurred modal dialog centered on screen for verifying trade documents.
+  - **Read-Only Scoped Inspection in POs & SOs:** Purchase Orders (`/sales/purchase-orders`) and Sales Orders (`/sales/sales-orders`) display read-only compliance checklists with a 1-click shortcut button: *"Open HKC Docs"*.
   - **Hard-Block Action Gate:** Goods Receipt and Stock Dispatch remain hard-blocked until mandatory trade paperwork is attached and verified in **HKC Docs**.
 - **Express Backend API Endpoints:**
   - `GET /api/shipment-documents/officers` – List assigned compliance officers per shipment record.
@@ -287,9 +292,11 @@ The Express server features a standard production logging module ([`server/logge
 - **Contents (Data & States):**
   - **Inventory KPIs:** Total SKUs (12,482), Low-Stock alerts (48), Near Expiry alerts (12), Open Stock Movements.
   - **Stock Allocation:** Category percentage breakdowns (*Medical Supplies*, *Food & Nutrition*, *General Goods*).
+  - **Clean Stock Items View:** The **Current Stock Items** card displays saved stock records cleanly without inline X delete action buttons.
 
 #### 2. Stock Register (`/inventory/stock`)
 - **Functional Purpose:** Master catalog of active inventory products with SKU tracking, reorder levels, valuation rates, multi-warehouse distribution breakdowns, regulatory compliance documentation (Certificates of Analysis), inter-warehouse Store Transfers with GL voucher generation, and real-time automated Stock Movement Audit Logs.
+- **In-Page Add Stock Modal:** Clicking `+ Add Item` triggers an in-page modal (`isAddModalOpen`) using the `max-w-5xl` Sales Order modal design language. Page redirects to `/inventory/stock/add-item` are eliminated, and redundant side cards ("Stock Value" and "Saved Fields") are removed to keep the creation form clean and spacious.
 - **Contents (Data & States):**
   - **Active Products:** Product codes, SKUs, categories, warehouse allocations, reorder levels, valuation rates, physical stock, active batch tags, and expiry horizons.
   - **Store Transfers:** Material Transfer Note tracking ledger with issue/receipt workflows that automatically log stock movements and post double-entry GL journal vouchers (`ACC-1410`).
@@ -302,12 +309,21 @@ The Express server features a standard production logging module ([`server/logge
 - **Functional Purpose:** Consolidated business line for Warehouse 1 toll processing (washing, sorting, milling, grading, and custom packaging) housed centrally under **Inventory** navigation. Clients bring their raw agricultural/industrial goods to WH1, pay a fee for processing, and the goods never become WH1 inventory.
 - **Key Architectural Rules & Engine Behaviors:**
   - **No Ownership / Asset Transfer Rule:** Client goods sitting at WH1 for processing are **never recorded as WH1 Inventory Assets (Account 1010)** and **never generate Cost of Goods Sold (Account 5001)**.
-  - **Automated Financial Service Revenue Recognition:** Advancing a service order to stage **`Processed`** automatically generates an Accounts Receivable Invoice in `financeStore` for the `agreed_price` and posts a General Ledger Journal Entry: **DEBIT 1200 Accounts Receivable / CREDIT 4002 Service Processing Revenue** (separate from 4000 Sales Revenue).
-  - **Scoped Role Workflow:**
-    - **Sales Admin:** Creates service orders (`DRAFT` stage) with client details, commodity description, quantity/UOM, agreed fee (ETB), currency, and expected entry date.
-    - **Task Manager (WH1):** Updates operational status as goods arrive (`Received` ➔ `In Progress` ➔ `Processed` ➔ `Picked Up/Delivered`).
-  - **Stock Register Table Design System:** Uses `<GlassCard className="p-0 border border-white/65 shadow-md">`, `<FinanceTableToolbar />`, `useResizableTable`, and `<ResizableTh />` column resizers matching the core Stock Register (`/inventory/stock`).
-  - **100% Full-Width Orders Register & Centered Modal Dialog Inspector:** Master service orders table expands to 100% container width with entry dates, agreed fees, and a top-right `+ Create Service Order` action button inside the table toolbar header. Selecting any row opens a spacious, backdrop-blurred modal dialog centered on screen for executing operational stage transitions (Confirm Arrival, Milling, Complete Processing & Bill Client, Pickup) and deleting orders.
+  - **3-Stage Operational Pipeline:** Simplified to 3 clear, standardized stage progressions: **`Received`** ➔ **`Processed`** ➔ **`Delivered`**.
+  - **Deferred Stage Checkbox Progression:** Checkboxes inside the Edit modal modify local status state without firing immediate HTTP requests and allow unselecting/reverting stages. Status changes and financial entries are committed only when the user explicitly clicks **"Save Order Changes"**.
+  - **Automated Financial Service Revenue Recognition:** Advancing a service order to stage **`Delivered`** automatically generates an Accounts Receivable Invoice in `financeStore` for the `agreed_price` and posts a General Ledger Journal Entry: **DEBIT 1200 Accounts Receivable / CREDIT 4002 Service Processing Revenue** (separate from 4000 Sales Revenue).
+  - **Unified Customer Combobox:** Creation and Edit forms feature a single unified customer combobox with live customer registry searching and free-text entry, matching the Sales Order modal pattern.
+  - **Service Contract Attachment:** Supports PDF service contract upload (`POST /api/processing-services/:id/upload-contract`), linking contracts directly to the processing order record and syncing automatically into **HKC Docs**.
+  - **Modal Layout Order & Action Rules:**
+    - Modal layout follows strict ordered sections: **1. Details Form**, **2. Stage Progression Checkboxes**, **3. Document Attachment**.
+    - Removed row `onClick` so clicking table rows does not trigger popups. Table Action column uses a light-green Edit button (`bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/80`).
+    - Edit modal header features `<EditModalHeader>` with 3-dot dropdown menu containing "Delete Service Order", triggering a top-level confirmation modal (`<RecordDeleteModal>` with `z-[200]`).
+- **Express Backend API Endpoints:**
+  - `GET /api/processing-services` – List processing service orders.
+  - `POST /api/processing-services` – Create processing service order.
+  - `PATCH /api/processing-services/:id` – Update processing service order details and stage.
+  - `DELETE /api/processing-services/:id` – Delete processing service order.
+  - `POST /api/processing-services/:id/upload-contract` – Upload service contract PDF.
 
 ---
 

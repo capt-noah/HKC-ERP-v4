@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Plus,
-  CheckCircle2,
-  Building2,
-  Truck,
-  Sparkles,
   X,
-  Play,
-  Trash2,
+  Edit3,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Upload,
+  Check,
+  ExternalLink,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -19,6 +20,18 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { useErpStore } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
+import { EditModalHeader } from "@/components/EditModalHeader"
+import { RecordDeleteModal } from "@/components/RecordDeleteModal"
+import {
+  type ProcessingServiceOrder,
+  type ProcessingServiceStage,
+  fetchProcessingServices,
+  createProcessingService,
+  updateProcessingService,
+  transitionProcessingServiceStage,
+  uploadProcessingServiceContract,
+  deleteProcessingService,
+} from "@/lib/processingServicesApi"
 
 function ProcessingServicesSkeletonRows() {
   return (
@@ -26,7 +39,7 @@ function ProcessingServicesSkeletonRows() {
       {Array.from({ length: 6 }).map((_, index) => (
         <tr key={index} className="border-b border-zinc-150/40">
           <td className="px-3 py-4"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
-          <td className="px-3 py-4"><div className="space-y-1.5"><Skeleton className="h-4 w-36 bg-zinc-200/80" /><Skeleton className="h-3 w-24 bg-zinc-200/80" /></div></td>
+          <td className="px-3 py-4"><Skeleton className="h-4 w-36 bg-zinc-200/80" /></td>
           <td className="px-3 py-4"><div className="space-y-1.5"><Skeleton className="h-4 w-32 bg-zinc-200/80" /><Skeleton className="h-3 w-20 bg-zinc-200/80" /></div></td>
           <td className="px-3 py-4"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
           <td className="px-3 py-4"><Skeleton className="h-5 w-24 rounded-full mx-auto bg-zinc-200/80" /></td>
@@ -37,23 +50,19 @@ function ProcessingServicesSkeletonRows() {
     </>
   )
 }
-import {
-  type ProcessingServiceOrder,
-  type ProcessingServiceStage,
-  fetchProcessingServices,
-  createProcessingService,
-  transitionProcessingServiceStage,
-  deleteProcessingService,
-} from "@/lib/processingServicesApi"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
+const STAGE_STEPS: { stage: ProcessingServiceStage; label: string; desc: string }[] = [
+  { stage: "Received", label: "Received", desc: "Raw commodity received at WH1" },
+  { stage: "Processed", label: "Processed", desc: "Milling, washing & sorting complete" },
+  { stage: "Delivered", label: "Delivered", desc: "Finished goods dispatched / picked up" },
+]
+
 const STAGE_COLOR_MAP: Record<ProcessingServiceStage, { bg: string; text: string; border: string }> = {
-  Draft: { bg: "bg-zinc-500/10", text: "text-zinc-700 dark:text-zinc-300", border: "border-zinc-500/20" },
-  Received: { bg: "bg-blue-500/10", text: "text-blue-700 dark:text-blue-300", border: "border-blue-500/20" },
-  "In Progress": { bg: "bg-amber-500/10", text: "text-amber-700 dark:text-amber-300", border: "border-amber-500/20" },
-  Processed: { bg: "bg-emerald-500/10", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-500/20" },
-  "Picked Up/Delivered": { bg: "bg-purple-500/10", text: "text-purple-700 dark:text-purple-300", border: "border-purple-500/20" },
+  Received: { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
+  Processed: { bg: "bg-emerald-100", text: "text-emerald-800", border: "border-emerald-200" },
+  Delivered: { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
 }
 
 const serviceOrderColumns: TableColumn[] = [
@@ -66,6 +75,13 @@ const serviceOrderColumns: TableColumn[] = [
   { key: "_actions", label: "Action", align: "center", noSort: true },
 ]
 
+function getStageIndex(stage?: ProcessingServiceStage): number {
+  if (stage === "Received") return 0
+  if (stage === "Processed") return 1
+  if (stage === "Delivered") return 2
+  return -1
+}
+
 export default function ProcessingServices() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
@@ -76,22 +92,54 @@ export default function ProcessingServices() {
 
   const [stageFilter, setStageFilter] = useState<string>("ALL")
   const [searchQuery, setSearchQuery] = useState<string>("")
-  const [selectedOrder, setSelectedOrder] = useState<ProcessingServiceOrder | null>(null)
 
-  // Modals
+  // Modals & Active Edit/Delete Order
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false)
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
+  const [editingOrder, setEditingOrder] = useState<ProcessingServiceOrder | null>(null)
+  const [deletingOrder, setDeletingOrder] = useState<ProcessingServiceOrder | null>(null)
+  const [isUploadingContract, setIsUploadingContract] = useState<boolean>(false)
 
-  // Form State
-  const [clientName, setClientName] = useState("")
-  const [selectedCustomerId, setSelectedCustomerId] = useState("")
-  const [goodsDescription, setGoodsDescription] = useState("")
-  const [quantity, setQuantity] = useState<number | "">(500)
-  const [uom, setUom] = useState("Quintal")
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().split("T")[0])
-  const [agreedPrice, setAgreedPrice] = useState<number | "">(75000)
-  const [assignedTo] = useState("Abebe Bikila (Task Manager)")
-  const [notes, setNotes] = useState("")
+  // Create Form State
+  const [createClientInput, setCreateClientInput] = useState("")
+  const [createCustomerId, setCreateCustomerId] = useState("")
+  const [showCreateCustDropdown, setShowCreateCustDropdown] = useState(false)
+  const [createGoodsDesc, setCreateGoodsDesc] = useState("")
+  const [createQuantity, setCreateQuantity] = useState<number | "">(500)
+  const [createUom, setCreateUom] = useState("Quintal")
+  const [createEntryDate, setCreateEntryDate] = useState(new Date().toISOString().split("T")[0])
+  const [createAgreedPrice, setCreateAgreedPrice] = useState<number | "">(75000)
+  const [createNotes, setCreateNotes] = useState("")
+
+  // Edit Form State
+  const [editClientInput, setEditClientInput] = useState("")
+  const [editCustomerId, setEditCustomerId] = useState("")
+  const [showEditCustDropdown, setShowEditCustDropdown] = useState(false)
+  const [editGoodsDesc, setEditGoodsDesc] = useState("")
+  const [editQuantity, setEditQuantity] = useState<number | "">(0)
+  const [editUom, setEditUom] = useState("Quintal")
+  const [editEntryDate, setEditEntryDate] = useState("")
+  const [editAgreedPrice, setEditAgreedPrice] = useState<number | "">(0)
+  const [editNotes, setEditNotes] = useState("")
+  const [editStatus, setEditStatus] = useState<ProcessingServiceStage>("Received")
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  // Combobox refs
+  const createComboboxRef = useRef<HTMLDivElement>(null)
+  const editComboboxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (createComboboxRef.current && !createComboboxRef.current.contains(e.target as Node)) {
+        setShowCreateCustDropdown(false)
+      }
+      if (editComboboxRef.current && !editComboboxRef.current.contains(e.target as Node)) {
+        setShowEditCustDropdown(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   const loadServices = async () => {
     setIsLoading(true)
@@ -107,12 +155,25 @@ export default function ProcessingServices() {
     loadServices()
   }, [])
 
-  // Action: Create Service Order (Sales Admin role)
+  const openEditModal = (order: ProcessingServiceOrder) => {
+    setEditingOrder(order)
+    setEditClientInput(order.client_company_name || "")
+    setEditCustomerId(order.customer_id || "")
+    setEditGoodsDesc(order.goods_description || "")
+    setEditQuantity(order.quantity || 0)
+    setEditUom(order.uom || "Quintal")
+    setEditEntryDate(order.entry_date || new Date().toISOString().split("T")[0])
+    setEditAgreedPrice(order.agreed_price || 0)
+    setEditNotes(order.notes || "")
+    setEditStatus(order.status || "Received")
+  }
+
+  // Create Service Order
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
-    const targetClient = clientName.trim() || customers.find((c) => c.id === selectedCustomerId)?.name || "Client Company"
+    const targetClient = createClientInput.trim() || customers.find((c) => c.id === createCustomerId)?.name || "Client Company"
 
-    if (!goodsDescription || !quantity || !agreedPrice) {
+    if (!createGoodsDesc || !createQuantity || !createAgreedPrice) {
       showToast("Validation Error", "warning", "Please fill in goods description, quantity, and agreed price.")
       return
     }
@@ -121,22 +182,22 @@ export default function ProcessingServices() {
     try {
       const created = await createProcessingService({
         client_company_name: targetClient,
-        customer_id: selectedCustomerId || null,
-        goods_description: goodsDescription,
-        quantity: Number(quantity),
-        uom,
-        entry_date: entryDate,
-        agreed_price: Number(agreedPrice),
+        customer_id: createCustomerId || null,
+        goods_description: createGoodsDesc,
+        quantity: Number(createQuantity),
+        uom: createUom,
+        entry_date: createEntryDate,
+        agreed_price: Number(createAgreedPrice),
         currency: "ETB",
-        status: "Draft",
-        assigned_to: assignedTo,
-        notes,
+        status: "Received",
+        notes: createNotes,
       })
 
       showToast("Service Order Created", "success", `Order ${created.reference_number || created.id} registered for ${targetClient}.`)
       setIsCreateOpen(false)
-      setGoodsDescription("")
-      setClientName("")
+      setCreateGoodsDesc("")
+      setCreateClientInput("")
+      setCreateCustomerId("")
       loadServices()
     } catch (err) {
       showToast("Creation Failed", "warning", err instanceof Error ? err.message : "Failed to create processing service order.")
@@ -145,38 +206,71 @@ export default function ProcessingServices() {
     }
   }
 
-  // Action: Transition Stage (Task Manager / Operations role)
-  const handleTransitionStage = async (id: string, targetStage: ProcessingServiceStage) => {
+  // Save Edit Order Metadata & Stage Status Changes
+  const handleSaveEdit = async () => {
+    if (!editingOrder) return
+    const targetClient = editClientInput.trim() || customers.find((c) => c.id === editCustomerId)?.name || editingOrder.client_company_name
+
+    if (!editGoodsDesc || !editQuantity || editAgreedPrice === "") {
+      showToast("Validation Error", "warning", "Goods description, quantity, and agreed price are required.")
+      return
+    }
+
+    setIsSavingEdit(true)
     try {
-      const result = await transitionProcessingServiceStage(id, targetStage)
-      if (result.ok) {
-        if (targetStage === "Processed" && result.journalEntry) {
-          showToast(
-            "Service Processed & Billed!",
-            "success",
-            `Processing complete for ${id}! Accounts Receivable Invoice generated & Service Revenue GL Voucher posted.`
-          )
-        } else {
-          showToast("Stage Updated", "info", `Order ${id} advanced to stage '${targetStage}'.`)
+      let updated = await updateProcessingService(editingOrder.id, {
+        client_company_name: targetClient,
+        customer_id: editCustomerId || null,
+        goods_description: editGoodsDesc,
+        quantity: Number(editQuantity),
+        uom: editUom,
+        entry_date: editEntryDate,
+        agreed_price: Number(editAgreedPrice),
+        notes: editNotes,
+      })
+
+      // If status stage changed, trigger stage transition to recognize revenue / log history
+      if (editStatus !== editingOrder.status) {
+        const transitionRes = await transitionProcessingServiceStage(editingOrder.id, editStatus)
+        if (transitionRes.ok) {
+          updated = transitionRes
+          if (editStatus === "Delivered" && transitionRes.journalEntry) {
+            showToast(
+              "Service Delivered & Billed!",
+              "success",
+              `Processing complete for ${editingOrder.id}! Accounts Receivable Invoice generated & Service Revenue GL Voucher posted.`
+            )
+          } else {
+            showToast("Stage Updated", "info", `Order status updated to '${editStatus}'.`)
+          }
         }
-        loadServices()
-        if (selectedOrder?.id === id) {
-          setSelectedOrder(result)
-        }
+      } else {
+        showToast("Service Order Saved", "success", `Updated details for ${updated.reference_number || updated.id}.`)
       }
+
+      setEditingOrder(null)
+      loadServices()
     } catch (err) {
-      showToast("Transition Failed", "warning", err instanceof Error ? err.message : "Could not update stage.")
+      showToast("Save Failed", "warning", err instanceof Error ? err.message : "Failed to save order details.")
+    } finally {
+      setIsSavingEdit(false)
     }
   }
 
-  const handleDelete = async (id: string) => {
+
+
+  // Upload Contract File
+  const handleUploadContract = async (id: string, file: File) => {
+    setIsUploadingContract(true)
     try {
-      await deleteProcessingService(id)
-      showToast("Order Deleted", "info", `Processing service order ${id} deleted.`)
-      setSelectedOrder(null)
+      const updated = await uploadProcessingServiceContract(id, file)
+      showToast("Contract Uploaded", "success", `Contract document attached to order ${updated.reference_number || id}.`)
+      setEditingOrder(updated)
       loadServices()
     } catch (err) {
-      showToast("Delete Error", "warning", "Failed to delete order.")
+      showToast("Upload Error", "warning", err instanceof Error ? err.message : "Failed to upload contract.")
+    } finally {
+      setIsUploadingContract(false)
     }
   }
 
@@ -191,7 +285,7 @@ export default function ProcessingServices() {
 
   const ordersTable = useResizableTable<ProcessingServiceOrder>(serviceOrderColumns, filteredServices, {
     reference_number: 140,
-    client_company_name: 200,
+    client_company_name: 220,
     goods_description: 200,
     entry_date: 120,
     status: 150,
@@ -220,7 +314,7 @@ export default function ProcessingServices() {
           </div>
         </div>
 
-        {/* Stock Register Designed Table Container */}
+        {/* Register Table Container */}
         <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
           <div className="px-6 pt-6">
             <FinanceTableToolbar
@@ -236,11 +330,9 @@ export default function ProcessingServices() {
                   ariaLabel: "Filter by Stage",
                   options: [
                     { value: "ALL", label: "All Stages" },
-                    { value: "Draft", label: "Draft" },
                     { value: "Received", label: "Received" },
-                    { value: "In Progress", label: "In Progress" },
                     { value: "Processed", label: "Processed" },
-                    { value: "Picked Up/Delivered", label: "Picked Up/Delivered" },
+                    { value: "Delivered", label: "Delivered" },
                   ],
                 },
               ]}
@@ -287,20 +379,18 @@ export default function ProcessingServices() {
                   </tr>
                 ) : (
                   ordersTable.sorted().map((order) => {
-                    const colors = STAGE_COLOR_MAP[order.status] || STAGE_COLOR_MAP.Draft
+                    const colors = STAGE_COLOR_MAP[order.status] || STAGE_COLOR_MAP.Received
 
                     return (
                       <tr
                         key={order.id}
-                        onClick={() => setSelectedOrder(order)}
-                        className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs cursor-pointer"
+                        className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs"
                       >
                         <td style={{ width: `${ordersTable.colWidths.reference_number}px` }} className="px-3 py-3 whitespace-nowrap font-mono font-bold text-zinc-900 truncate">
                           {order.reference_number || order.id}
                         </td>
-                        <td style={{ width: `${ordersTable.colWidths.client_company_name}px` }} className="px-3 py-3 truncate">
-                          <div className="font-bold text-zinc-900">{order.client_company_name}</div>
-                          <div className="text-[10px] text-zinc-400">{order.assigned_to}</div>
+                        <td style={{ width: `${ordersTable.colWidths.client_company_name}px` }} className="px-3 py-3 font-bold text-zinc-900 truncate">
+                          {order.client_company_name}
                         </td>
                         <td style={{ width: `${ordersTable.colWidths.goods_description}px` }} className="px-3 py-3 truncate">
                           <div className="font-bold text-zinc-800">{order.goods_description}</div>
@@ -323,11 +413,12 @@ export default function ProcessingServices() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              setSelectedOrder(order)
+                              openEditModal(order)
                             }}
-                            className="px-3 py-1 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-[11px] transition-colors shadow-xs"
+                            className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1"
+                            title="Edit processing service"
                           >
-                            View Details
+                            <Edit3 className="size-3 text-emerald-600" /> Edit
                           </button>
                         </td>
                       </tr>
@@ -339,132 +430,307 @@ export default function ProcessingServices() {
           </div>
         </GlassCard>
 
-        {/* Modal Dialog for Processing Service Order Details & Transition Controls */}
+        {/* MODAL: EDIT PROCESSING SERVICE ORDER */}
         <AnimatePresence>
-          {selectedOrder && (
+          {editingOrder && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md">
               <motion.div
                 initial={{ opacity: 0, scale: 0.96, y: 12 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.96, y: 12 }}
                 transition={{ duration: 0.2 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200 dark:border-zinc-800"
+                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200 dark:border-zinc-800"
               >
-                {/* Modal Header */}
-                <div className="flex items-start justify-between pb-4 mb-6 border-b border-zinc-200 dark:border-zinc-800">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">TOLL PROCESSING SERVICE ORDER</span>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border ${STAGE_COLOR_MAP[selectedOrder.status].bg} ${STAGE_COLOR_MAP[selectedOrder.status].text} ${STAGE_COLOR_MAP[selectedOrder.status].border}`}>
-                        {selectedOrder.status}
-                      </span>
+                <EditModalHeader
+                  title={`Edit Processing Service: ${editingOrder.reference_number || editingOrder.id}`}
+                  subtitle={`Client: ${editingOrder.client_company_name} • Toll Service Order`}
+                  onClose={() => setEditingOrder(null)}
+                  onRequestDelete={() => setDeletingOrder(editingOrder)}
+                  deleteLabel="Delete Service Order"
+                />
+
+                <div className="space-y-6 text-xs mt-4">
+                  {/* 1. Editable Details Form */}
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">
+                    <span className="text-xs font-black uppercase text-zinc-500 tracking-wider block">Contract Details & Parameters</span>
+
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      {/* Client Combobox */}
+                      <div className="md:col-span-6 relative" ref={editComboboxRef}>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Client / Customer Company</label>
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Search customer registry or type company name..."
+                            value={editClientInput}
+                            onChange={(e) => {
+                              setEditClientInput(e.target.value)
+                              setShowEditCustDropdown(true)
+                            }}
+                            onFocus={() => setShowEditCustDropdown(true)}
+                            className="w-full pl-3 pr-12 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none"
+                          />
+                          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                            {editClientInput && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditClientInput("")
+                                  setEditCustomerId("")
+                                  setShowEditCustDropdown(false)
+                                }}
+                                className="text-zinc-400 hover:text-zinc-700 p-0.5"
+                              >
+                                <X className="size-3.5" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setShowEditCustDropdown(!showEditCustDropdown)}
+                              className="text-zinc-400 hover:text-zinc-700 p-0.5 rounded"
+                            >
+                              {showEditCustDropdown ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {showEditCustDropdown && customers.length > 0 && (
+                          <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white dark:bg-zinc-800 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-xl max-h-48 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700">
+                            {customers
+                              .filter((c) => (c.name || "").toLowerCase().includes(editClientInput.toLowerCase()))
+                              .map((c) => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditCustomerId(c.id)
+                                    setEditClientInput(c.name)
+                                    setShowEditCustDropdown(false)
+                                  }}
+                                  className="w-full text-left px-3.5 py-2 hover:bg-blue-50 dark:hover:bg-zinc-700 transition-colors flex items-center justify-between text-xs"
+                                >
+                                  <div>
+                                    <span className="font-bold text-zinc-900 dark:text-zinc-100 block">{c.name}</span>
+                                    <span className="text-[10px] text-zinc-500 font-medium">{c.phone || "No phone"} &bull; {c.category || "Client"}</span>
+                                  </div>
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Raw Commodity */}
+                      <div className="md:col-span-6">
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Raw Commodity Description</label>
+                        <input
+                          type="text"
+                          value={editGoodsDesc}
+                          onChange={(e) => setEditGoodsDesc(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-medium outline-none"
+                          required
+                        />
+                      </div>
                     </div>
-                    <h2 className="text-2xl font-black font-mono text-zinc-950 dark:text-zinc-50 mt-1">
-                      {selectedOrder.reference_number || selectedOrder.id}
-                    </h2>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Quantity</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={editQuantity}
+                          onChange={(e) => setEditQuantity(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-bold outline-none font-mono"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">UOM</label>
+                        <select
+                          value={editUom}
+                          onChange={(e) => setEditUom(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-bold outline-none"
+                        >
+                          <option value="Quintal">Quintal</option>
+                          <option value="Kg">Kg</option>
+                          <option value="Bags">Bags</option>
+                          <option value="Tons">Tons</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Agreed Fee (ETB)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editAgreedPrice}
+                          onChange={(e) => setEditAgreedPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-black outline-none font-mono"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Entry Date</label>
+                        <input
+                          type="date"
+                          value={editEntryDate}
+                          onChange={(e) => setEditEntryDate(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-mono font-bold outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Operational Notes / Special Processing Instructions</label>
+                      <textarea
+                        rows={2}
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="e.g. Toll milling, moisture testing, custom packaging..."
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-medium outline-none"
+                      />
+                    </div>
                   </div>
 
-                  <button
-                    onClick={() => setSelectedOrder(null)}
-                    className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-500 transition-colors"
-                  >
-                    <X className="size-5" />
-                  </button>
-                </div>
+                  {/* 2. Status Progression Checkboxes */}
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase text-zinc-500 tracking-wider">Service Stage Checkbox Progression</span>
+                    </div>
 
-                {/* Modal Content */}
-                <div className="space-y-4 text-xs">
-                  <div className="p-3.5 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200/80 dark:border-zinc-800">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase block">Client / Customer</span>
-                    <span className="font-extrabold text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-2 mt-0.5">
-                      <Building2 className="size-4 text-blue-600" /> {selectedOrder.client_company_name}
-                    </span>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                      {STAGE_STEPS.map((step, idx) => {
+                        const isChecked = getStageIndex(editStatus) >= idx
+                        const isCurrentSelected = editStatus === step.stage
+                        const timestampEntry = editingOrder.status_history?.find((h) => h.stage === step.stage)
+
+                        return (
+                          <div
+                            key={step.stage}
+                            onClick={() => {
+                              if (isCurrentSelected) {
+                                // Unselect box: fall back to previous stage (min "Received")
+                                const prevStage = idx > 0 ? STAGE_STEPS[idx - 1].stage : "Received"
+                                setEditStatus(prevStage)
+                              } else {
+                                // Select box
+                                setEditStatus(step.stage)
+                              }
+                            }}
+                            className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between cursor-pointer hover:shadow-md ${
+                              isChecked
+                                ? "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800"
+                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`size-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                                  isChecked
+                                    ? "bg-emerald-600 border-emerald-600 text-white"
+                                    : "bg-white border-zinc-300 text-transparent hover:border-emerald-500"
+                                }`}
+                              >
+                                <Check className="size-3.5 stroke-[3]" />
+                              </div>
+                              <div>
+                                <span className={`text-xs font-black block ${isChecked ? "text-emerald-900 dark:text-emerald-300" : "text-zinc-700 dark:text-zinc-300"}`}>
+                                  {step.label}
+                                </span>
+                                <span className="text-[10px] text-zinc-500 leading-tight block mt-0.5">{step.desc}</span>
+                              </div>
+                            </div>
+
+                            {timestampEntry && (
+                              <span className="text-[9px] font-mono text-emerald-700 dark:text-emerald-400 mt-2 block font-semibold">
+                                ✓ {new Date(timestampEntry.timestamp).toLocaleDateString()} {new Date(timestampEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                            <span className="text-[9px] font-bold text-zinc-400 mt-2 block">
+                              {isChecked ? "Click to uncheck/revert" : "Click to select"}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3.5 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200/80 dark:border-zinc-800">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase block">Raw Commodity</span>
-                      <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100 mt-0.5 block">{selectedOrder.goods_description}</span>
-                    </div>
-                    <div className="p-3.5 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200/80 dark:border-zinc-800">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase block">Quantity</span>
-                      <span className="font-mono font-black text-sm text-zinc-900 dark:text-zinc-100 mt-0.5 block">
-                        {selectedOrder.quantity} {selectedOrder.uom}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3.5 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200/80 dark:border-zinc-800">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase block">Agreed Processing Fee</span>
-                      <span className="font-mono font-black text-sm text-emerald-700 dark:text-emerald-300 mt-0.5 block">
-                        ETB {selectedOrder.agreed_price.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="p-3.5 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200/80 dark:border-zinc-800">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase block">Entry Date</span>
-                      <span className="font-mono font-bold text-sm text-zinc-900 dark:text-zinc-100 mt-0.5 block">{selectedOrder.entry_date}</span>
-                    </div>
-                  </div>
-
-                  {selectedOrder.invoice_id && (
-                    <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase">AR Revenue Invoice Generated</span>
-                      <span className="font-mono font-bold text-xs text-emerald-800 dark:text-emerald-200">{selectedOrder.invoice_id}</span>
-                    </div>
-                  )}
-
-                  {/* Operational Stage Transition Controls */}
-                  <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
-                    <div className="text-[10px] font-black uppercase text-zinc-400 tracking-wider mb-2">Operational Stage Transition Controls</div>
-
-                    {selectedOrder.status === "Draft" && (
-                      <button
-                        onClick={() => handleTransitionStage(selectedOrder.id, "Received")}
-                        className="w-full py-2.5 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-700 shadow-sm flex items-center justify-center gap-2 transition-all"
-                      >
-                        <Truck className="size-4" /> Confirm Goods Arrival (Mark Received)
-                      </button>
-                    )}
-
-                    {selectedOrder.status === "Received" && (
-                      <button
-                        onClick={() => handleTransitionStage(selectedOrder.id, "In Progress")}
-                        className="w-full py-2.5 bg-amber-600 text-white font-bold text-xs rounded-xl hover:bg-amber-700 shadow-sm flex items-center justify-center gap-2 transition-all"
-                      >
-                        <Play className="size-4" /> Start Milling & Processing
-                      </button>
-                    )}
-
-                    {selectedOrder.status === "In Progress" && (
-                      <button
-                        onClick={() => handleTransitionStage(selectedOrder.id, "Processed")}
-                        className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl hover:bg-emerald-700 shadow-sm flex items-center justify-center gap-2 transition-all"
-                      >
-                        <Sparkles className="size-4" /> Complete Processing & Bill Client (Recognize Revenue)
-                      </button>
-                    )}
-
-                    {selectedOrder.status === "Processed" && (
-                      <button
-                        onClick={() => handleTransitionStage(selectedOrder.id, "Picked Up/Delivered")}
-                        className="w-full py-2.5 bg-purple-600 text-white font-bold text-xs rounded-xl hover:bg-purple-700 shadow-sm flex items-center justify-center gap-2 transition-all"
-                      >
-                        <CheckCircle2 className="size-4" /> Confirm Client Pickup / Final Delivery
-                      </button>
-                    )}
-
-                    {selectedOrder.status === "Picked Up/Delivered" && (
-                      <div className="p-3.5 bg-purple-500/10 text-purple-900 dark:text-purple-200 border border-purple-500/30 text-center font-bold text-xs rounded-xl">
-                        Order Fully Completed & Goods Dispatched
+                  {/* 3. Contract Attachment Section */}
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
+                    <span className="text-xs font-black uppercase text-zinc-500 tracking-wider block">Service Contract Document</span>
+                    
+                    {editingOrder.contract_url ? (
+                      <div className="flex items-center justify-between p-3.5 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-emerald-50 dark:bg-emerald-950 rounded-lg text-emerald-600">
+                            <FileText className="size-5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">{editingOrder.contract_file_name || "Contract.pdf"}</span>
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">Contract Attached & Verified in HKC Docs</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={editingOrder.contract_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 border border-blue-200"
+                          >
+                            View Contract <ExternalLink className="size-3" />
+                          </a>
+                          <label className="px-3.5 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 rounded-lg border border-zinc-200 cursor-pointer">
+                            {isUploadingContract ? "Uploading..." : "Replace"}
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg"
+                              disabled={isUploadingContract}
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) handleUploadContract(editingOrder.id, file)
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl text-center hover:bg-white/50 transition-colors">
+                        <Upload className="size-6 text-zinc-400 mx-auto mb-1.5" />
+                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-0.5">Attach Toll Processing Contract</span>
+                        <span className="text-[10px] text-zinc-400 block mb-2">PDF, PNG, or JPG document up to 10MB</span>
+                        <label className="px-4 py-1.5 bg-zinc-950 text-white rounded-lg text-xs font-bold hover:bg-zinc-800 inline-block cursor-pointer">
+                          {isUploadingContract ? "Uploading..." : "Browse File"}
+                          <input
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg"
+                            disabled={isUploadingContract}
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) handleUploadContract(editingOrder.id, file)
+                            }}
+                          />
+                        </label>
                       </div>
                     )}
+                  </div>
 
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
                     <button
-                      onClick={() => handleDelete(selectedOrder.id)}
-                      className="w-full mt-3 py-2 border border-red-200 dark:border-red-900/50 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all"
+                      type="button"
+                      onClick={() => setEditingOrder(null)}
+                      className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-600 font-bold hover:bg-zinc-100"
                     >
-                      <Trash2 className="size-4" /> Delete Service Order
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSavingEdit}
+                      onClick={handleSaveEdit}
+                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50"
+                    >
+                      {isSavingEdit ? "Saving..." : "Save Order Changes"}
                     </button>
                   </div>
                 </div>
@@ -473,54 +739,92 @@ export default function ProcessingServices() {
           )}
         </AnimatePresence>
 
-
-
         {/* MODAL: CREATE PROCESSING SERVICE ORDER */}
         <AnimatePresence>
           {isCreateOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md">
               <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 dark:border-zinc-800"
+                initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                transition={{ duration: 0.2 }}
+                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200 dark:border-zinc-800"
               >
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between pb-4 mb-4 border-b border-zinc-200 dark:border-zinc-800">
                   <div>
-                    <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-100">Create Processing Service Order</h3>
+                    <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-100">Create Processing Service Order</h3>
                     <p className="text-xs text-zinc-500">Register a new client toll-processing contract at WH1.</p>
                   </div>
-                  <button onClick={() => setIsCreateOpen(false)} className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400">
+                  <button onClick={() => setIsCreateOpen(false)} className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400">
                     <X className="size-5" />
                   </button>
                 </div>
 
                 <form onSubmit={handleCreateOrder} className="space-y-4 text-xs">
-                  <div>
-                    <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Client / Customer Company</label>
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(e) => {
-                        setSelectedCustomerId(e.target.value)
-                        const matched = customers.find((c) => c.id === e.target.value)
-                        if (matched) setClientName(matched.name)
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-medium outline-none mb-1.5"
-                    >
-                      <option value="">-- Select B2B Customer --</option>
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Or enter custom client company name..."
-                      value={clientName}
-                      onChange={(e) => setClientName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-medium outline-none"
-                    />
+                  {/* ROW 1: Client Combobox */}
+                  <div className="relative" ref={createComboboxRef}>
+                    <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Client / Customer Company *</label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Type to search customer registry or enter custom client company name..."
+                        value={createClientInput}
+                        onChange={(e) => {
+                          setCreateClientInput(e.target.value)
+                          setShowCreateCustDropdown(true)
+                        }}
+                        onFocus={() => setShowCreateCustDropdown(true)}
+                        className="w-full pl-3 pr-12 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none"
+                      />
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        {createClientInput && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCreateClientInput("")
+                              setCreateCustomerId("")
+                              setShowCreateCustDropdown(false)
+                            }}
+                            className="text-zinc-400 hover:text-zinc-700 p-0.5"
+                            title="Clear"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateCustDropdown(!showCreateCustDropdown)}
+                          className="text-zinc-400 hover:text-zinc-700 p-0.5 rounded"
+                        >
+                          {showCreateCustDropdown ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {showCreateCustDropdown && customers.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white dark:bg-zinc-800 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-xl max-h-48 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700">
+                        {customers
+                          .filter((c) => (c.name || "").toLowerCase().includes(createClientInput.toLowerCase()))
+                          .map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setCreateCustomerId(c.id)
+                                setCreateClientInput(c.name)
+                                setShowCreateCustDropdown(false)
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-blue-50 dark:hover:bg-zinc-700 transition-colors flex items-center justify-between text-xs"
+                            >
+                              <div>
+                                <span className="font-bold text-zinc-900 dark:text-zinc-100 block">{c.name}</span>
+                                <span className="text-[10px] text-zinc-500 font-medium">{c.phone || "No phone"} &bull; {c.category || "Client"}</span>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -528,8 +832,8 @@ export default function ProcessingServices() {
                     <input
                       type="text"
                       placeholder="e.g. Raw Arabica Coffee Beans (Grade 4 Unwashed)"
-                      value={goodsDescription}
-                      onChange={(e) => setGoodsDescription(e.target.value)}
+                      value={createGoodsDesc}
+                      onChange={(e) => setCreateGoodsDesc(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-medium outline-none"
                       required
                     />
@@ -541,8 +845,8 @@ export default function ProcessingServices() {
                       <input
                         type="number"
                         min="1"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value === "" ? "" : Number(e.target.value))}
+                        value={createQuantity}
+                        onChange={(e) => setCreateQuantity(e.target.value === "" ? "" : Number(e.target.value))}
                         className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-bold outline-none font-mono"
                         required
                       />
@@ -550,8 +854,8 @@ export default function ProcessingServices() {
                     <div>
                       <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Unit of Measure (UOM)</label>
                       <select
-                        value={uom}
-                        onChange={(e) => setUom(e.target.value)}
+                        value={createUom}
+                        onChange={(e) => setCreateUom(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-bold outline-none"
                       >
                         <option value="Quintal">Quintal</option>
@@ -568,8 +872,8 @@ export default function ProcessingServices() {
                       <input
                         type="number"
                         min="0"
-                        value={agreedPrice}
-                        onChange={(e) => setAgreedPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                        value={createAgreedPrice}
+                        onChange={(e) => setCreateAgreedPrice(e.target.value === "" ? "" : Number(e.target.value))}
                         className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-black outline-none font-mono"
                         required
                       />
@@ -578,8 +882,8 @@ export default function ProcessingServices() {
                       <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Entry Date</label>
                       <input
                         type="date"
-                        value={entryDate}
-                        onChange={(e) => setEntryDate(e.target.value)}
+                        value={createEntryDate}
+                        onChange={(e) => setCreateEntryDate(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-mono font-bold outline-none"
                       />
                     </div>
@@ -589,8 +893,8 @@ export default function ProcessingServices() {
                     <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Operational Notes / Special Processing Instructions</label>
                     <textarea
                       rows={2}
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
+                      value={createNotes}
+                      onChange={(e) => setCreateNotes(e.target.value)}
                       placeholder="e.g. Toll milling, moisture testing, custom packaging..."
                       className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-medium outline-none"
                     />
@@ -617,7 +921,30 @@ export default function ProcessingServices() {
             </div>
           )}
         </AnimatePresence>
+
+        {/* REUSABLE DELETE CONFIRMATION MODAL */}
+        <RecordDeleteModal
+          isOpen={!!deletingOrder}
+          title="Delete Processing Service Order?"
+          recordId={deletingOrder?.reference_number || deletingOrder?.id}
+          recordName={deletingOrder?.client_company_name}
+          description="This will permanently delete this toll-processing service contract and its record history."
+          onClose={() => setDeletingOrder(null)}
+          onConfirmDelete={async () => {
+            if (!deletingOrder) return
+            try {
+              await deleteProcessingService(deletingOrder.id)
+              showToast("Order Deleted", "info", `Processing service order ${deletingOrder.reference_number || deletingOrder.id} deleted.`)
+              setDeletingOrder(null)
+              setEditingOrder(null)
+              loadServices()
+            } catch {
+              showToast("Delete Error", "warning", "Failed to delete processing service order.")
+            }
+          }}
+        />
       </motion.div>
     </div>
   )
 }
+

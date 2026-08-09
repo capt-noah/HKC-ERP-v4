@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Edit3, Eye, FileText, Plus, Printer, Send, Trash2, X, Check, Download } from "lucide-react"
+import { Edit3, Eye, FileText, Plus, Printer, Send, Trash2, X, Check, Download, AlertTriangle, Lock } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -13,6 +13,7 @@ import { financeStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
+import { fetchShipmentDocs, type ShipmentDocAttachment } from "@/lib/shipmentDocumentEngine"
 import {
   cancelSalesIssue,
   createSalesIssue,
@@ -83,11 +84,7 @@ export default function SalesIssued() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize] = useState(10)
-  const [sort, setSort] = useState("sale_date.desc")
   const [search, setSearch] = useState("")
-  const [from, setFrom] = useState("")
-  const [to, setTo] = useState("")
-  const [itemFilter, setItemFilter] = useState("ALL")
   const [batchFilter, setBatchFilter] = useState("ALL")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -97,6 +94,7 @@ export default function SalesIssued() {
   const [batchOptions, setBatchOptions] = useState<Record<number, AvailableBatch[]>>({})
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([])
 
+  const [soAttachmentsMap, setSoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
   const [fsNo, setFsNo] = useState("")
   const [referenceNo, setReferenceNo] = useState("")
   const [saleDate, setSaleDate] = useState("")
@@ -106,9 +104,25 @@ export default function SalesIssued() {
   const [items, setItems] = useState<SalesIssueItem[]>([blankItem()])
 
   const salesOrders = erp.getSalesOrders()
+
+  useEffect(() => {
+    if (salesOrders.length > 0) {
+      salesOrders.forEach((so) => {
+        fetchShipmentDocs(so.id, "sales_order").then((docs) => {
+          setSoAttachmentsMap((prev) => ({ ...prev, [so.id]: docs }))
+        })
+      })
+    }
+  }, [salesOrders.length])
+
   const pendingSalesOrders = useMemo(() => {
-    return salesOrders.filter((so) => so.deliveryStatus !== "Fully Delivered")
-  }, [salesOrders])
+    return salesOrders.filter((so) => {
+      if (so.deliveryStatus === "Fully Delivered") return false
+      // Also filter out if reference_no or sales issue rows match so.id
+      const alreadyIssued = rows.some((row) => (row.reference_no || "").includes(so.id))
+      return !alreadyIssued
+    })
+  }, [salesOrders, rows])
 
   const canonicalWarehouseId = (value: string) => {
     const warehouse = warehouses.find((entry) => entry.id === value || entry.code === value || entry.name === value)
@@ -167,11 +181,8 @@ export default function SalesIssued() {
     setLoading(true)
     setError("")
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), sort })
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), sort: "sale_date.desc" })
       if (search) params.set("search", search)
-      if (from) params.set("from", from)
-      if (to) params.set("to", to)
-      if (itemFilter !== "ALL") params.set("item_id", itemFilter)
       if (batchFilter !== "ALL") params.set("batch_no", batchFilter)
       const result = await listSalesIssues(params)
       const safeRows = Array.isArray(result?.rows) ? result.rows : Array.isArray(result) ? result : []
@@ -189,7 +200,7 @@ export default function SalesIssued() {
 
   useEffect(() => {
     void load()
-  }, [page, pageSize, sort, search, from, to, itemFilter, batchFilter])
+  }, [page, pageSize, search, batchFilter])
 
   const batchFilters = useMemo(() => Array.from(new Set(products.flatMap((product) => product.batches.map((batch) => batch.batchNo)))), [products])
   const selectableProducts = useMemo(() => {
@@ -380,6 +391,14 @@ export default function SalesIssued() {
     try {
       if (editing) await updateSalesIssue(editing.id, payload)
       else await createSalesIssue(payload)
+
+      // Mark linked Sales Orders as Fully Delivered to prevent duplicate issue creation
+      if (selectedSoIds.length > 0) {
+        selectedSoIds.forEach((soId) => {
+          erp.updateSalesOrderStage(soId, "Shipped")
+        })
+      }
+
       showToast("Sales Issue Saved", "success", `Sales issue ${fsNo} saved successfully.`)
       setFormOpen(false)
       await load()
@@ -527,7 +546,6 @@ export default function SalesIssued() {
               onSearchChange={(value) => { setSearch(value); setPage(1) }}
               searchPlaceholder="Search FS, reference, item, customer, batch..."
               filters={[
-                { value: itemFilter, onChange: setItemFilter, ariaLabel: "Item", options: [{ value: "ALL", label: "All Items" }, ...products.map((p) => ({ value: p.id, label: p.name.slice(0, 24) }))] },
                 { value: batchFilter, onChange: setBatchFilter, ariaLabel: "Batch", options: [{ value: "ALL", label: "All Batches" }, ...batchFilters.map((b) => ({ value: b, label: b }))] },
               ]}
               actions={[
@@ -538,16 +556,7 @@ export default function SalesIssued() {
                   variant: "primary",
                 },
               ]}
-            >
-              <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-[38px] rounded-xl border border-transparent bg-black/[0.03] px-3 text-xs font-bold text-zinc-700 outline-none" />
-              <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-[38px] rounded-xl border border-transparent bg-black/[0.03] px-3 text-xs font-bold text-zinc-700 outline-none" />
-              <select value={sort} onChange={(event) => setSort(event.target.value)} className="h-[38px] rounded-xl bg-black/[0.03] px-3 text-xs font-bold text-zinc-700 outline-none">
-                <option value="sale_date.desc">Newest first</option>
-                <option value="sale_date.asc">Oldest first</option>
-                <option value="fs_no.asc">FS No A-Z</option>
-                <option value="total_amount.desc">Amount high-low</option>
-              </select>
-            </FinanceTableToolbar>
+            />
           </div>
 
           {error && <div className="mx-6 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">{error}</div>}
@@ -639,25 +648,50 @@ export default function SalesIssued() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
                     {pendingSalesOrders.map((so) => {
                       const isSelected = selectedSoIds.includes(so.id)
+                      const docs = soAttachmentsMap[so.id] || []
+                      const hasTrade = docs.some((d) => d.document_type === "Trade License")
+                      const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
+                      const isDocsMissing = !hasTrade || !hasAdvice
+
                       return (
                         <button
                           key={so.id}
                           type="button"
-                          onClick={() => handleTogglePullSalesOrder(so)}
+                          disabled={isDocsMissing}
+                          onClick={() => {
+                            if (isDocsMissing) {
+                              showToast(
+                                "Missing Documents",
+                                "warning",
+                                "Cannot issue stock for this order until Trade License and Payment Advice are attached."
+                              )
+                              return
+                            }
+                            handleTogglePullSalesOrder(so)
+                          }}
                           className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold text-left transition-all ${
-                            isSelected 
+                            isDocsMissing
+                              ? "bg-amber-50/80 border-amber-200/90 text-amber-900 cursor-not-allowed opacity-80"
+                              : isSelected 
                               ? "bg-emerald-700 text-white border-emerald-700 shadow-sm" 
                               : "bg-white text-zinc-800 border-zinc-200 hover:bg-zinc-100"
                           }`}
                         >
                           <div>
-                            <div className="font-bold font-mono text-xs">{so.id} • {so.customer}</div>
-                            <div className={`text-[10px] mt-0.5 ${isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
+                            <div className="font-bold font-mono text-xs flex items-center gap-1.5">
+                              {so.id} • {so.customer}
+                              {isDocsMissing && (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-black bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded-full">
+                                  <AlertTriangle className="size-2.5 text-amber-700" /> {!hasTrade && !hasAdvice ? "Trade License & Advice Missing" : !hasAdvice ? "Payment Advice Missing" : "Trade License Missing"}
+                                </span>
+                              )}
+                            </div>
+                            <div className={`text-[10px] mt-0.5 ${isDocsMissing ? "text-amber-800 font-semibold" : isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
                               {so.warehouse} • ETB {so.amount.toLocaleString()} ({so.items.length} contract items)
                             </div>
                           </div>
-                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? "bg-white text-emerald-700 border-white" : "border-zinc-300"}`}>
-                            {isSelected && <Check className="size-3 stroke-[3]" />}
+                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${isDocsMissing ? "bg-amber-100 border-amber-300 text-amber-800" : isSelected ? "bg-white text-emerald-700 border-white" : "border-zinc-300"}`}>
+                            {isDocsMissing ? <Lock className="size-3 text-amber-700" /> : isSelected ? <Check className="size-3 stroke-[3]" /> : null}
                           </div>
                         </button>
                       )

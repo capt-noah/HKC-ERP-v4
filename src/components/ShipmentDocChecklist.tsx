@@ -9,7 +9,7 @@ import {
 
 interface ShipmentDocChecklistProps {
   recordId: string
-  recordType: "purchase_order" | "sales_order"
+  recordType: "purchase_order" | "sales_order" | "processing_service"
   evaluation: ShipmentDocEvaluation
   attachments: ShipmentDocAttachment[]
   onAttachmentsChange: (updated: ShipmentDocAttachment[]) => void
@@ -103,17 +103,8 @@ export const ShipmentDocChecklist: React.FC<ShipmentDocChecklistProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h4 className="font-bold text-base tracking-tight">
-                  {recordType === "purchase_order" ? "Import Shipment Clearance Checklist" : "Export / Shipping Clearance Checklist"}
+                  {recordType === "purchase_order" ? "Import Shipment Clearance Checklist" : "Sales Order Document Checklist"}
                 </h4>
-                <span
-                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                    evaluation.isComplete
-                      ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
-                      : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                  }`}
-                >
-                  {evaluation.isComplete ? "Gate Passed" : "Gate Locked"}
-                </span>
               </div>
               <p className="text-xs opacity-80 mt-0.5">
                 {evaluation.isComplete
@@ -275,44 +266,6 @@ export const ShipmentDocChecklist: React.FC<ShipmentDocChecklistProps> = ({
           )}
         </div>
       </div>
-
-      {/* ── Quick Custom Document Upload Dropzone ──────────────────────────────── */}
-      {!readOnly && (
-        <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-              <Upload className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Attach Custom Trade Document</div>
-              <div className="text-[10px] text-zinc-500">Attach additional shipping paperwork or custom manifests</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <select
-              value={selectedDocType}
-              onChange={(e) => setSelectedDocType(e.target.value)}
-              className="text-xs px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 font-medium"
-            >
-              <option value="">Select Document Type...</option>
-              <option value="Commercial Invoice">Commercial Invoice</option>
-              <option value="Packing List">Packing List</option>
-              <option value="Bill of Lading / Airway Bill">Bill of Lading / Airway Bill</option>
-              <option value="Certificate of Origin">Certificate of Origin</option>
-              <option value="Certificate of Analysis (COA)">Certificate of Analysis (COA)</option>
-              <option value="Customs Declaration">Customs Declaration</option>
-              <option value="Insurance Certificate">Insurance Certificate</option>
-              <option value="Other Clearance Document">Other Clearance Document</option>
-            </select>
-
-            <label className="cursor-pointer px-4 py-1.5 rounded-xl bg-black dark:bg-white text-white dark:text-black font-bold text-xs hover:opacity-90 transition-all shrink-0">
-              {isUploading ? "Uploading..." : "Choose File"}
-              <input type="file" className="hidden" onChange={(e) => handleFileUpload(e)} disabled={isUploading} />
-            </label>
-          </div>
-        </div>
-      )}
 
       {uploadError && <p className="text-xs font-bold text-red-500 px-1">{uploadError}</p>}
     </div>

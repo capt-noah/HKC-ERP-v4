@@ -112,7 +112,7 @@ function InventoryRowSkeleton() {
 }
 
 export default function InventoryDashboard() {
-  const { showToast, confirm } = useFeedback()
+  const { showToast } = useFeedback()
   const erp = useErpStore()
   const products = erp.getProducts()
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
@@ -247,22 +247,7 @@ export default function InventoryDashboard() {
   const decidedCount = approvedCount + rejectedCount
   const complianceRate = decidedCount ? `${Math.round((approvedCount / decidedCount) * 1000) / 10}%` : "0%"
 
-  const handleDeleteProduct = (product: Product) => {
-    confirm({
-      title: "Remove Stock?",
-      message: `Remove ${product.name} batch ${product.batch}? This deletes the stock item and linked stock movements.`,
-      confirmLabel: "Remove",
-      isDestructive: true,
-      onConfirm: async () => {
-        try {
-          await erp.deleteProduct(product.id)
-          showToast("Stock removed", "success", `${product.name} was removed from inventory.`)
-        } catch (error) {
-          showToast("Remove failed", "warning", error instanceof Error ? error.message : "The stock item could not be removed.")
-        }
-      },
-    })
-  }
+
 
   const handleApproval = (id: string, isApproved: boolean) => {
     const batch = batches.find((entry) => entry.id === id)
@@ -454,14 +439,6 @@ export default function InventoryDashboard() {
                               Batch {product.batch} · {Number(product.quantity || 0).toLocaleString()} {product.unit} · {warehouseById.get(product.warehouse)?.name || product.warehouse}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteProduct(product)}
-                            className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                            title="Remove stock"
-                          >
-                            <X className="size-4" />
-                          </button>
                         </div>
                       ))
                     )}

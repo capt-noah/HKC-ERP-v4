@@ -61,46 +61,26 @@ export const DEFAULT_SHIPMENT_DOC_RULES = [
     description: "Required for pharmaceutical and medical supplies",
   },
 
-  // ── Export Rules (Sales Orders) ──
+  // ── Sales Order Rules ──
   {
-    id: "RULE-EXP-1",
+    id: "RULE-SO-1",
     applies_to: "sales_order",
     origin_country: null,
     destination_region: null,
     product_category: null,
-    document_type: "Commercial Invoice",
+    document_type: "Trade License",
     is_required: true,
-    description: "Mandatory for all sales order dispatches",
+    description: "Mandatory customer Trade License",
   },
   {
-    id: "RULE-EXP-2",
+    id: "RULE-SO-2",
     applies_to: "sales_order",
     origin_country: null,
     destination_region: null,
     product_category: null,
-    document_type: "Packing List",
+    document_type: "Payment Advice",
     is_required: true,
-    description: "Mandatory for all sales order dispatches",
-  },
-  {
-    id: "RULE-EXP-3",
-    applies_to: "sales_order",
-    origin_country: null,
-    destination_region: null,
-    product_category: null,
-    document_type: "Customs Declaration",
-    is_required: true,
-    description: "Mandatory export customs clearance document",
-  },
-  {
-    id: "RULE-EXP-4",
-    applies_to: "sales_order",
-    origin_country: null,
-    destination_region: "East Africa",
-    product_category: null,
-    document_type: "Certificate of Origin",
-    is_required: true,
-    description: "Required for regional exports to East Africa",
+    description: "Mandatory proof of payment receipt / advice at agreed contract price",
   },
 ]
 

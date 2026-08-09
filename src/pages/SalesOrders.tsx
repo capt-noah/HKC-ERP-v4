@@ -1,66 +1,37 @@
-import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
-  ArrowRight, 
   CheckCircle2, 
-  Building2, 
-  Truck, 
   FileText, 
-  Eye, 
   X, 
-  ShieldAlert, 
-  Box,
-  LayoutGrid,
-  Table as TableIcon,
   Pencil,
   Trash2,
   AlertTriangle,
-  FileCheck
+  FileCheck,
+  ChevronDown,
+  ChevronUp,
+  Phone
 } from "lucide-react"
-import { Skeleton } from "@/components/ui/skeleton"
-import { GlassCard } from "@/components/GlassCard"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
-import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
-import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
-import { ShipmentDocChecklist } from "@/components/ShipmentDocChecklist"
+import { type TableColumn } from "@/components/ResizableTable"
+import { EditModalHeader } from "@/components/EditModalHeader"
+import { RecordDeleteModal } from "@/components/RecordDeleteModal"
+import { DataTable } from "@/components/DataTable"
 import {
-  evaluateShipmentDocs,
   fetchShipmentDocs,
-  fetchShipmentDocRules,
+  uploadShipmentDoc,
   type ShipmentDocAttachment,
-  type ShipmentDocRule,
-  DEFAULT_FRONTEND_RULES,
 } from "@/lib/shipmentDocumentEngine"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
 const CONTAINER_UNITS = ["Box", "Bottle", "Vial"]
-
-function SalesOrdersTableSkeletonRows() {
-  return (
-    <>
-      {Array.from({ length: 6 }).map((_, index) => (
-        <tr key={index} className="border-b border-zinc-150/40">
-          <td className="py-4 px-6"><Skeleton className="h-4 w-20 bg-zinc-200/80" /><Skeleton className="h-3 w-16 mt-1 bg-zinc-200/50" /></td>
-          <td className="py-4 px-4"><Skeleton className="h-4 w-32 bg-zinc-200/80" /><Skeleton className="h-3 w-20 mt-1 bg-zinc-200/50" /></td>
-          <td className="py-4 px-4"><Skeleton className="h-5 w-24 rounded-full bg-zinc-200/80" /></td>
-          <td className="py-4 px-4"><Skeleton className="h-4 w-16 bg-zinc-200/80" /></td>
-          <td className="py-4 px-4"><Skeleton className="h-5 w-28 rounded-full bg-zinc-200/80" /></td>
-          <td className="py-4 px-4"><Skeleton className="h-5 w-24 rounded-full bg-zinc-200/80" /></td>
-          <td className="py-4 px-4 text-right"><Skeleton className="h-4 w-24 ml-auto bg-zinc-200/80" /></td>
-          <td className="py-4 px-4 text-center"><Skeleton className="h-8 w-44 mx-auto rounded-xl bg-zinc-200/80" /></td>
-        </tr>
-      ))}
-    </>
-  )
-}
 
 export default function SalesOrders() {
   const { showToast } = useFeedback()
@@ -73,24 +44,14 @@ export default function SalesOrders() {
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
   const warehouseOptions = warehouses.map((warehouse) => ({ value: warehouse.code || warehouse.id, label: warehouse.name || warehouse.code || warehouse.id }))
 
-  const navigate = useNavigate()
-  const [viewMode, setViewMode] = useState<"kanban" | "table">("table")
-
   // Search & Filter states for Sales Orders
   const [soSearch, setSoSearch] = useState("")
-  const [soStageFilter, setSoStageFilter] = useState("ALL")
   const [soWhFilter, setSoWhFilter] = useState("ALL")
 
   // Selected Sales Order for Inspection / Fulfillment / Invoicing
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null)
 
-  const [shipmentDocRules, setShipmentDocRules] = useState<ShipmentDocRule[]>(DEFAULT_FRONTEND_RULES)
   const [soAttachmentsMap, setSoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
-  const [soInspectorTab, setSoInspectorTab] = useState<"Order Lines" | "Shipping Docs">("Order Lines")
-
-  useEffect(() => {
-    fetchShipmentDocRules("sales_order").then(setShipmentDocRules)
-  }, [])
 
   useEffect(() => {
     if (selectedOrder?.id) {
@@ -99,18 +60,38 @@ export default function SalesOrders() {
       })
     }
   }, [selectedOrder?.id])
-  
+
+  const customerComboboxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (customerComboboxRef.current && !customerComboboxRef.current.contains(event.target as Node)) {
+        setShowCustomerDropdown(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (salesOrders.length > 0) {
+      salesOrders.forEach((so) => {
+        fetchShipmentDocs(so.id, "sales_order").then((docs) => {
+          setSoAttachmentsMap((prev) => ({ ...prev, [so.id]: docs }))
+        })
+      })
+    }
+  }, [salesOrders.length])
+
   // Modals
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false)
   const [isEditOrderOpen, setIsEditOrderOpen] = useState(false)
   const [editingOrder, setEditingOrder] = useState<SalesOrder | null>(null)
+  const [deletingOrder, setDeletingOrder] = useState<SalesOrder | null>(null)
   const [isNewQuotationOpen, setIsNewQuotationOpen] = useState(false)
-  const [isFulfillModalOpen, setIsFulfillModalOpen] = useState(false)
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
-
-  // Dispatch / Fulfillment form state
-  const [driverName, setDriverName] = useState("")
-  const [vehicleReg, setVehicleReg] = useState("")
 
   // Billing form state
   const [taxPercent, setTaxPercent] = useState(0)
@@ -118,6 +99,19 @@ export default function SalesOrders() {
 
   // New Sales Order Form State
   const [newCustomerId, setNewCustomerId] = useState("")
+  const [customerSearchInput, setCustomerSearchInput] = useState("")
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [saveCustomerToRegistry, setSaveCustomerToRegistry] = useState(true)
+  const [custPhone, setCustPhone] = useState("")
+  const [custEmail, setCustEmail] = useState("")
+  const [custAddress, setCustAddress] = useState("")
+
+  // Staged Attachments
+  const [stagedTradePaperName, setStagedTradePaperName] = useState("")
+  const [stagedTradePaperUrl, setStagedTradePaperUrl] = useState("")
+  const [stagedPaymentAdviceName, setStagedPaymentAdviceName] = useState("")
+  const [stagedPaymentAdviceUrl, setStagedPaymentAdviceUrl] = useState("")
+
   const [newWarehouse, setNewWarehouse] = useState("")
   const [newDesc, setNewDesc] = useState("")
   const [orderItems, setOrderItems] = useState<SalesOrderItem[]>([])
@@ -129,8 +123,6 @@ export default function SalesOrders() {
   const [quoteDesc, setQuoteDesc] = useState("")
   const [quoteItems] = useState<SalesOrderItem[]>([])
 
-  const stages: Array<SalesOrder["stage"]> = ["Quote", "Confirmed", "Picking", "Shipped"]
-
   // Filtered data for tables
   const filteredOrders = salesOrders.filter((so) => {
     const matchesSearch =
@@ -138,54 +130,19 @@ export default function SalesOrders() {
       so.id.toLowerCase().includes(soSearch.toLowerCase()) ||
       so.desc.toLowerCase().includes(soSearch.toLowerCase())
     if (!matchesSearch) return false
-    if (soStageFilter !== "ALL" && so.stage !== soStageFilter) return false
     if (soWhFilter !== "ALL" && so.warehouse !== soWhFilter) return false
     return true
   })
 
-  // Table Columns & Resizable Tables setup
+  // Table Columns setup
   const salesOrderColumns: TableColumn[] = [
     { key: "id", label: "Order ID", align: "left" },
     { key: "customer", label: "Customer", align: "left" },
     { key: "warehouse", label: "Warehouse", align: "left" },
-    { key: "stage", label: "Stage", align: "left" },
-    { key: "deliveryStatus", label: "Delivery Status", align: "left" },
-    { key: "billingStatus", label: "Billing Status", align: "left" },
+    { key: "docsStatus", label: "Required Docs", align: "left" },
     { key: "amount", label: "Amount (ETB)", align: "right" },
     { key: "_actions", label: "Action", align: "center", noSort: true },
   ]
-
-  const soTable = useResizableTable(salesOrderColumns, filteredOrders, {
-    id: 110,
-    customer: 220,
-    warehouse: 110,
-    stage: 110,
-    itemsSummary: 200,
-    deliveryStatus: 140,
-    billingStatus: 130,
-    amount: 140,
-    _actions: 240,
-  })
-
-  // Handle stage advancement
-  const handleAdvanceStage = (id: string, currentStage: SalesOrder["stage"]) => {
-    let nextStage: SalesOrder["stage"] = currentStage
-    let progress: number | undefined = undefined
-
-    if (currentStage === "Quote") nextStage = "Confirmed"
-    else if (currentStage === "Confirmed") {
-      nextStage = "Picking"
-      progress = 40
-    } else if (currentStage === "Picking") {
-      nextStage = "Shipped"
-      progress = 100
-    }
-
-    if (nextStage !== currentStage) {
-      erp.updateSalesOrderStage(id, nextStage, progress)
-      showToast("Pipeline Stage Updated", "success", `Order ${id} moved to ${nextStage}.`)
-    }
-  }
 
 function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{ id: string; code?: string; name?: string }>): string {
   if (!warehousesList || warehousesList.length === 0) return "WH1"
@@ -287,9 +244,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
   // State for Editing Sales Order
   const [editingOrderItems, setEditingOrderItems] = useState<SalesOrderItem[]>([])
+  const [editingCustPhone, setEditingCustPhone] = useState("")
 
-  const handleOpenEditModal = (so: SalesOrder) => {
+  const handleOpenEditModal = async (so: SalesOrder) => {
     setEditingOrder(so)
+    setEditingCustPhone(so.customerPhone || "")
+    setCustomerSearchInput(so.customer)
     setEditingOrderItems(so.items.length > 0 ? [...so.items] : [
       {
         productId: products[0]?.id || "PRD-001",
@@ -300,10 +260,21 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         total: (products[0]?.valuationRate || 150) * 10,
       }
     ])
+
+    // Load existing attached docs for editing
+    const existingDocs = await fetchShipmentDocs(so.id, "sales_order")
+    const tradeDoc = existingDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+    const adviceDoc = existingDocs.find((d) => d.document_type === "Payment Advice")
+
+    setStagedTradePaperName(tradeDoc ? tradeDoc.file_name : "")
+    setStagedTradePaperUrl(tradeDoc ? tradeDoc.file_url : "")
+    setStagedPaymentAdviceName(adviceDoc ? adviceDoc.file_name : "")
+    setStagedPaymentAdviceUrl(adviceDoc ? adviceDoc.file_url : "")
+
     setIsEditOrderOpen(true)
   }
 
-  const handleSaveEditOrder = (e: React.FormEvent) => {
+  const handleSaveEditOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingOrder) return
 
@@ -316,23 +287,92 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     const totalAmt = sanitizedItems.reduce((sum, i) => sum + i.total, 0)
     const updatedSo: SalesOrder = {
       ...editingOrder,
+      customerPhone: editingCustPhone.trim(),
       items: sanitizedItems,
       amount: totalAmt,
     }
 
     erp.updateSalesOrder(updatedSo)
+
+    // Save/Upload staged files
+    if (stagedTradePaperUrl && stagedTradePaperName) {
+      try {
+        await uploadShipmentDoc({
+          record_id: editingOrder.id,
+          record_type: "sales_order",
+          document_type: "Trade License",
+          file_name: stagedTradePaperName,
+          file_size: 102400,
+          file_url: stagedTradePaperUrl,
+          uploaded_at: new Date().toISOString(),
+          uploaded_by: "Sales Officer",
+        })
+      } catch (err) {
+        console.error("Failed uploading Trade License:", err)
+      }
+    }
+
+    if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
+      try {
+        await uploadShipmentDoc({
+          record_id: editingOrder.id,
+          record_type: "sales_order",
+          document_type: "Payment Advice",
+          file_name: stagedPaymentAdviceName,
+          file_size: 102400,
+          file_url: stagedPaymentAdviceUrl,
+          uploaded_at: new Date().toISOString(),
+          uploaded_by: "Sales Officer",
+        })
+      } catch (err) {
+        console.error("Failed uploading Payment Advice:", err)
+      }
+    }
+
+    // Refresh attachments map for order
+    const updatedDocs = await fetchShipmentDocs(editingOrder.id, "sales_order")
+    setSoAttachmentsMap((prev) => ({ ...prev, [editingOrder.id]: updatedDocs }))
+
     setIsEditOrderOpen(false)
     setEditingOrder(null)
     showToast("Sales Order Updated", "success", `Sales Order contract ${updatedSo.id} updated successfully.`)
   }
 
   // Handle Create Sales Order
-  const handleCreateOrder = (e: React.FormEvent) => {
+  const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
-    const selectedCust = customers.find((c) => c.id === newCustomerId)
-    if (!selectedCust || !newWarehouse) {
-      showToast("Validation Error", "warning", "Please select a customer and warehouse.")
+    let finalCustName = customerSearchInput.trim()
+    if (!finalCustName && newCustomerId) {
+      const found = customers.find((c) => c.id === newCustomerId)
+      if (found) finalCustName = found.name
+    }
+
+    if (!custPhone.trim()) {
+      showToast("Validation Error", "warning", "Customer phone number is required.")
       return
+    }
+
+    let selectedCust = customers.find(
+      (c) => c.id === newCustomerId || (c.name && c.name.toLowerCase() === finalCustName.toLowerCase())
+    )
+
+    if (!selectedCust) {
+      const generatedCustId = `CUST-${Date.now().toString().slice(-4)}`
+      selectedCust = {
+        id: generatedCustId,
+        name: finalCustName,
+        country: "Ethiopia",
+        category: "Commercial Union",
+        phone: custPhone.trim(),
+        email: custEmail,
+        address: custAddress,
+        tradePaperFileName: stagedTradePaperName,
+        tradePaperUrl: stagedTradePaperUrl,
+        status: "Active",
+      }
+      if (saveCustomerToRegistry) {
+        erp.addCustomer(selectedCust)
+      }
     }
 
     const rawItems = orderItems.length > 0 ? orderItems : [
@@ -353,15 +393,18 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     })
 
     const totalAmt = finalItems.reduce((sum, item) => sum + item.total, 0)
-    const wh = warehouses.find((w) => w.code === newWarehouse || w.id === newWarehouse)
+    const targetWh = newWarehouse || (warehouses[0]?.code || "WH1")
+    const wh = warehouses.find((w) => w.code === targetWh || w.id === targetWh)
+    const soId = `SO-${Date.now().toString().slice(-4)}`
 
     const newSo: SalesOrder = {
-      id: `SO-${Date.now().toString().slice(-4)}`,
+      id: soId,
       customer: selectedCust.name,
       customerId: selectedCust.id,
+      customerPhone: custPhone.trim(),
       customerGroup: selectedCust.category,
-      warehouse: newWarehouse,
-      warehouseName: wh ? `${wh.code} - ${wh.name}` : newWarehouse,
+      warehouse: targetWh,
+      warehouseName: wh ? `${wh.code} - ${wh.name}` : targetWh,
       date: new Date().toISOString().split("T")[0],
       amount: totalAmt,
       currency: "ETB",
@@ -381,9 +424,54 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }
 
     erp.addSalesOrder(newSo)
+
+    // Upload staged attachments
+    if (stagedTradePaperUrl && stagedTradePaperName) {
+      try {
+        await uploadShipmentDoc({
+          record_id: soId,
+          record_type: "sales_order",
+          document_type: "Trade License",
+          file_name: stagedTradePaperName,
+          file_size: 102400,
+          file_url: stagedTradePaperUrl,
+          uploaded_at: new Date().toISOString(),
+          uploaded_by: "Sales Officer",
+        })
+      } catch (err) {
+        console.error("Failed uploading Trade License:", err)
+      }
+    }
+
+    if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
+      try {
+        await uploadShipmentDoc({
+          record_id: soId,
+          record_type: "sales_order",
+          document_type: "Payment Advice",
+          file_name: stagedPaymentAdviceName,
+          file_size: 102400,
+          file_url: stagedPaymentAdviceUrl,
+          uploaded_at: new Date().toISOString(),
+          uploaded_by: "Sales Officer",
+        })
+      } catch (err) {
+        console.error("Failed uploading Payment Advice:", err)
+      }
+    }
+
+    const docs = await fetchShipmentDocs(soId, "sales_order")
+    setSoAttachmentsMap((prev) => ({ ...prev, [soId]: docs }))
+
     showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
     setIsNewOrderOpen(false)
     setNewDesc("")
+    setCustomerSearchInput("")
+    setNewCustomerId("")
+    setStagedTradePaperName("")
+    setStagedTradePaperUrl("")
+    setStagedPaymentAdviceName("")
+    setStagedPaymentAdviceUrl("")
   }
 
   // Handle Create Quotation
@@ -435,60 +523,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setQuoteDesc("")
   }
 
-  // Confirm Fulfillment & Create Delivery Note
-  const handleConfirmFulfillment = () => {
-    if (!selectedOrder) return
-
-    const docs = soAttachmentsMap[selectedOrder.id] || []
-    const evaluation = evaluateShipmentDocs({
-      record: selectedOrder,
-      items: selectedOrder.items || [],
-      attachments: docs,
-      rules: shipmentDocRules,
-      appliesTo: "sales_order",
-    })
-
-    if (!evaluation.isComplete) {
-      const missingList = evaluation.missing.map((m) => m.document_type).join(", ")
-      showToast(
-        "Shipping Clearance Blocked",
-        "warning",
-        `Stock dispatch is blocked because mandatory shipping documents are missing: ${missingList}. Attach these files in the Shipping Docs tab to proceed.`
-      )
-      return
-    }
-
-    const itemsToFulfill = selectedOrder.items.map((i) => ({
-      productId: i.productId,
-      qty: i.qty,
-    }))
-
-    if (itemsToFulfill.length === 0) {
-      showToast("Dispatch Error", "warning", "Please specify at least 1 item quantity to dispatch.")
-      return
-    }
-
-    const res = erp.createDeliveryNoteForSalesOrder(
-      selectedOrder.id,
-      itemsToFulfill,
-      driverName,
-      vehicleReg
-    )
-
-    if (res.success && res.deliveryNote) {
-      showToast(
-        "Stock Dispatched & COGS Posted",
-        "success",
-        `Delivery Note ${res.deliveryNote.id} submitted! Inventory stock updated & GL COGS voucher ${res.deliveryNote.journalEntryId || ""} posted to Finance.`
-      )
-      setIsFulfillModalOpen(false)
-      const updated = erp.getSalesOrderById(selectedOrder.id)
-      if (updated) setSelectedOrder(updated)
-    } else {
-      showToast("Fulfillment Failed", "warning", res.error || "Could not complete stock dispatch.")
-    }
-  }
-
   // Confirm Sales Invoice Creation
   const handleConfirmInvoice = () => {
     if (!selectedOrder) return
@@ -530,558 +564,124 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         </div>
 
         {/* SALES ORDERS REGISTER */}
-        <GlassCard className="flex flex-col overflow-hidden p-0">
-            <div className="px-6 pt-6">
-              <FinanceTableToolbar
-                title="Sales Orders Register"
-                subtitle={`Total: ${soTable.sorted().length} sales contracts`}
-                searchValue={soSearch}
-                onSearchChange={setSoSearch}
-                searchPlaceholder="Search order ID, client..."
-                filters={[
-                  {
-                    value: soStageFilter,
-                    onChange: setSoStageFilter,
-                    ariaLabel: "Filter by Stage",
-                    options: [
-                      { value: "ALL", label: "All Stages" },
-                      { value: "Quote", label: "Stage: Quote" },
-                      { value: "Confirmed", label: "Stage: Confirmed" },
-                      { value: "Picking", label: "Stage: Picking" },
-                      { value: "Shipped", label: "Stage: Shipped" },
-                    ],
-                  },
-                  {
-                    value: soWhFilter,
-                    onChange: setSoWhFilter,
-                    ariaLabel: "Filter by Warehouse",
-                    options: [{ value: "ALL", label: "All Warehouses" }, ...warehouseOptions],
-                  },
-                ]}
-                actions={[
-                  {
-                    label: "New Order",
-                    onClick: handleOpenNewOrderModal,
-                    icon: <Plus className="size-4" />,
-                    variant: "primary",
-                  },
-                ]}
-              >
-                <div className="flex items-center gap-1 bg-black/[0.03] p-1 rounded-xl text-xs font-bold text-gray-700 h-[38px]">
-                  <button
-                    onClick={() => setViewMode("table")}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all ${
-                      viewMode === "table" ? "bg-white text-black shadow-sm font-black" : "hover:text-black text-gray-500"
-                    }`}
-                    title="Table View"
-                  >
-                    <TableIcon className="size-3.5" /> Table
-                  </button>
-                  <button
-                    onClick={() => setViewMode("kanban")}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all ${
-                      viewMode === "kanban" ? "bg-white text-black shadow-sm font-black" : "hover:text-black text-gray-500"
-                    }`}
-                    title="Board View"
-                  >
-                    <LayoutGrid className="size-3.5" /> Board
-                  </button>
+        <DataTable
+          title="Sales Orders Register"
+          subtitle={`Total: ${filteredOrders.length} sales contracts`}
+          columns={salesOrderColumns}
+          data={filteredOrders}
+          isLoading={isLoading}
+          searchQuery={soSearch}
+          onSearchChange={setSoSearch}
+          searchPlaceholder="Search order ID, client..."
+          filters={[
+            {
+              value: soWhFilter,
+              onChange: setSoWhFilter,
+              ariaLabel: "Filter by Warehouse",
+              options: [{ value: "ALL", label: "All Warehouses" }, ...warehouseOptions],
+            },
+          ]}
+          actions={[
+            {
+              label: "New Order",
+              onClick: handleOpenNewOrderModal,
+              icon: <Plus className="size-4" />,
+              variant: "primary",
+            },
+          ]}
+          defaultWidths={{
+            id: 120,
+            customer: 260,
+            warehouse: 140,
+            docsStatus: 220,
+            amount: 160,
+            _actions: 120,
+          }}
+          keyExtractor={(so) => so.id}
+          renderRow={(so, colWidths) => (
+            <>
+              <td style={{ width: `${colWidths.id}px` }} className="py-4 px-6 overflow-hidden">
+                <div className="flex flex-col">
+                  <span className="font-black text-zinc-950 text-xs tracking-tight leading-tight mb-0.5 truncate font-mono">
+                    {so.id}
+                  </span>
+                  <span className="font-mono text-[10px] text-zinc-400 font-bold uppercase">
+                    {so.date}
+                  </span>
                 </div>
-              </FinanceTableToolbar>
-            </div>
+              </td>
 
-            {viewMode === "kanban" ? (
-              <div className="p-6 pt-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {stages.map((stageName, colIdx) => {
-                    const cards = filteredOrders.filter((so) => so.stage === stageName)
+              <td style={{ width: `${colWidths.customer}px` }} className="py-4 px-4 overflow-hidden">
+                <div className="flex flex-col">
+                  <span className="font-black text-zinc-950 text-xs tracking-tight leading-tight mb-0.5 truncate">
+                    {so.customer}
+                  </span>
+                  <span className="text-[10px] text-zinc-500 font-bold tracking-tight truncate">
+                    {so.customerPhone ? `📞 ${so.customerPhone} • ` : ""}{so.customerGroup || "Client"}
+                  </span>
+                </div>
+              </td>
+
+              <td style={{ width: `${colWidths.warehouse}px` }} className="py-4 px-4 overflow-hidden">
+                <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-tight bg-zinc-100 border border-zinc-200/50 px-2 py-0.5 rounded-full inline-block truncate max-w-full">
+                  {so.warehouse}
+                </span>
+              </td>
+
+              <td style={{ width: `${colWidths.docsStatus}px` }} className="py-4 px-4 overflow-hidden">
+                {(() => {
+                  const docs = soAttachmentsMap[so.id] || []
+                  const hasTrade = docs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                  const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
+                  if (hasTrade && hasAdvice) {
                     return (
-                      <motion.div
-                        key={stageName}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: colIdx * 0.08, duration: 0.35 }}
-                      >
-                        <div className="flex items-center justify-between mb-3 px-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-black text-xs uppercase tracking-widest text-zinc-900">{stageName}</h3>
-                            <span className="inline-flex items-center justify-center size-5 rounded-full bg-zinc-950 text-white text-[10px] font-bold">
-                              {cards.length}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-3 min-h-[520px] p-2 bg-zinc-100/40 rounded-2xl border border-zinc-200/60">
-                          {cards.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-12 text-center text-zinc-400 text-xs font-semibold">
-                              No orders in {stageName}
-                            </div>
-                          ) : (
-                            cards.map((card, cardIdx) => {
-                              const creditInfo = erp.getCustomerCreditUsage(card.customerId)
-                              return (
-                                <motion.div
-                                  key={card.id}
-                                  initial={{ opacity: 0, scale: 0.95 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  transition={{ delay: 0.05 + colIdx * 0.05 + cardIdx * 0.03 }}
-                                  whileHover={{ y: -2 }}
-                                >
-                                  <GlassCard className={`p-4 cursor-pointer hover:shadow-lg transition-all ${card.urgent ? "border-l-4 border-l-red-600" : ""}`}>
-                                    <div onClick={() => setSelectedOrder(card)}>
-                                      <div className="flex items-start justify-between mb-2">
-                                        <div>
-                                          <span className="text-[10px] font-mono font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md">
-                                            {card.id}
-                                          </span>
-                                          <span className="ml-2 text-[9px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-md">
-                                            {card.warehouse}
-                                          </span>
-                                        </div>
-                                        <span className="text-xs font-black text-zinc-950 font-mono">
-                                          ETB {card.amount.toLocaleString()}
-                                        </span>
-                                      </div>
-
-                                      <p className="font-extrabold text-xs text-zinc-900 mb-1 flex items-center gap-1.5">
-                                        <Building2 className="size-3.5 text-zinc-500 shrink-0" />
-                                        {card.customer}
-                                      </p>
-
-                                      <p className="text-[11px] font-medium text-zinc-600 leading-relaxed mb-3 line-clamp-2">
-                                        {card.desc}
-                                      </p>
-
-                                      <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${card.deliveryStatus === "Fully Delivered" ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"}`}>
-                                          <Truck className="size-2.5 inline mr-1" />
-                                          {card.deliveryStatus || "Not Delivered"}
-                                        </span>
-                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${card.billingStatus === "Fully Billed" ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-zinc-50 text-zinc-700 border-zinc-200"}`}>
-                                          <FileText className="size-2.5 inline mr-1" />
-                                          {card.billingStatus || "Not Billed"}
-                                        </span>
-                                        {creditInfo.isOverLimit && (
-                                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
-                                            <ShieldAlert className="size-2.5 inline mr-1" /> Credit Warning
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center justify-between pt-2 border-t border-zinc-100 text-[10px] font-semibold text-zinc-500">
-                                      <button 
-                                        onClick={() => setSelectedOrder(card)}
-                                        className="flex items-center gap-1 text-zinc-700 hover:text-black font-bold"
-                                      >
-                                        <Eye className="size-3" /> Inspect Order
-                                      </button>
-
-                                      {stageName !== "Shipped" && (
-                                        <button 
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleAdvanceStage(card.id, card.stage)
-                                          }}
-                                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-[10px] transition-all"
-                                        >
-                                          Advance <ArrowRight className="size-3" />
-                                        </button>
-                                      )}
-                                      {stageName === "Shipped" && (
-                                        <span className="flex items-center gap-1 text-green-700 font-bold">
-                                          <CheckCircle2 className="size-3" /> Shipped
-                                        </span>
-                                      )}
-                                    </div>
-                                  </GlassCard>
-                                </motion.div>
-                              )
-                            })
-                          )}
-                        </div>
-                      </motion.div>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        <CheckCircle2 className="size-3 text-emerald-600" /> Docs Complete
+                      </span>
                     )
-                  })}
+                  }
+                  if (!hasTrade && !hasAdvice) {
+                    return (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                        <AlertTriangle className="size-3 text-amber-600" /> Trade & Advice Missing
+                      </span>
+                    )
+                  }
+                  if (!hasAdvice) {
+                    return (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                        <AlertTriangle className="size-3 text-amber-600" /> Advice Missing
+                      </span>
+                    )
+                  }
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                      <AlertTriangle className="size-3 text-amber-600" /> Trade License Missing
+                    </span>
+                  )
+                })()}
+              </td>
+
+              <td style={{ width: `${colWidths.amount}px` }} className="py-4 px-4 text-right font-mono text-xs overflow-hidden">
+                <div className="font-black text-zinc-950">ETB {so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</div>
+                <div className="mt-0.5 text-[9px] font-bold uppercase text-zinc-400">{so.items?.length || 0} items</div>
+              </td>
+
+              <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
+                <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <button 
+                    onClick={() => handleOpenEditModal(so)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs"
+                    title="Edit Sales Order"
+                  >
+                    <Pencil className="size-3 text-zinc-700" /> Edit
+                  </button>
                 </div>
-              </div>
-            ) : (
-              /* Resizable & Sortable Table View for Sales Orders (Stock Registry Design) */
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse table-fixed">
-                  <thead>
-                    <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
-                      {salesOrderColumns.map((col) => (
-                        <ResizableTh
-                          key={col.key}
-                          col={col}
-                          width={soTable.colWidths[col.key] || 120}
-                          sortKey={soTable.sortKey}
-                          sortDir={soTable.sortDir}
-                          openMenuCol={soTable.openMenuCol}
-                          onResizeStart={soTable.handleResizeStart}
-                          onToggleMenu={soTable.toggleMenu}
-                          onSortAsc={soTable.setSortAsc}
-                          onSortDesc={soTable.setSortDesc}
-                          onClearSort={soTable.clearSort}
-                        />
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-150/40">
-                    {isLoading ? (
-                      <SalesOrdersTableSkeletonRows />
-                    ) : soTable.sorted().length === 0 ? (
-                      <tr>
-                        <td colSpan={salesOrderColumns.length} className="text-center py-16 text-zinc-400 text-xs font-medium">
-                          No sales orders match your active search filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      soTable.sorted().map((so) => (
-                        <motion.tr 
-                          key={so.id}
-                          onClick={() => setSelectedOrder(so)}
-                          className="hover:bg-white/45 cursor-pointer transition-colors"
-                          whileHover={{ scale: 1.001 }}
-                        >
-                          <td style={{ width: `${soTable.colWidths.id}px` }} className="py-4 px-6 overflow-hidden">
-                            <div className="flex flex-col">
-                              <span className="font-black text-zinc-950 text-xs tracking-tight leading-tight mb-0.5 truncate font-mono">
-                                {so.id}
-                              </span>
-                              <span className="font-mono text-[10px] text-zinc-400 font-bold uppercase">
-                                {so.date}
-                              </span>
-                            </div>
-                          </td>
-
-                          <td style={{ width: `${soTable.colWidths.customer}px` }} className="py-4 px-4 overflow-hidden">
-                            <div className="flex flex-col">
-                              <span className="font-black text-zinc-950 text-xs tracking-tight leading-tight mb-0.5 truncate">
-                                {so.customer}
-                              </span>
-                              <span className="text-[10px] text-zinc-400 font-bold uppercase truncate">
-                                {so.customerGroup}
-                              </span>
-                            </div>
-                          </td>
-
-                          <td style={{ width: `${soTable.colWidths.warehouse}px` }} className="py-4 px-4 overflow-hidden">
-                            <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-tight bg-zinc-100 border border-zinc-200/50 px-2 py-0.5 rounded-full inline-block truncate max-w-full">
-                              {so.warehouse}
-                            </span>
-                          </td>
-
-                          <td style={{ width: `${soTable.colWidths.stage}px` }} className="py-4 px-4 overflow-hidden">
-                            <span className="text-xs font-black text-zinc-900">
-                              {so.stage}
-                            </span>
-                          </td>
-
-                          <td style={{ width: `${soTable.colWidths.deliveryStatus}px` }} className="py-4 px-4 overflow-hidden">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${so.deliveryStatus === "Fully Delivered" ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"}`}>
-                              <Truck className="size-2.5 inline mr-1" />
-                              {so.deliveryStatus || "Not Delivered"}
-                            </span>
-                          </td>
-
-                          <td style={{ width: `${soTable.colWidths.billingStatus}px` }} className="py-4 px-4 overflow-hidden">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${so.billingStatus === "Fully Billed" ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-zinc-100 text-zinc-700 border-zinc-200"}`}>
-                              <FileText className="size-2.5 inline mr-1" />
-                              {so.billingStatus || "Not Billed"}
-                            </span>
-                          </td>
-
-                          <td style={{ width: `${soTable.colWidths.amount}px` }} className="py-4 px-4 text-right font-mono text-xs overflow-hidden">
-                            <div className="font-black text-zinc-950">ETB {so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</div>
-                            <div className="mt-0.5 text-[9px] font-bold uppercase text-zinc-400">{so.items?.length || 0} items</div>
-                          </td>
-
-                          <td style={{ width: `${soTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
-                            <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                              <button 
-                                onClick={() => handleOpenEditModal(so)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs"
-                                title="Edit Sales Order"
-                              >
-                                <Pencil className="size-3 text-zinc-700" /> Edit
-                              </button>
-                              <button 
-                                onClick={() => setSelectedOrder(so)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] transition-all shadow-xs active:scale-95"
-                              >
-                                <Eye className="size-3.5" /> {so.deliveryStatus === "Fully Delivered" ? "Inspect Order" : "Inspect & Fulfill"}
-                              </button>
-                            </div>
-                          </td>
-                        </motion.tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </GlassCard>
+              </td>
+            </>
+          )}
+        />
       </motion.div>
-
-      {/* SALES ORDER INSPECTION / FULFILLMENT SLIDE-OVER DRAWER */}
-      <AnimatePresence>
-        {selectedOrder && (
-          <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="bg-white w-full max-w-xl h-full shadow-2xl border-l border-zinc-200 flex flex-col justify-between overflow-y-auto p-6"
-            >
-              <div>
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-zinc-200 pb-4 mb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-black text-sm text-zinc-900 bg-zinc-100 px-2.5 py-0.5 rounded-md">
-                        {selectedOrder.id}
-                      </span>
-                      <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full">
-                        {selectedOrder.stage}
-                      </span>
-                    </div>
-                    <h2 className="text-lg font-black text-zinc-950 mt-1">{selectedOrder.customer}</h2>
-                  </div>
-                  <button 
-                    onClick={() => setSelectedOrder(null)}
-                    className="p-2 rounded-full hover:bg-zinc-100 text-zinc-500"
-                  >
-                    <X className="size-5" />
-                  </button>
-                </div>
-
-
-
-                {/* Tab Selector: Order Lines vs Shipping Docs */}
-                <div className="flex items-center gap-2 mb-4 border-b border-zinc-200 pb-3">
-                  <button
-                    onClick={() => setSoInspectorTab("Order Lines")}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                      soInspectorTab === "Order Lines"
-                        ? "bg-zinc-950 text-white shadow-sm"
-                        : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                    }`}
-                  >
-                    <Box className="w-3.5 h-3.5" /> Order Lines ({selectedOrder.items.length})
-                  </button>
-                  <button
-                    onClick={() => setSoInspectorTab("Shipping Docs")}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                      soInspectorTab === "Shipping Docs"
-                        ? "bg-zinc-950 text-white shadow-sm"
-                        : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                    }`}
-                  >
-                    <FileCheck className="w-3.5 h-3.5" /> Shipping Docs Checklist
-                    {(() => {
-                      const docs = soAttachmentsMap[selectedOrder.id] || []
-                      const evalRes = evaluateShipmentDocs({
-                        record: selectedOrder,
-                        items: selectedOrder.items || [],
-                        attachments: docs,
-                        rules: shipmentDocRules,
-                        appliesTo: "sales_order",
-                      })
-                      return (
-                        <span
-                          className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
-                            evalRes.isComplete ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                          }`}
-                        >
-                          {evalRes.isComplete ? "Complete" : `${evalRes.missingCount} Missing`}
-                        </span>
-                      )
-                    })()}
-                  </button>
-                </div>
-
-                {soInspectorTab === "Shipping Docs" ? (
-                  <div className="mb-6">
-                    <ShipmentDocChecklist
-                      recordId={selectedOrder.id}
-                      recordType="sales_order"
-                      evaluation={evaluateShipmentDocs({
-                        record: selectedOrder,
-                        items: selectedOrder.items || [],
-                        attachments: soAttachmentsMap[selectedOrder.id] || [],
-                        rules: shipmentDocRules,
-                        appliesTo: "sales_order",
-                      })}
-                      attachments={soAttachmentsMap[selectedOrder.id] || []}
-                      onAttachmentsChange={(updated) => {
-                        setSoAttachmentsMap((prev) => ({ ...prev, [selectedOrder.id]: updated }))
-                      }}
-                      readOnly={true}
-                    />
-                  </div>
-                ) : (
-                  /* Line Items Table */
-                  <div className="mb-6">
-                    <h3 className="text-xs font-black uppercase text-zinc-900 mb-2 flex items-center gap-1.5">
-                      <Box className="size-3.5 text-zinc-500" /> Contract Line Items & Warehouse Stock
-                    </h3>
-                    <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
-                      <table className="w-full text-left">
-                        <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
-                          <tr>
-                            <th className="px-3 py-2">Product Item</th>
-                            <th className="px-3 py-2 text-center">Ordered</th>
-                            <th className="px-3 py-2 text-right">Unit Price</th>
-                            <th className="px-3 py-2 text-right">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100 font-medium">
-                          {selectedOrder.items.map((item, idx) => {
-                            const p = products.find(prod => prod.id === item.productId)
-                            return (
-                              <tr key={idx}>
-                                <td className="px-3 py-2.5">
-                                  <div className="font-bold text-zinc-900">{item.name}</div>
-                                  <div className="text-[10px] text-zinc-500 font-mono">
-                                    Warehouse Stock: <span className="font-bold text-zinc-700">{p ? p.quantity : "N/A"} {item.unit}</span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2.5 text-center font-bold">{item.qty} {item.unit}</td>
-                                <td className="px-3 py-2.5 text-right font-mono">ETB {item.unitPrice.toLocaleString()}</td>
-                                <td className="px-3 py-2.5 text-right font-mono font-bold text-zinc-900">
-                                  ETB {item.total.toLocaleString()}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Linked Documents Status */}
-                <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-3 mb-6">
-                  <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wide">Fulfillment & Financial Integration</h4>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-zinc-500 block text-[10px] font-bold uppercase">Delivery Status</span>
-                      <span className="font-extrabold text-zinc-900">{selectedOrder.deliveryStatus || "Not Delivered"}</span>
-                      {selectedOrder.deliveryNoteIds && selectedOrder.deliveryNoteIds.length > 0 && (
-                        <div className="text-[10px] font-mono text-emerald-800 font-bold mt-0.5">
-                          Notes: {selectedOrder.deliveryNoteIds.join(", ")}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 block text-[10px] font-bold uppercase">Billing Status</span>
-                      <span className="font-extrabold text-zinc-900">{selectedOrder.billingStatus || "Not Billed"}</span>
-                      {selectedOrder.invoiceIds && selectedOrder.invoiceIds.length > 0 && (
-                        <div className="text-[10px] font-mono text-blue-800 font-bold mt-0.5">
-                          Invoices: {selectedOrder.invoiceIds.join(", ")}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Action Triggers */}
-              <div className="pt-4 border-t border-zinc-200 flex flex-col gap-2">
-                {selectedOrder.deliveryStatus !== "Fully Delivered" ? (
-                  <button 
-                    onClick={() => navigate(`/sales/sales-issued?soId=${selectedOrder.id}`)}
-                    className="w-full py-2.5 bg-emerald-700 text-white font-bold text-xs rounded-xl hover:bg-emerald-800 shadow-md flex items-center justify-center gap-2"
-                  >
-                    <Truck className="size-4" /> Go to Sales Issued to Issue Stock
-                  </button>
-                ) : (
-                  <div className="w-full py-2.5 bg-emerald-50 text-emerald-900 border border-emerald-200/80 font-bold text-xs rounded-xl flex items-center justify-center gap-2">
-                    <CheckCircle2 className="size-4 text-emerald-600" /> Stock Issued & Dispatched
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: DISPATCH & FULFILLMENT (CREATE DELIVERY NOTE) */}
-      <AnimatePresence>
-        {isFulfillModalOpen && selectedOrder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200"
-            >
-              <h2 className="text-xl font-black text-zinc-950 mb-1">Dispatch Stock</h2>
-              <p className="text-xs font-semibold text-zinc-500 mb-4">
-                Fulfilling items will automatically decrement inventory levels at warehouse <span className="font-bold text-zinc-800">{selectedOrder.warehouse}</span> and update store records.
-              </p>
-
-              <div className="space-y-4 mb-6">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Logistics Driver Name</label>
-                    <input 
-                      type="text" 
-                      value={driverName}
-                      onChange={(e) => setDriverName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Vehicle Registration</label>
-                    <input 
-                      type="text" 
-                      value={vehicleReg}
-                      onChange={(e) => setVehicleReg(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-2">Quantities to Dispatch (Contract Fixed)</label>
-                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                    {selectedOrder.items.map((item) => (
-                      <div key={item.productId} className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl text-xs font-semibold">
-                        <div>
-                          <div className="font-bold text-zinc-900">{item.name}</div>
-                          <div className="text-[10px] text-zinc-500 font-medium">Contract Item</div>
-                        </div>
-                        <div className="font-mono font-black text-xs text-zinc-900 bg-white px-3 py-1.5 rounded-lg border border-zinc-200 shadow-sm">
-                          {item.qty} {item.unit}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3">
-                <button 
-                  onClick={() => setIsFulfillModalOpen(false)}
-                  className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleConfirmFulfillment}
-                  className="px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md"
-                >
-                  Confirm Dispatch
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* MODAL: GENERATE SALES INVOICE */}
       <AnimatePresence>
@@ -1162,32 +762,161 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       {/* MODAL: NEW SALES ORDER */}
       <AnimatePresence>
         {isNewOrderOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop: Click outside to close */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsNewOrderOpen(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+            />
+
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
             >
-              <h2 className="text-xl font-black text-zinc-950 mb-1">Create HKC Sales Contract</h2>
-              <p className="text-xs font-semibold text-zinc-500 mb-5">Draft a new sales contract with item quantities, packaging units, and prices.</p>
+              {/* Header with Close X Button */}
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950 mb-0.5">Create HKC Sales Contract</h2>
+                  <p className="text-xs font-semibold text-zinc-500">Draft a new sales contract with item quantities, packaging units, and prices.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsNewOrderOpen(false)}
+                  className="rounded-xl border border-zinc-200 p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
+                  title="Close modal"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
 
               <form onSubmit={handleCreateOrder} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Select Customer</label>
-                    <select 
-                      value={newCustomerId}
-                      onChange={(e) => setNewCustomerId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    >
-                      <option value="">Select customer</option>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.country})</option>
-                      ))}
-                    </select>
+                {/* ROW 1: Customer Name (Lengthy), Phone Number, Warehouse */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                  {/* Customer Combobox - Lengthy (col-span-5) */}
+                  <div className="md:col-span-5 relative" ref={customerComboboxRef}>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Type to search or enter customer name..."
+                        value={customerSearchInput}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setCustomerSearchInput(val)
+                          setShowCustomerDropdown(true)
+                          const matched = customers.find((c) => c.name.toLowerCase() === val.trim().toLowerCase())
+                          if (matched) {
+                            setNewCustomerId(matched.id)
+                            setCustPhone(matched.phone || "")
+                            setCustEmail(matched.email || "")
+                            setCustAddress(matched.address || "")
+                            if (matched.tradePaperFileName && matched.tradePaperUrl) {
+                              setStagedTradePaperName(matched.tradePaperFileName)
+                              setStagedTradePaperUrl(matched.tradePaperUrl)
+                            }
+                          } else {
+                            setNewCustomerId("")
+                          }
+                        }}
+                        onFocus={() => setShowCustomerDropdown(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape" || e.key === "Enter") {
+                            setShowCustomerDropdown(false)
+                          }
+                        }}
+                        className="w-full pl-3 pr-12 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                      />
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        {customerSearchInput && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomerSearchInput("")
+                              setNewCustomerId("")
+                              setCustPhone("")
+                              setShowCustomerDropdown(false)
+                            }}
+                            className="text-zinc-400 hover:text-zinc-700 p-0.5"
+                            title="Clear input"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowCustomerDropdown(!showCustomerDropdown)}
+                          className="text-zinc-400 hover:text-zinc-700 p-0.5 rounded hover:bg-zinc-200/60"
+                          title="Toggle customer list"
+                        >
+                          {showCustomerDropdown ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Combobox Dropdown */}
+                    {showCustomerDropdown && customers.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white rounded-2xl border border-zinc-200 shadow-xl max-h-48 overflow-y-auto divide-y divide-zinc-100">
+                        {customers
+                          .filter((c) => (c.name || "").toLowerCase().includes(customerSearchInput.toLowerCase()))
+                          .map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setNewCustomerId(c.id)
+                                setCustomerSearchInput(c.name)
+                                setCustPhone(c.phone || "")
+                                setCustEmail(c.email || "")
+                                setCustAddress(c.address || "")
+                                if (c.tradePaperFileName && c.tradePaperUrl) {
+                                  setStagedTradePaperName(c.tradePaperFileName)
+                                  setStagedTradePaperUrl(c.tradePaperUrl)
+                                }
+                                setShowCustomerDropdown(false)
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-emerald-50 transition-colors flex items-center justify-between text-xs"
+                            >
+                              <div>
+                                <span className="font-bold text-zinc-900 block">{c.name}</span>
+                                <span className="text-[10px] text-zinc-500 font-medium">
+                                  {c.phone ? `📞 ${c.phone} • ` : ""}{c.category || "General Client"}
+                                </span>
+                              </div>
+                              {c.tradePaperFileName && (
+                                <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                                  Trade License Saved
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                      </div>
+                    )}
                   </div>
-                  <div>
+
+                  {/* Customer Phone Number (col-span-3) */}
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone Number *</label>
+                    <div className="relative flex items-center">
+                      <Phone className="size-3.5 text-zinc-400 absolute left-3" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="+251 91 123 4567"
+                        value={custPhone}
+                        onChange={(e) => setCustPhone(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Warehouse (col-span-4) */}
+                  <div className="md:col-span-4">
                     <label className="block text-xs font-bold text-zinc-700 mb-1">
                       Fulfillment Warehouse <span className="text-[10px] font-normal text-zinc-400 font-mono">(Auto-locked)</span>
                     </label>
@@ -1207,7 +936,24 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   </div>
                 </div>
 
-                <div>
+                {/* Save New Customer Checkbox */}
+                {!customers.some((c) => c.id === newCustomerId) && customerSearchInput.trim() !== "" && (
+                  <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="saveCustomerCheck"
+                      checked={saveCustomerToRegistry}
+                      onChange={(e) => setSaveCustomerToRegistry(e.target.checked)}
+                      className="size-4 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                    />
+                    <label htmlFor="saveCustomerCheck" className="text-xs font-bold text-emerald-950 cursor-pointer">
+                      Save new customer details & Trade License to registry for future orders
+                    </label>
+                  </div>
+                )}
+
+                {/* ROW 2: Contract Description (Full Width) */}
+                <div className="w-full">
                   <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
                   <textarea 
                     value={newDesc}
@@ -1216,6 +962,92 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     placeholder="Enter sales contract terms or description..."
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
                   />
+                </div>
+
+                {/* Minimalistic Required Document Attachments Section */}
+                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">Required Order Documentation</span>
+                      <span className="text-[11px] text-zinc-500 font-medium block">Attach mandatory Trade License and Payment Advice receipt for this sales contract</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Trade License Dropzone */}
+                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                          <FileText className="size-3.5 text-emerald-600" /> Trade License / Business Permit
+                        </span>
+                        {stagedTradePaperName ? (
+                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Pre-attached</span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Required</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                          <FileCheck className="size-3" /> Select File
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              if (f) {
+                                const reader = new FileReader()
+                                reader.onload = () => {
+                                  setStagedTradePaperName(f.name)
+                                  setStagedTradePaperUrl(reader.result as string)
+                                }
+                                reader.readAsDataURL(f)
+                              }
+                            }}
+                          />
+                        </label>
+                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                          {stagedTradePaperName || "No file selected"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Payment Advice Dropzone */}
+                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                          <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice / Receipt
+                        </span>
+                        {stagedPaymentAdviceName ? (
+                          <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Required</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                          <FileCheck className="size-3" /> Select Advice File
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              if (f) {
+                                const reader = new FileReader()
+                                reader.onload = () => {
+                                  setStagedPaymentAdviceName(f.name)
+                                  setStagedPaymentAdviceUrl(reader.result as string)
+                                }
+                                reader.readAsDataURL(f)
+                              }
+                            }}
+                          />
+                        </label>
+                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                          {stagedPaymentAdviceName || "No file selected"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Line Items Table */}
@@ -1350,20 +1182,36 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       {/* MODAL: EDIT SALES ORDER */}
       <AnimatePresence>
         {isEditOrderOpen && editingOrder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop: Click outside to close */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsEditOrderOpen(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+            />
+
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
             >
-              <h2 className="text-xl font-black text-zinc-950 mb-1">Edit Sales Order ({editingOrder.id})</h2>
-              <p className="text-xs font-semibold text-zinc-500 mb-5">Update contract terms, products, container units, quantities, and prices.</p>
+              {/* Reusable Header with 3-Dot Options Dropdown */}
+              <EditModalHeader
+                title={`Edit Sales Order (${editingOrder.id})`}
+                subtitle="Update contract terms, customer details, products, and required order documentation."
+                onClose={() => setIsEditOrderOpen(false)}
+                onRequestDelete={() => setDeletingOrder(editingOrder)}
+                deleteLabel="Delete Sales Order"
+              />
 
               <form onSubmit={handleSaveEditOrder} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer</label>
+                {/* ROW 1: Customer Name, Phone Number, Warehouse */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                  <div className="md:col-span-5">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
                     <select 
                       value={editingOrder.customerId}
                       onChange={(e) => {
@@ -1373,15 +1221,34 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           customerId: e.target.value,
                           customer: cust ? cust.name : editingOrder.customer,
                         })
+                        if (cust) {
+                          setEditingCustPhone(cust.phone || editingCustPhone)
+                        }
                       }}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     >
-                      {customers.map(c => (
+                      {customers.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
                   </div>
-                  <div>
+
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone Number *</label>
+                    <div className="relative flex items-center">
+                      <Phone className="size-3.5 text-zinc-400 absolute left-3" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="+251 91 123 4567"
+                        value={editingCustPhone}
+                        onChange={(e) => setEditingCustPhone(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-4">
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Fulfillment Warehouse</label>
                     <select 
                       value={editingOrder.warehouse}
@@ -1395,17 +1262,101 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   </div>
                 </div>
 
-                <div>
+                {/* ROW 2: Contract Description */}
+                <div className="w-full">
                   <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
                   <textarea 
                     value={editingOrder.desc}
                     onChange={(e) => setEditingOrder({ ...editingOrder, desc: e.target.value })}
                     rows={2}
+                    placeholder="Enter contract terms..."
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
                   />
                 </div>
 
-                {/* Line Items Table */}
+                {/* ROW 3: Minimalistic Required Document Attachments Section */}
+                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">Required Order Documentation</span>
+                      <span className="text-[11px] text-zinc-500 font-medium block">View attached files or upload missing Trade License and Payment Advice</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Trade License Dropzone */}
+                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                          <FileText className="size-3.5 text-emerald-600" /> Trade License / Business Permit
+                        </span>
+                        {stagedTradePaperName ? (
+                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Missing</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                          <FileCheck className="size-3" /> Select File
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              if (f) {
+                                const reader = new FileReader()
+                                reader.onload = () => {
+                                  setStagedTradePaperName(f.name)
+                                  setStagedTradePaperUrl(reader.result as string)
+                                }
+                                reader.readAsDataURL(f)
+                              }
+                            }}
+                          />
+                        </label>
+                        <span className="text-[11px] font-mono text-zinc-600 truncate">{stagedTradePaperName || "No file attached"}</span>
+                      </div>
+                    </div>
+
+                    {/* Payment Advice Dropzone */}
+                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                          <FileText className="size-3.5 text-emerald-600" /> Payment Advice Receipt
+                        </span>
+                        {stagedPaymentAdviceName ? (
+                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Missing</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                          <FileCheck className="size-3" /> Select File
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              if (f) {
+                                const reader = new FileReader()
+                                reader.onload = () => {
+                                  setStagedPaymentAdviceName(f.name)
+                                  setStagedPaymentAdviceUrl(reader.result as string)
+                                }
+                                reader.readAsDataURL(f)
+                              }
+                            }}
+                          />
+                        </label>
+                        <span className="text-[11px] font-mono text-zinc-600 truncate">{stagedPaymentAdviceName || "No file attached"}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ROW 4: Line Items Table */}
                 <div className="pt-2">
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-black uppercase text-zinc-900 tracking-wide">
@@ -1617,6 +1568,24 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           </div>
         )}
       </AnimatePresence>
+
+      {/* REUSABLE DELETE CONFIRMATION MODAL */}
+      <RecordDeleteModal
+        isOpen={!!deletingOrder}
+        title="Delete Sales Order Contract?"
+        recordId={deletingOrder?.id}
+        recordName={deletingOrder ? `${deletingOrder.customer} — ETB ${deletingOrder.amount.toLocaleString()}` : ""}
+        description="This will permanently delete this Sales Order contract from system registry."
+        onClose={() => setDeletingOrder(null)}
+        onConfirmDelete={() => {
+          if (!deletingOrder) return
+          erp.deleteSalesOrder(deletingOrder.id)
+          showToast("Order Deleted", "info", `Sales Order ${deletingOrder.id} removed successfully.`)
+          setDeletingOrder(null)
+          setIsEditOrderOpen(false)
+          setEditingOrder(null)
+        }}
+      />
     </div>
   )
 }

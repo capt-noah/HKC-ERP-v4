@@ -1,9 +1,7 @@
 export const VALID_PROCESSING_STAGES = [
-  "Draft",
   "Received",
-  "In Progress",
   "Processed",
-  "Picked Up/Delivered",
+  "Delivered",
 ]
 
 export function validateProcessingServiceOrder(input) {

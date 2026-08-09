@@ -1,7 +1,17 @@
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const rootEnvPath = path.resolve(__dirname, "../.env")
+
 try {
-  process.loadEnvFile?.()
+  process.loadEnvFile?.(rootEnvPath)
 } catch {
-  // Environment files are optional; deployed environments can set vars directly.
+  try {
+    process.loadEnvFile?.()
+  } catch {
+    // Environment files are optional; deployed environments can set vars directly.
+  }
 }
 
 function normalizeRestUrl(value) {
@@ -24,7 +34,8 @@ export function assertConfig() {
     throw new Error("SUPABASE_REST_URL must point to the project's /rest/v1/ endpoint.")
   }
 
-  if (!config.supabasePublishableKey) {
-    throw new Error("SUPABASE_PUBLISHABLE_KEY is required.")
+  if (!config.supabaseServiceRoleKey && !config.supabasePublishableKey) {
+    throw new Error("Either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_PUBLISHABLE_KEY is required.")
   }
 }
+

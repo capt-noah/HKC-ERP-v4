@@ -57,6 +57,23 @@ salesRouter.delete(["/processing-services/:id", "/processing_services/:id"], asy
   }
 })
 
+salesRouter.post(["/processing-services/:id/upload-contract", "/processing_services/:id/upload-contract"], async (req, res, next) => {
+  try {
+    // Accepts { contract_url, contract_file_name } in body (base64 data URL from client)
+    const { contract_url, contract_file_name } = req.body
+    if (!contract_url || !contract_file_name) {
+      return res.status(400).json({ error: "contract_url and contract_file_name are required." })
+    }
+    const result = await salesService.updateProcessingService(
+      { contract_url, contract_file_name },
+      req.params.id
+    )
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
 salesRouter.get(["/shipment-documents/officers", "/shipment_documents/officers"], async (req, res, next) => {
   try {
     const result = await salesService.listAssignedOfficers()

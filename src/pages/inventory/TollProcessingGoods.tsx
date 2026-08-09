@@ -4,7 +4,6 @@ import {
   Boxes,
   Building2,
   Clock,
-  Play,
   Sparkles,
   Eye,
   X,
@@ -29,11 +28,9 @@ import {
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
 const STAGE_COLOR_MAP: Record<ProcessingServiceStage, { bg: string; text: string; border: string }> = {
-  Draft: { bg: "bg-zinc-500/10", text: "text-zinc-700 dark:text-zinc-300", border: "border-zinc-500/20" },
   Received: { bg: "bg-blue-500/10", text: "text-blue-700 dark:text-blue-300", border: "border-blue-500/20" },
-  "In Progress": { bg: "bg-amber-500/10", text: "text-amber-700 dark:text-amber-300", border: "border-amber-500/20" },
   Processed: { bg: "bg-emerald-500/10", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-500/20" },
-  "Picked Up/Delivered": { bg: "bg-purple-500/10", text: "text-purple-700 dark:text-purple-300", border: "border-purple-500/20" },
+  Delivered: { bg: "bg-purple-500/10", text: "text-purple-700 dark:text-purple-300", border: "border-purple-500/20" },
 }
 
 const tollGoodsColumns: TableColumn[] = [
@@ -76,8 +73,8 @@ export default function TollProcessingGoods() {
     }
   }
 
-  // Filter goods physically at WH1 (or recent history)
-  const onSiteGoods = services.filter((s) => s.status !== "Draft")
+  // Goods physical inventory list
+  const onSiteGoods = services
 
   const filteredGoods = onSiteGoods.filter((s) => {
     const matchesSearch =
@@ -99,10 +96,10 @@ export default function TollProcessingGoods() {
 
   // Telemetry Calculations
   const receivedCount = services.filter((s) => s.status === "Received").length
-  const inProgressCount = services.filter((s) => s.status === "In Progress").length
   const processedCount = services.filter((s) => s.status === "Processed").length
+  const deliveredCount = services.filter((s) => s.status === "Delivered").length
   const totalVolumeOnSite = services
-    .filter((s) => s.status === "Received" || s.status === "In Progress")
+    .filter((s) => s.status === "Received" || s.status === "Processed")
     .reduce((sum, s) => sum + Number(s.quantity || 0), 0)
 
   return (
@@ -133,8 +130,8 @@ export default function TollProcessingGoods() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {[
             { label: "Received (Awaiting Processing)", value: `${receivedCount} Lots`, sub: "Staged in WH1 Receiving Bay", Icon: Clock, iconBg: "bg-blue-50", iconColor: "text-blue-700" },
-            { label: "Active Milling & Processing", value: `${inProgressCount} Lots`, sub: "Currently on processing floors", Icon: Play, iconBg: "bg-amber-50", iconColor: "text-amber-700" },
-            { label: "Processed (Ready for Pickup)", value: `${processedCount} Lots`, sub: "Milled & packaged for delivery", Icon: Sparkles, iconBg: "bg-emerald-50", iconColor: "text-emerald-700" },
+            { label: "Processed (Milling Complete)", value: `${processedCount} Lots`, sub: "Packaged for client pickup", Icon: Sparkles, iconBg: "bg-emerald-50", iconColor: "text-emerald-700" },
+            { label: "Delivered & Dispatched", value: `${deliveredCount} Lots`, sub: "Finished goods released", Icon: CheckCircle2, iconBg: "bg-purple-50", iconColor: "text-purple-700" },
             { label: "Total Physical Goods On-Site", value: `${totalVolumeOnSite.toLocaleString()} Quintals`, sub: "Non-owned client stock at WH1", Icon: Boxes, iconBg: "bg-purple-50", iconColor: "text-purple-700" },
           ].map((s, idx) => {
             const Icon = s.Icon
@@ -330,34 +327,25 @@ export default function TollProcessingGoods() {
 
                     {selectedItem.status === "Received" && (
                       <button
-                        onClick={() => handleStageTransition(selectedItem.id, "In Progress")}
-                        className="w-full py-2 bg-amber-600 text-white font-bold text-xs rounded-xl hover:bg-amber-700 shadow-sm flex items-center justify-center gap-2"
-                      >
-                        <Play className="size-4" /> Move to Processing Floor (Start Milling)
-                      </button>
-                    )}
-
-                    {selectedItem.status === "In Progress" && (
-                      <button
                         onClick={() => handleStageTransition(selectedItem.id, "Processed")}
                         className="w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl hover:bg-emerald-700 shadow-sm flex items-center justify-center gap-2"
                       >
-                        <Sparkles className="size-4" /> Finish Processing & Stage for Pickup
+                        <Sparkles className="size-4" /> Complete Processing & Stage for Delivery
                       </button>
                     )}
 
                     {selectedItem.status === "Processed" && (
                       <button
-                        onClick={() => handleStageTransition(selectedItem.id, "Picked Up/Delivered")}
+                        onClick={() => handleStageTransition(selectedItem.id, "Delivered")}
                         className="w-full py-2 bg-purple-600 text-white font-bold text-xs rounded-xl hover:bg-purple-700 shadow-sm flex items-center justify-center gap-2"
                       >
                         <CheckCircle2 className="size-4" /> Release Commodity to Client (Deliver)
                       </button>
                     )}
 
-                    {selectedItem.status === "Picked Up/Delivered" && (
+                    {selectedItem.status === "Delivered" && (
                       <div className="p-3 bg-purple-50 text-purple-900 border border-purple-200 text-center font-bold text-xs rounded-xl">
-                        Commodity Released & Picked Up by Client
+                        Commodity Dispatched & Delivered to Client
                       </div>
                     )}
                   </div>

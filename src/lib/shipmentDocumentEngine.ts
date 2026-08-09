@@ -1,6 +1,6 @@
 export interface ShipmentDocRule {
   id: string
-  applies_to: 'purchase_order' | 'sales_order'
+  applies_to: 'purchase_order' | 'sales_order' | 'processing_service'
   origin_country: string | null
   destination_region: string | null
   product_category: string | null
@@ -12,7 +12,7 @@ export interface ShipmentDocRule {
 export interface ShipmentDocAttachment {
   id: string
   record_id: string
-  record_type: 'purchase_order' | 'sales_order'
+  record_type: 'purchase_order' | 'sales_order' | 'processing_service'
   document_type: string
   file_name: string
   file_size: number
@@ -103,44 +103,24 @@ export const DEFAULT_FRONTEND_RULES: ShipmentDocRule[] = [
   },
 
   {
-    id: "RULE-EXP-1",
+    id: "RULE-SO-1",
     applies_to: "sales_order",
     origin_country: null,
     destination_region: null,
     product_category: null,
-    document_type: "Commercial Invoice",
+    document_type: "Trade License",
     is_required: true,
-    description: "Mandatory for all sales order dispatches",
+    description: "Mandatory customer Trade License",
   },
   {
-    id: "RULE-EXP-2",
+    id: "RULE-SO-2",
     applies_to: "sales_order",
     origin_country: null,
     destination_region: null,
     product_category: null,
-    document_type: "Packing List",
+    document_type: "Payment Advice",
     is_required: true,
-    description: "Mandatory for all sales order dispatches",
-  },
-  {
-    id: "RULE-EXP-3",
-    applies_to: "sales_order",
-    origin_country: null,
-    destination_region: null,
-    product_category: null,
-    document_type: "Customs Declaration",
-    is_required: true,
-    description: "Mandatory export customs clearance document",
-  },
-  {
-    id: "RULE-EXP-4",
-    applies_to: "sales_order",
-    origin_country: null,
-    destination_region: "East Africa",
-    product_category: null,
-    document_type: "Certificate of Origin",
-    is_required: true,
-    description: "Required for regional exports to East Africa",
+    description: "Mandatory proof of payment receipt / advice at agreed contract price",
   },
 ]
 
@@ -158,10 +138,11 @@ export function evaluateShipmentDocs({
   appliesTo: 'purchase_order' | 'sales_order'
 }): ShipmentDocEvaluation {
   const activeRules = rules.filter((r) => r.applies_to === appliesTo && r.is_required)
-  const originCountry = record?.origin_country || record?.originCountry || record?.supplierCountry || record?.origin || null
-  const destinationRegion = record?.destination_region || record?.destinationRegion || record?.destination || null
 
-  const categories = new Set(
+  const originCountry = record.originCountry || record.origin_country || record.supplier_country || record.country || ''
+  const destinationRegion = record.destinationRegion || record.destination_region || record.region || ''
+
+  const categories = new Set<string>(
     (items || []).map((i) => i.category || i.product_category || i.itemCategory || '').filter(Boolean)
   )
 
@@ -197,7 +178,14 @@ export function evaluateShipmentDocs({
   const attachedTypesMap = new Map<string, ShipmentDocAttachment>()
   ;(attachments || []).forEach((file) => {
     if (file.document_type) {
-      attachedTypesMap.set(file.document_type.toLowerCase().trim(), file)
+      const typeLower = file.document_type.toLowerCase().trim()
+      attachedTypesMap.set(typeLower, file)
+      if (typeLower === "trade paper") {
+        attachedTypesMap.set("trade license", file)
+      }
+      if (typeLower === "trade license") {
+        attachedTypesMap.set("trade paper", file)
+      }
     }
   })
 

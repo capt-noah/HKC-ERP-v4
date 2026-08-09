@@ -20,6 +20,9 @@ export interface FinanceTableAction {
   variant?: "primary" | "secondary" | "emerald"
 }
 
+export type FilterOption = FinanceTableFilter
+export type HeaderAction = FinanceTableAction
+
 export const financeTableSelectClass =
   "bg-black/[0.03] text-xs font-bold px-3 py-2 rounded-xl text-gray-700 outline-none border border-transparent hover:border-black/5 cursor-pointer h-[38px]"
 

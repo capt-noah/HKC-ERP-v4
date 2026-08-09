@@ -56,6 +56,7 @@ export const navSections: NavSection[] = [
     children: [
       { label: "Control Center", path: "/admin" },
       { label: "User Management", path: "/admin/users" },
+      { label: "Partners Registry", path: "/admin/partners" },
       { label: "Settings", path: "/admin/settings" },
     ],
   },

@@ -15,7 +15,6 @@ import { navSections } from "@/lib/nav-config"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { useErpStore, type PurchaseOrder, type SalesOrder } from "@/lib/erpStore"
-import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 
 function HkcDocsSkeletonRows() {
@@ -41,7 +40,6 @@ import {
   fetchShipmentDocs,
   fetchShipmentDocRules,
   fetchAssignedOfficers,
-  assignShipmentOfficer,
   type ShipmentDocAttachment,
   type ShipmentDocRule,
   type AssignedOfficerRecord,
@@ -50,19 +48,12 @@ import {
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
-const COMPLIANCE_SPECIALISTS = [
-  { id: "EMP-004", name: "Tadesse Worku", position: "Customs Compliance Officer" },
-  { id: "EMP-001", name: "Abebe Bikila", position: "Logistics Manager" },
-  { id: "EMP-002", name: "Mesfin Tekle", position: "Documentation Specialist" },
-  { id: "EMP-003", name: "Selamawit Alemu", position: "Import/Export Auditor" },
-]
+import { fetchProcessingServices, type ProcessingServiceOrder } from "@/lib/processingServicesApi"
 
 const hkcDocColumns: TableColumn[] = [
   { key: "recordNumber", label: "Shipment / Ref", align: "left" },
   { key: "recordType", label: "Type", align: "left" },
   { key: "partnerName", label: "Partner / Supplier", align: "left" },
-  { key: "tradeRoute", label: "Trade Route", align: "left" },
-  { key: "assignedOfficer", label: "Assigned Compliance Specialist", align: "left" },
   { key: "complianceStatus", label: "Legal Compliance", align: "center" },
   { key: "_actions", label: "Action", align: "center", noSort: true },
 ]
@@ -70,21 +61,19 @@ const hkcDocColumns: TableColumn[] = [
 interface UnifiedShipment {
   id: string
   recordNumber: string
-  recordType: "purchase_order" | "sales_order"
+  recordType: "purchase_order" | "sales_order" | "processing_service"
   partnerName: string
   categoryOrWarehouse: string
   originCountry: string
   destinationRegion: string
-  rawRecord: PurchaseOrder | SalesOrder
+  rawRecord: PurchaseOrder | SalesOrder | ProcessingServiceOrder
 }
 
 export default function HkcDocs() {
   const [searchParams] = useSearchParams()
   const initialRecordId = searchParams.get("recordId")
 
-  const { showToast } = useFeedback()
   const erp = useErpStore()
-  const employees = COMPLIANCE_SPECIALISTS
 
   const purchaseOrders = erp.getPurchaseOrders()
   const salesOrders = erp.getSalesOrders()
@@ -94,7 +83,8 @@ export default function HkcDocs() {
   const [assignedOfficersMap, setAssignedOfficersMap] = useState<Record<string, AssignedOfficerRecord>>({})
 
   const [searchQuery, setSearchQuery] = useState("")
-  const [typeFilter, setTypeFilter] = useState<"ALL" | "purchase_order" | "sales_order">("ALL")
+  const [processingOrders, setProcessingOrders] = useState<ProcessingServiceOrder[]>([])
+  const [typeFilter, setTypeFilter] = useState<"ALL" | "purchase_order" | "sales_order" | "processing_service">("ALL")
   const [statusFilter, setStatusFilter] = useState<"ALL" | "Complete" | "Incomplete">("ALL")
   const [isLoading, setIsLoading] = useState(true)
 
@@ -113,6 +103,9 @@ export default function HkcDocs() {
         officerMap[o.record_id] = o
       })
       setAssignedOfficersMap(officerMap)
+
+      const psList = await fetchProcessingServices()
+      setProcessingOrders(psList)
     } finally {
       setIsLoading(false)
     }
@@ -144,6 +137,16 @@ export default function HkcDocs() {
       destinationRegion: "East Africa",
       rawRecord: so,
     })),
+    ...processingOrders.map((ps) => ({
+      id: ps.id,
+      recordNumber: ps.reference_number || ps.id,
+      recordType: "processing_service" as const,
+      partnerName: ps.client_company_name,
+      categoryOrWarehouse: "WH1",
+      originCountry: "Ethiopia",
+      destinationRegion: "WH1 Toll Services",
+      rawRecord: ps,
+    })),
   ]
 
   // Deep link auto-select
@@ -154,39 +157,74 @@ export default function HkcDocs() {
     }
   }, [initialRecordId])
 
-  // Fetch attachments for selected shipment
+  // Fetch & merge attachments for all shipments
   useEffect(() => {
-    if (selectedShipment?.id) {
-      fetchShipmentDocs(selectedShipment.id, selectedShipment.recordType).then((docs) => {
-        setAttachmentsMap((prev) => ({ ...prev, [selectedShipment.id]: docs }))
+    if (unifiedShipments.length === 0) return
+    unifiedShipments.forEach((shipment) => {
+      fetchShipmentDocs(shipment.id, shipment.recordType).then((docs) => {
+        let finalDocs = [...docs]
+        if (shipment.recordType === "sales_order") {
+          const so = shipment.rawRecord as any
+          const cust = erp.getCustomers().find((c) => c.id === so.customerId || c.name === so.customer)
+          const tradeUrl = so.tradePaperUrl || cust?.tradePaperUrl
+          const tradeName = so.tradePaperFileName || cust?.tradePaperFileName || "Trade License.pdf"
+          if (tradeUrl && !finalDocs.some((d) => d.document_type === "Trade License")) {
+            finalDocs.push({
+              id: `SO-TRADE-${so.id}`,
+              record_id: so.id,
+              record_type: "sales_order",
+              document_type: "Trade License",
+              file_name: tradeName,
+              file_size: 1024,
+              file_url: tradeUrl,
+              uploaded_at: so.createdAt || new Date().toISOString(),
+              uploaded_by: so.customer || "System Registry",
+            })
+          }
+        }
+        if (shipment.recordType === "processing_service") {
+          const ps = shipment.rawRecord as ProcessingServiceOrder
+          if (ps.contract_url && !finalDocs.some((d) => d.document_type === "Processing Contract")) {
+            finalDocs.push({
+              id: `PS-CONTRACT-${ps.id}`,
+              record_id: ps.id,
+              record_type: "processing_service",
+              document_type: "Processing Contract",
+              file_name: ps.contract_file_name || "Processing Service Contract.pdf",
+              file_size: 1024,
+              file_url: ps.contract_url,
+              uploaded_at: ps.updated_at || ps.created_at || new Date().toISOString(),
+              uploaded_by: ps.client_company_name || "System Registry",
+            })
+          }
+        }
+        setAttachmentsMap((prev) => ({ ...prev, [shipment.id]: finalDocs }))
       })
-    }
-  }, [selectedShipment?.id])
+    })
+  }, [salesOrders.length, purchaseOrders.length, processingOrders.length])
 
   // Helper: Evaluate compliance status per shipment
   const getEvaluation = (shipment: UnifiedShipment) => {
     const docs = attachmentsMap[shipment.id] || []
+    if (shipment.recordType === "processing_service") {
+      const contractDoc = docs.find((d) => d.document_type === "Processing Contract" || d.document_type === "Service Contract")
+      const hasContract = !!contractDoc
+      return {
+        isComplete: hasContract,
+        totalRequired: 1,
+        satisfiedCount: hasContract ? 1 : 0,
+        missingCount: hasContract ? 0 : 1,
+        satisfied: hasContract && contractDoc ? [{ document_type: "Processing Contract", file: contractDoc }] : [],
+        missing: hasContract ? [] : [{ document_type: "Processing Contract", reason: "Processing Service Contract document required" }],
+      }
+    }
     return evaluateShipmentDocs({
       record: shipment.rawRecord,
-      items: "items" in shipment.rawRecord ? shipment.rawRecord.items : [],
+      items: "items" in shipment.rawRecord ? (shipment.rawRecord as any).items || [] : [],
       attachments: docs,
       rules: shipmentRules,
       appliesTo: shipment.recordType,
     })
-  }
-
-  // Handle Assigning Compliance Specialist
-  const handleAssignOfficer = async (recordId: string, employeeId: string) => {
-    const matchedEmp = employees.find((e) => e.id === employeeId)
-    const empName = matchedEmp ? `${matchedEmp.name} (${matchedEmp.position})` : "Unassigned"
-
-    try {
-      const res = await assignShipmentOfficer(recordId, employeeId, empName)
-      setAssignedOfficersMap((prev) => ({ ...prev, [recordId]: res }))
-      showToast("Officer Assigned", "success", `Assigned ${empName} to manage trade paperwork for ${recordId}.`)
-    } catch (err) {
-      showToast("Assignment Error", "warning", "Failed to assign compliance officer.")
-    }
   }
 
   // Computed Telemetry
@@ -279,6 +317,7 @@ export default function HkcDocs() {
                     { value: "ALL", label: "All Shipments" },
                     { value: "purchase_order", label: "Import POs" },
                     { value: "sales_order", label: "Export Sales Orders" },
+                    { value: "processing_service", label: "Processing Services" },
                   ],
                 },
                 {
@@ -328,7 +367,6 @@ export default function HkcDocs() {
                 ) : (
                   shipmentsTable.sorted().map((shipment) => {
                     const evalRes = getEvaluation(shipment)
-                    const officer = assignedOfficersMap[shipment.id]
 
                     return (
                       <tr
@@ -344,32 +382,20 @@ export default function HkcDocs() {
                             className={`px-2 py-0.5 rounded-md text-[9px] uppercase tracking-wider font-black ${
                               shipment.recordType === "purchase_order"
                                 ? "bg-blue-100 text-blue-800"
-                                : "bg-purple-100 text-purple-800"
+                                : shipment.recordType === "sales_order"
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-amber-100 text-amber-800"
                             }`}
                           >
-                            {shipment.recordType === "purchase_order" ? "Import PO" : "Export SO"}
+                            {shipment.recordType === "purchase_order"
+                              ? "Import PO"
+                              : shipment.recordType === "sales_order"
+                              ? "Export SO"
+                              : "Processing Service"}
                           </span>
                         </td>
                         <td style={{ width: `${shipmentsTable.colWidths.partnerName}px` }} className="px-3 py-3 font-bold text-zinc-900 truncate">
                           {shipment.partnerName}
-                        </td>
-                        <td style={{ width: `${shipmentsTable.colWidths.tradeRoute}px` }} className="px-3 py-3 text-zinc-600 truncate">
-                          {shipment.originCountry} &rarr; {shipment.destinationRegion}
-                        </td>
-                        <td style={{ width: `${shipmentsTable.colWidths.assignedOfficer}px` }} className="px-3 py-3 truncate">
-                          <select
-                            value={officer?.assigned_employee_id || ""}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => handleAssignOfficer(shipment.id, e.target.value)}
-                            className="px-2 py-1 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[11px] font-semibold outline-none w-full max-w-[220px]"
-                          >
-                            <option value="">-- Unassigned Specialist --</option>
-                            {employees.map((e) => (
-                              <option key={e.id} value={e.id}>
-                                {e.name} ({e.position})
-                              </option>
-                            ))}
-                          </select>
                         </td>
                         <td style={{ width: `${shipmentsTable.colWidths.complianceStatus}px` }} className="px-3 py-3 text-center whitespace-nowrap truncate">
                           <span
@@ -388,9 +414,9 @@ export default function HkcDocs() {
                               e.stopPropagation()
                               setSelectedShipment(shipment)
                             }}
-                            className="px-3 py-1 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition-colors inline-flex items-center gap-1 shadow-xs"
+                            className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1"
                           >
-                            Manage Docs <ChevronRight className="size-3.5" />
+                            Manage Docs <ChevronRight className="size-3.5 text-emerald-600" />
                           </button>
                         </td>
                       </tr>
@@ -418,16 +444,19 @@ export default function HkcDocs() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span
-                        className={`px-2 py-0.5 rounded-md text-[9px] uppercase tracking-wider font-black ${
+                        className={`px-2.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider font-black ${
                           selectedShipment.recordType === "purchase_order"
                             ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
-                            : "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+                            : selectedShipment.recordType === "sales_order"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                            : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                         }`}
                       >
-                        {selectedShipment.recordType === "purchase_order" ? "Import Purchase Order" : "Export Sales Order"}
-                      </span>
-                      <span className="text-xs font-bold text-zinc-400">
-                        {selectedShipment.originCountry} &rarr; {selectedShipment.destinationRegion}
+                        {selectedShipment.recordType === "purchase_order"
+                          ? "Import Purchase Order"
+                          : selectedShipment.recordType === "sales_order"
+                          ? "Sales Order"
+                          : "Processing Service Contract"}
                       </span>
                     </div>
                     <h2 className="text-2xl font-black font-mono text-zinc-950 dark:text-zinc-50 mt-1">
@@ -445,35 +474,6 @@ export default function HkcDocs() {
 
                 {/* Modal Content */}
                 <div className="space-y-6">
-                  {/* Assigned Officer Card */}
-                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                        <UserCheck className="size-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Assigned Customs Officer</span>
-                        <span className="font-extrabold text-sm text-zinc-900 dark:text-zinc-100">
-                          {assignedOfficersMap[selectedShipment.id]?.assigned_employee_name || "Unassigned Specialist"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <select
-                        value={assignedOfficersMap[selectedShipment.id]?.assigned_employee_id || ""}
-                        onChange={(e) => handleAssignOfficer(selectedShipment.id, e.target.value)}
-                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-bold outline-none w-full sm:w-auto"
-                      >
-                        <option value="">-- Assign Specialist --</option>
-                        {employees.map((e) => (
-                          <option key={e.id} value={e.id}>
-                            {e.name} ({e.position})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
 
                   {/* Checklist & Document Uploader */}
                   <ShipmentDocChecklist

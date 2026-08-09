@@ -191,6 +191,7 @@ export interface SalesOrder {
   quotationId?: string
   customer: string
   customerId: string
+  customerPhone?: string
   customerGroup?: string
   warehouse: string
   warehouseName?: string
@@ -257,26 +258,35 @@ export interface Customer {
   id: string
   name: string
   country: string
-  region: string
-  contactPerson: string
-  email: string
-  category: string
-  warehouseTarget: string
-  creditLimit: number
-  status: string
+  region?: string
+  contactPerson?: string
+  phone?: string
+  email?: string
+  address?: string
+  category?: string
+  warehouseTarget?: string
+  creditLimit?: number
+  tradePaperUrl?: string
+  tradePaperFileName?: string
+  status?: string
 }
 
 export interface Supplier {
   id: string
   name: string
   country: string
-  city: string
-  category: string
-  warehouseTarget: string
-  contactPerson: string
-  email: string
-  rating: string
-  status: string
+  city?: string
+  contactPerson?: string
+  phone?: string
+  email?: string
+  address?: string
+  category?: string
+  taxId?: string
+  warehouseTarget?: string
+  rating?: string
+  tradePaperUrl?: string
+  tradePaperFileName?: string
+  status?: string
 }
 
 class ErpStore {
@@ -1072,10 +1082,16 @@ class ErpStore {
     return { success: true, invoiceId: invId }
   }
 
+  public deleteSalesOrder(id: string) {
+    this.salesOrders = this.salesOrders.filter((so) => so.id !== id)
+    deleteResource("sales_orders", id).catch((err) => console.error("Failed to delete Sales Order:", err))
+    this.notify()
+  }
+
   // Customer Credit Limit Analysis
   public getCustomerCreditUsage(customerId: string): { limit: number; used: number; available: number; isOverLimit: boolean } {
     const cust = this.customers.find((c) => c.id === customerId)
-    const limit = cust ? cust.creditLimit : 500000
+    const limit = (cust?.creditLimit !== undefined && cust?.creditLimit !== null) ? cust.creditLimit : 500000
 
     // Sum open Sales Orders amount + outstanding AR invoices in financeStore
     const openOrdersAmount = this.salesOrders
@@ -1094,6 +1110,56 @@ class ErpStore {
       available,
       isOverLimit: used > limit,
     }
+  }
+
+  // --- Actions: Customers ---
+  public addCustomer(customer: Customer) {
+    const existing = this.customers.find((c) => c.id === customer.id || (c.name && c.name.toLowerCase() === customer.name.toLowerCase()))
+    if (existing) {
+      this.updateCustomer(existing.id, customer)
+      return existing
+    }
+    this.customers.unshift(customer)
+    createResource("customers", customer).catch((err) => console.error("Failed to persist new Customer:", err))
+    this.notify()
+    return customer
+  }
+
+  public updateCustomer(id: string, updates: Partial<Customer>) {
+    this.customers = this.customers.map((c) => (c.id === id ? { ...c, ...updates } : c))
+    updateResource("customers", id, updates).catch((err) => console.error("Failed to update Customer:", err))
+    this.notify()
+  }
+
+  public deleteCustomer(id: string) {
+    this.customers = this.customers.filter((c) => c.id !== id)
+    deleteResource("customers", id).catch((err) => console.error("Failed to delete Customer:", err))
+    this.notify()
+  }
+
+  // --- Actions: Suppliers ---
+  public addSupplier(supplier: Supplier) {
+    const existing = this.suppliers.find((s) => s.id === supplier.id || (s.name && s.name.toLowerCase() === supplier.name.toLowerCase()))
+    if (existing) {
+      this.updateSupplier(existing.id, supplier)
+      return existing
+    }
+    this.suppliers.unshift(supplier)
+    createResource("suppliers", supplier).catch((err) => console.error("Failed to persist new Supplier:", err))
+    this.notify()
+    return supplier
+  }
+
+  public updateSupplier(id: string, updates: Partial<Supplier>) {
+    this.suppliers = this.suppliers.map((s) => (s.id === id ? { ...s, ...updates } : s))
+    updateResource("suppliers", id, updates).catch((err) => console.error("Failed to update Supplier:", err))
+    this.notify()
+  }
+
+  public deleteSupplier(id: string) {
+    this.suppliers = this.suppliers.filter((s) => s.id !== id)
+    deleteResource("suppliers", id).catch((err) => console.error("Failed to delete Supplier:", err))
+    this.notify()
   }
 
   // Actions - Purchase Orders

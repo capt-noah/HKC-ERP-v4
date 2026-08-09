@@ -41,15 +41,16 @@ const INITIAL_PROCESSING_SERVICES = [
     entry_date: "2026-08-01",
     agreed_price: 75000,
     currency: "ETB",
-    status: "In Progress",
+    status: "Processed",
     status_history: [
-      { stage: "Draft", timestamp: "2026-07-28T08:00:00.000Z" },
       { stage: "Received", timestamp: "2026-08-01T10:30:00.000Z" },
-      { stage: "In Progress", timestamp: "2026-08-02T14:15:00.000Z" },
+      { stage: "Processed", timestamp: "2026-08-02T14:15:00.000Z" },
     ],
-    assigned_to: "Abebe Bikila (Task Manager)",
+    assigned_to: "Abebe Bikila",
     invoice_id: null,
     notes: "Toll milling, washing, and moisture level testing to 11.5%.",
+    contract_url: null,
+    contract_file_name: null,
     created_at: "2026-07-28T08:00:00.000Z",
     updated_at: "2026-08-02T14:15:00.000Z",
   },
@@ -66,12 +67,13 @@ const INITIAL_PROCESSING_SERVICES = [
     currency: "ETB",
     status: "Received",
     status_history: [
-      { stage: "Draft", timestamp: "2026-08-03T09:00:00.000Z" },
       { stage: "Received", timestamp: "2026-08-05T11:00:00.000Z" },
     ],
-    assigned_to: "Abebe Bikila (Task Manager)",
+    assigned_to: "Abebe Bikila",
     invoice_id: null,
     notes: "Awaiting sun-drying floor allocation.",
+    contract_url: null,
+    contract_file_name: null,
     created_at: "2026-08-03T09:00:00.000Z",
     updated_at: "2026-08-05T11:00:00.000Z",
   },
@@ -147,13 +149,15 @@ export async function createProcessingService(input) {
     entry_date: input?.entry_date || input?.entryDate || new Date().toISOString().split("T")[0],
     agreed_price: Number(input?.agreed_price || input?.agreedPrice || 0),
     currency: input?.currency || "ETB",
-    status: input?.status || "Draft",
-    status_history: input?.status_history || [
-      { stage: input?.status || "Draft", timestamp: new Date().toISOString() },
+    status: "Received",
+    status_history: [
+      { stage: "Received", timestamp: new Date().toISOString() },
     ],
-    assigned_to: input?.assigned_to || input?.assignedTo || "Task Manager",
-    invoice_id: input?.invoice_id || null,
+    assigned_to: input?.assigned_to || input?.assignedTo || "",
+    invoice_id: null,
     notes: input?.notes || "",
+    contract_url: null,
+    contract_file_name: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
@@ -226,8 +230,8 @@ export async function transitionProcessingServiceStage(id, targetStage) {
   let invoiceId = existing.invoice_id
   let journalEntry = null
 
-  // AUTOMATED REVENUE RECOGNITION WHEN STAGE REACHES 'Processed'
-  if (targetStage === "Processed" && !existing.invoice_id) {
+  // AUTOMATED REVENUE RECOGNITION WHEN STAGE REACHES 'Delivered'
+  if (targetStage === "Delivered" && !existing.invoice_id) {
     invoiceId = `INV-PS-${id}`
     journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id })
   }

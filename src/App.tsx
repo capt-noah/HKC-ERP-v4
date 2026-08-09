@@ -25,6 +25,7 @@ import Payroll from "@/pages/hr/Payroll"
 import Attendance from "@/pages/hr/Attendance"
 import Leave from "@/pages/hr/Leave"
 import UserManagement from "@/pages/admin/UserManagement"
+import PartnersRegistry from "@/pages/admin/PartnersRegistry"
 import AdminSettings from "@/pages/admin/AdminSettings"
 
 export function App() {
@@ -74,6 +75,7 @@ export function App() {
       {/* Admin section */}
       <Route path="/admin" element={<ControlCenter />} />
       <Route path="/admin/users" element={<UserManagement />} />
+      <Route path="/admin/partners" element={<PartnersRegistry />} />
       <Route path="/admin/settings" element={<AdminSettings />} />
     </Routes>
   )
