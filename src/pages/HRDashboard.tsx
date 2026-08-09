@@ -120,16 +120,72 @@ export default function HRDashboard() {
         ) : (
           <>
 
-        <motion.div variants={fade} className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
-          {cards.map(([label, value, Icon]) => (
-            <GlassCard key={label} className="p-5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">{label}</span>
-                <Icon className="size-4 text-zinc-400" />
+        <motion.div variants={fade} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+          <GlassCard className="p-4">
+            <div className="flex items-center justify-between border-b border-black/5 pb-2mb-3">
+              <span className="text-xs font-black text-zinc-900 uppercase tracking-tight flex items-center gap-1.5">
+                <Users className="size-4 text-zinc-500" /> Workforce Overview
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">Total Employees</span>
+                <span className="text-xl font-black text-zinc-950 mt-1 block">{summary.totalEmployees}</span>
               </div>
-              <div className="text-xl font-black text-zinc-950 mt-2">{value}</div>
-            </GlassCard>
-          ))}
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">Active</span>
+                <span className="text-xl font-black text-emerald-600 mt-1 block">{summary.activeEmployees}</span>
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-4">
+            <div className="flex items-center justify-between border-b border-black/5 pb-2 mb-3">
+              <span className="text-xs font-black text-zinc-900 uppercase tracking-tight flex items-center gap-1.5">
+                <CalendarClock className="size-4 text-zinc-500" /> Today's Attendance & Leave
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 mt-3">
+              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase">Present</span>
+                <span className="text-base font-black text-zinc-950 mt-0.5 block">{summary.presentToday}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase">Absent</span>
+                <span className="text-base font-black text-rose-600 mt-0.5 block">{summary.absentToday}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase">On Leave</span>
+                <span className="text-base font-black text-blue-600 mt-0.5 block">{summary.onLeaveToday}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase">Pending</span>
+                <span className="text-base font-black text-amber-600 mt-0.5 block">{summary.pendingLeave}</span>
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-4">
+            <div className="flex items-center justify-between border-b border-black/5 pb-2 mb-3">
+              <span className="text-xs font-black text-zinc-900 uppercase tracking-tight flex items-center gap-1.5">
+                <DollarSign className="size-4 text-zinc-500" /> Payroll Workflow
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="bg-black/[0.02] p-2.5 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Pending</span>
+                <span className="text-base font-black text-amber-600 mt-0.5 block">{summary.pendingPayroll}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Approved</span>
+                <span className="text-base font-black text-blue-600 mt-0.5 block">{summary.approvedPayroll}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Paid</span>
+                <span className="text-base font-black text-emerald-600 mt-0.5 block">{summary.paidPayroll}</span>
+              </div>
+            </div>
+          </GlassCard>
         </motion.div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">

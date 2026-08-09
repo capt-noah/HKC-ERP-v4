@@ -67,14 +67,13 @@ export default function Employees() {
   const { sortKey, sortDir, handleSort, handleClearSort, sortItems } = useTableSort()
   const sortedEmployees = sortItems(filteredEmployees)
   const columns: TableColumn[] = [
-    { key: "employee_number", label: "Employee Number", initialWidth: 150 },
     { key: "full_name", label: "Full Name", initialWidth: 200 },
     { key: "phone", label: "Phone", initialWidth: 140 },
     { key: "email", label: "Email", initialWidth: 200 },
     { key: "warehouse_id", label: "Office", initialWidth: 150 },
     { key: "employment_type", label: "Employment Type", initialWidth: 150 },
     { key: "start_date", label: "Start Date", initialWidth: 130 },
-    { key: "basic_salary", label: "Basic Salary", align: "right", initialWidth: 140 },
+    { key: "basic_salary", label: "Gross Salary", align: "right", initialWidth: 140 },
     { key: "status", label: "Status", align: "center", initialWidth: 130 },
     { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 130 },
   ]
@@ -190,10 +189,9 @@ export default function Employees() {
                 <ResizableTableHeader columns={columns} colWidths={colWidths} onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} onClearSort={handleClearSort} />
                 <tbody className="divide-y divide-black/5 text-xs">
                   {!loading && sortedEmployees.length === 0 ? (
-                    <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No employees have been registered yet.</td></tr>
+                    <tr><td colSpan={9} className="py-12 text-center text-zinc-400 font-medium">No employees have been registered yet.</td></tr>
                   ) : sortedEmployees.map((employee) => (
                     <tr key={employee.id} className="hover:bg-black/[0.02] transition-colors">
-                      <Cell width={colWidths.employee_number}>{employee.employee_number}</Cell>
                       <Cell width={colWidths.full_name}><div className="flex items-center gap-2"><span className="size-7 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[10px] font-black">{initials(employee.full_name)}</span><span className="truncate">{employee.full_name}</span></div></Cell>
                       <Cell width={colWidths.phone}>{employee.phone || "-"}</Cell>
                       <Cell width={colWidths.email}>{employee.email || "-"}</Cell>
@@ -277,17 +275,16 @@ function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { for
           <Input label="Phone" required value={form.phone} onChange={(v) => field("phone", v)} />
           <Input label="Email" type="email" value={form.email} onChange={(v) => field("email", v)} />
           <Input label="Address" required value={form.address} onChange={(v) => field("address", v)} />
-          <Input label="Date of Birth" type="date" required value={form.date_of_birth} onChange={(v) => field("date_of_birth", v)} />
           <Input label="Gender" required value={form.gender} onChange={(v) => field("gender", v)} />
           <Select label="Office" value={form.warehouse_id} options={WAREHOUSE_OPTIONS} onChange={(v) => field("warehouse_id", v)} />
           <Select label="Employment Type" value={form.employment_type} options={EMPLOYMENT_TYPES} onChange={(v) => field("employment_type", v)} />
+          <Select label="Status" value={form.status} options={EMPLOYEE_STATUSES} onChange={(v) => field("status", v)} />
           <Input label="Start Date" type="date" required value={form.start_date} onChange={(v) => field("start_date", v)} />
-          <Input label="Basic Salary" type="number" required value={form.basic_salary} onChange={(v) => field("basic_salary", Number(v))} />
-          <Input label="Payment Method" required value={form.payment_method} onChange={(v) => field("payment_method", v)} />
+          <Input label="Gross Salary" type="number" required value={form.basic_salary} onChange={(v) => field("basic_salary", Number(v))} />
           <Input label="Bank Account" required value={form.bank_account} onChange={(v) => field("bank_account", v)} />
           <Input label="Emergency Contact Name" required value={form.emergency_contact_name} onChange={(v) => field("emergency_contact_name", v)} />
           <Input label="Emergency Contact Phone" required value={form.emergency_contact_phone} onChange={(v) => field("emergency_contact_phone", v)} />
-          <label className="md:col-span-1 text-[10px] font-black uppercase tracking-wider text-zinc-500">
+          <label className="md:col-span-3 text-[10px] font-black uppercase tracking-wider text-zinc-500">
             National ID
             <div className="mt-1 flex min-h-24 items-center gap-3 rounded-xl border border-dashed border-black/15 bg-black/[0.02] p-3">
               <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white border border-black/10 flex items-center justify-center">
@@ -304,7 +301,6 @@ function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { for
               </div>
             </div>
           </label>
-          <Select label="Status" value={form.status} options={EMPLOYEE_STATUSES} onChange={(v) => field("status", v)} />
           <div className="md:col-span-3 flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold disabled:opacity-50">Cancel</button>
             <button type="submit" disabled={saving} className="inline-flex min-w-34 items-center justify-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-bold disabled:cursor-wait disabled:bg-zinc-700">
@@ -327,6 +323,7 @@ function Select({ label, value, options, onChange }: { label: string; value: str
 }
 
 function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { employee: Employee; attendance: AttendanceRecord[]; leaves: LeaveRequest[]; payroll: PayrollRecord[]; onClose: () => void }) {
+  const [showNationalId, setShowNationalId] = useState(false)
   const employeeAttendance = attendance.filter((record) => record.employee_id === employee.id)
   const employeeLeaves = leaves.filter((request) => request.employee_id === employee.id)
   const employeePayroll = payroll.filter((record) => record.employee_id === employee.id)
@@ -335,14 +332,38 @@ function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { e
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
         <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black text-black">{employee.full_name}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Date of Birth", employee.date_of_birth], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />
-          <Detail title="Employment Information" rows={[["Employee Number", employee.employee_number], ["Office", employee.warehouse_id], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
-          <Detail title="Salary Information" rows={[["Basic Salary", `ETB ${money(employee.basic_salary)}`], ["Payment Method", employee.payment_method], ["Bank Account", employee.bank_account], ["Emergency Contact", employee.emergency_contact_name], ["Emergency Phone", employee.emergency_contact_phone]]} />
+          <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />
+          <Detail title="Employment Information" rows={[["Office", employee.warehouse_id], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
+          <Detail title="Salary Information" rows={[["Gross Salary", `ETB ${money(employee.basic_salary)}`], ["Bank Account", employee.bank_account], ["Emergency Contact", employee.emergency_contact_name], ["Emergency Phone", employee.emergency_contact_phone]]} />
         </div>
+        {employee.national_id_image && (
+          <div className="mt-4 flex justify-end">
+            <button type="button" onClick={() => setShowNationalId(true)} className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-xs font-black text-white transition-colors hover:bg-zinc-800">
+              <Eye className="size-4" />
+              View National ID
+            </button>
+          </div>
+        )}
         <History title="Attendance History" empty="No attendance records exist for this employee." rows={employeeAttendance.map((record) => `${record.attendance_date} - ${record.status} (${record.hours_worked || 0} hrs)`)} />
         <History title="Leave History" empty="No leave records exist for this employee." rows={employeeLeaves.map((request) => `${request.leave_type}: ${request.start_date} to ${request.end_date} - ${request.status}`)} />
         <History title="Payroll History" empty="No payroll records exist for this employee." rows={employeePayroll.map((record) => `Net ETB ${money(record.net_pay)} - ${record.payment_status}`)} />
       </motion.div>
+      {showNationalId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
+          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
+              <div className="min-w-0">
+                <h4 className="truncate text-sm font-black text-black">National ID Document</h4>
+                <p className="truncate text-xs font-semibold text-zinc-500">{employee.full_name}</p>
+              </div>
+              <button onClick={() => setShowNationalId(false)} className="shrink-0 rounded-lg p-1.5 hover:bg-black/5" aria-label="Close National ID preview"><X className="size-5" /></button>
+            </div>
+            <div className="max-h-[72vh] overflow-auto bg-zinc-100 p-4">
+              <img src={employee.national_id_image} alt={`${employee.full_name} National ID document`} className="mx-auto max-h-[68vh] w-auto max-w-full rounded-xl bg-white object-contain shadow-sm" />
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

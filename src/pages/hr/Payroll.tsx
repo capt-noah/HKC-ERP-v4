@@ -113,7 +113,7 @@ export default function Payroll() {
     { key: "employee", label: "Employee", initialWidth: 220 },
     { key: "warehouse", label: "Warehouse", initialWidth: 150 },
     { key: "employment_status", label: "Employment Status", align: "center", initialWidth: 160 },
-    { key: "basic_salary", label: "Basic Salary", align: "right", initialWidth: 140 },
+    { key: "basic_salary", label: "Gross Salary", align: "right", initialWidth: 140 },
     { key: "gross_pay", label: "Gross Pay", align: "right", initialWidth: 140 },
     { key: "total_deductions", label: "Total Deductions", align: "right", initialWidth: 160 },
     { key: "net_pay", label: "Net Pay", align: "right", initialWidth: 140 },
@@ -236,8 +236,50 @@ export default function Payroll() {
           <HRPageSkeleton rows={7} cards={7} />
         ) : (
           <>
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-5">
-          {[["Total Employees in Payroll", totals.employees], ["Total Gross Pay", `ETB ${money(totals.gross)}`], ["Total Deductions", `ETB ${money(totals.deductions)}`], ["Total Net Pay", `ETB ${money(totals.net)}`], ["Pending Records", totals.pending], ["Approved Records", totals.approved], ["Paid Records", totals.paid]].map(([label, value]) => <GlassCard key={label} className="p-4"><span className="text-[9px] font-black uppercase tracking-wider text-zinc-400">{label}</span><div className="text-lg font-black text-zinc-950 mt-1">{value}</div></GlassCard>)}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          <GlassCard className="p-4">
+            <div className="flex items-center justify-between border-b border-black/5 pb-2 mb-3">
+              <span className="text-xs font-black text-zinc-900 uppercase tracking-tight">Payroll Financial Totals</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">Total Gross Pay</span>
+                <span className="text-base font-black text-zinc-950 mt-1 block">ETB {money(totals.gross)}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">Total Deductions</span>
+                <span className="text-base font-black text-rose-700 mt-1 block">ETB {money(totals.deductions)}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">Total Net Pay</span>
+                <span className="text-base font-black text-emerald-700 mt-1 block">ETB {money(totals.net)}</span>
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-4">
+            <div className="flex items-center justify-between border-b border-black/5 pb-2 mb-3">
+              <span className="text-xs font-black text-zinc-900 uppercase tracking-tight">Payroll Record Breakdown</span>
+            </div>
+            <div className="grid grid-cols-4 gap-2 mt-2 text-center">
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Employees</span>
+                <span className="text-base font-black text-zinc-950 mt-0.5 block">{totals.employees}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Pending</span>
+                <span className="text-base font-black text-amber-600 mt-0.5 block">{totals.pending}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Approved</span>
+                <span className="text-base font-black text-blue-600 mt-0.5 block">{totals.approved}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Paid</span>
+                <span className="text-base font-black text-emerald-600 mt-0.5 block">{totals.paid}</span>
+              </div>
+            </div>
+          </GlassCard>
         </div>
         <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
           <HRTableToolbar
