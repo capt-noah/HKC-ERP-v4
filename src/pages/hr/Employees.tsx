@@ -8,7 +8,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
 import { useFeedback } from "@/context/FeedbackContext"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
-import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
+import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -71,7 +71,7 @@ export default function Employees() {
     { key: "full_name", label: "Full Name", initialWidth: 200 },
     { key: "phone", label: "Phone", initialWidth: 140 },
     { key: "email", label: "Email", initialWidth: 200 },
-    { key: "warehouse_id", label: "Warehouse", initialWidth: 150 },
+    { key: "warehouse_id", label: "Office", initialWidth: 150 },
     { key: "employment_type", label: "Employment Type", initialWidth: 150 },
     { key: "start_date", label: "Start Date", initialWidth: 130 },
     { key: "basic_salary", label: "Basic Salary", align: "right", initialWidth: 140 },
@@ -100,15 +100,12 @@ export default function Employees() {
   }
 
   const validate = () => {
-    if (!form.employee_number.trim()) return "Employee number is required."
     if (!form.full_name.trim()) return "Full name is required."
     if (!form.start_date) return "Start date is required."
-    if (!form.warehouse_id) return "Warehouse is required."
+    if (!form.warehouse_id) return "Office is required."
     if (!form.employment_type) return "Employment type is required."
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return "Email must be valid when provided."
     if (Number(form.basic_salary) < 0) return "Basic salary cannot be negative."
-    const duplicateNumber = employees.find((employee) => employee.employee_number.toLowerCase() === form.employee_number.toLowerCase() && employee.id !== editing?.id)
-    if (duplicateNumber) return "Employee number must be unique."
     const duplicateDetails = employees.find((employee) => employeeDuplicateKey(employee) === employeeDuplicateKey(form) && employee.id !== editing?.id)
     if (duplicateDetails) return `Duplicate employee details match ${duplicateDetails.full_name} (${duplicateDetails.employee_number}).`
     return ""
@@ -121,7 +118,8 @@ export default function Employees() {
       showToast("Employee Not Saved", "warning", validationError)
       return
     }
-    const payload = { ...form, basic_salary: Number(form.basic_salary || 0) }
+    const employeeNumber = editing?.employee_number || form.employee_number || makeId("EMP")
+    const payload = { ...form, employee_number: employeeNumber, email: form.email.trim(), basic_salary: Number(form.basic_salary || 0) }
     setSaving(true)
     try {
       let savedEmployee: Employee
@@ -130,8 +128,8 @@ export default function Employees() {
         setEmployees((prev) => prev.map((employee) => employee.id === editing.id ? { ...employee, ...savedEmployee, ...payload, id: editing.id } : employee))
         showToast("Employee Updated", "success", `${payload.full_name} was updated.`)
       } else {
-        savedEmployee = await hrApi.createEmployee({ id: payload.employee_number, ...payload })
-        setEmployees((prev) => [{ ...payload, ...savedEmployee, id: savedEmployee.id || payload.employee_number }, ...prev])
+        savedEmployee = await hrApi.createEmployee({ id: employeeNumber, ...payload })
+        setEmployees((prev) => [{ ...payload, ...savedEmployee, id: savedEmployee.id || employeeNumber }, ...prev])
         showToast("Employee Registered", "success", `${payload.full_name} was saved to Supabase.`)
       }
       setEditing(null)
@@ -179,7 +177,7 @@ export default function Employees() {
               subtitle={`${sortedEmployees.length} employee records`}
               searchValue={search}
               onSearchChange={setSearch}
-              searchPlaceholder="Search number, name, phone, email..."
+              searchPlaceholder="Search name, phone, or email..."
               filters={[
                 { value: status, onChange: setStatus, options: ["All", ...EMPLOYEE_STATUSES].map((item) => ({ value: item, label: item })) },
                 { value: warehouse, onChange: setWarehouse, options: ["All", ...WAREHOUSE_OPTIONS].map((item) => ({ value: item, label: item })) },
@@ -275,14 +273,13 @@ function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { for
           <button onClick={onClose} disabled={saving} className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-40"><X className="size-5" /></button>
         </div>
         <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input label="Employee Number" required value={form.employee_number} onChange={(v) => field("employee_number", v)} />
           <Input label="Full Name" required value={form.full_name} onChange={(v) => field("full_name", v)} />
           <Input label="Phone" required value={form.phone} onChange={(v) => field("phone", v)} />
           <Input label="Email" type="email" value={form.email} onChange={(v) => field("email", v)} />
           <Input label="Address" required value={form.address} onChange={(v) => field("address", v)} />
           <Input label="Date of Birth" type="date" required value={form.date_of_birth} onChange={(v) => field("date_of_birth", v)} />
           <Input label="Gender" required value={form.gender} onChange={(v) => field("gender", v)} />
-          <Select label="Warehouse" value={form.warehouse_id} options={WAREHOUSE_OPTIONS} onChange={(v) => field("warehouse_id", v)} />
+          <Select label="Office" value={form.warehouse_id} options={WAREHOUSE_OPTIONS} onChange={(v) => field("warehouse_id", v)} />
           <Select label="Employment Type" value={form.employment_type} options={EMPLOYMENT_TYPES} onChange={(v) => field("employment_type", v)} />
           <Input label="Start Date" type="date" required value={form.start_date} onChange={(v) => field("start_date", v)} />
           <Input label="Basic Salary" type="number" required value={form.basic_salary} onChange={(v) => field("basic_salary", Number(v))} />
@@ -339,7 +336,7 @@ function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { e
         <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black text-black">{employee.full_name}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Date of Birth", employee.date_of_birth], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />
-          <Detail title="Employment Information" rows={[["Employee Number", employee.employee_number], ["Warehouse", employee.warehouse_id], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
+          <Detail title="Employment Information" rows={[["Employee Number", employee.employee_number], ["Office", employee.warehouse_id], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
           <Detail title="Salary Information" rows={[["Basic Salary", `ETB ${money(employee.basic_salary)}`], ["Payment Method", employee.payment_method], ["Bank Account", employee.bank_account], ["Emergency Contact", employee.emergency_contact_name], ["Emergency Phone", employee.emergency_contact_phone]]} />
         </div>
         <History title="Attendance History" empty="No attendance records exist for this employee." rows={employeeAttendance.map((record) => `${record.attendance_date} - ${record.status} (${record.hours_worked || 0} hrs)`)} />
