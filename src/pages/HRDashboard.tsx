@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { Activity, CalendarClock, DollarSign, Users } from "lucide-react"
+import { CalendarClock, DollarSign, Users } from "lucide-react"
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -89,18 +89,6 @@ export default function HRDashboard() {
       ],
     }
   }, [data])
-
-  const cards = [
-    ["Total Employees", summary.totalEmployees, Users],
-    ["Active Employees", summary.activeEmployees, Users],
-    ["Present Today", summary.presentToday, Activity],
-    ["Absent Today", summary.absentToday, Activity],
-    ["On Leave Today", summary.onLeaveToday, CalendarClock],
-    ["Pending Leave Requests", summary.pendingLeave, CalendarClock],
-    ["Pending Payroll", summary.pendingPayroll, DollarSign],
-    ["Approved Payroll", summary.approvedPayroll, DollarSign],
-    ["Paid Payroll", summary.paidPayroll, DollarSign],
-  ] as const
 
   return (
     <div className="min-h-screen page-gradient">
