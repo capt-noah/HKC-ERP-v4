@@ -6,6 +6,7 @@ import {
   uploadShipmentDoc,
   deleteShipmentDoc,
 } from "@/lib/shipmentDocumentEngine"
+import { DocumentPreviewModal } from "./DocumentPreviewModal"
 
 interface ShipmentDocChecklistProps {
   recordId: string
@@ -27,6 +28,10 @@ export const ShipmentDocChecklist: React.FC<ShipmentDocChecklistProps> = ({
   const [selectedDocType, setSelectedDocType] = useState<string>("")
   const [isUploading, setIsUploading] = useState<boolean>(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+
+  // Preview Modal States
+  const [previewUrl, setPreviewUrl] = useState("")
+  const [previewName, setPreviewName] = useState("")
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, targetDocType?: string) => {
     const file = e.target.files?.[0]
@@ -196,15 +201,16 @@ export const ShipmentDocChecklist: React.FC<ShipmentDocChecklistProps> = ({
 
                   <div className="flex items-center gap-1 shrink-0">
                     {file.file_url && (
-                      <a
-                        href={file.file_url}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        onClick={() => {
+                          setPreviewUrl(file.file_url)
+                          setPreviewName(file.file_name)
+                        }}
                         className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                         title="Preview Document"
                       >
                         <ExternalLink className="w-4 h-4" />
-                      </a>
+                      </button>
                     )}
                     {!readOnly && (
                       <button
@@ -268,6 +274,17 @@ export const ShipmentDocChecklist: React.FC<ShipmentDocChecklistProps> = ({
       </div>
 
       {uploadError && <p className="text-xs font-bold text-red-500 px-1">{uploadError}</p>}
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={!!previewUrl}
+        onClose={() => {
+          setPreviewUrl("")
+          setPreviewName("")
+        }}
+        fileUrl={previewUrl}
+        fileName={previewName}
+      />
     </div>
   )
 }

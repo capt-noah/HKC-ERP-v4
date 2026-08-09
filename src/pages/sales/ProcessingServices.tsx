@@ -22,6 +22,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import {
   type ProcessingServiceOrder,
   type ProcessingServiceStage,
@@ -99,6 +100,10 @@ export default function ProcessingServices() {
   const [editingOrder, setEditingOrder] = useState<ProcessingServiceOrder | null>(null)
   const [deletingOrder, setDeletingOrder] = useState<ProcessingServiceOrder | null>(null)
   const [isUploadingContract, setIsUploadingContract] = useState<boolean>(false)
+
+  // Document preview states
+  const [previewUrl, setPreviewUrl] = useState("")
+  const [previewName, setPreviewName] = useState("")
 
   // Create Form State
   const [createClientInput, setCreateClientInput] = useState("")
@@ -682,14 +687,16 @@ export default function ProcessingServices() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <a
-                            href={editingOrder.contract_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3.5 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 border border-blue-200"
-                          >
-                            View Contract <ExternalLink className="size-3" />
-                          </a>
+                           <button
+                             type="button"
+                             onClick={() => {
+                               setPreviewUrl(editingOrder.contract_url || "")
+                               setPreviewName(editingOrder.contract_file_name || "Contract.pdf")
+                             }}
+                             className="px-3.5 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 border border-blue-200"
+                           >
+                             View Contract <ExternalLink className="size-3" />
+                           </button>
                           <label className="px-3.5 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 rounded-lg border border-zinc-200 cursor-pointer">
                             {isUploadingContract ? "Uploading..." : "Replace"}
                             <input
@@ -991,6 +998,17 @@ export default function ProcessingServices() {
               showToast("Delete Error", "warning", "Failed to delete processing service order.")
             }
           }}
+        />
+
+        {/* Document Preview Modal */}
+        <DocumentPreviewModal
+          isOpen={!!previewUrl}
+          onClose={() => {
+            setPreviewUrl("")
+            setPreviewName("")
+          }}
+          fileUrl={previewUrl}
+          fileName={previewName}
         />
       </motion.div>
     </div>

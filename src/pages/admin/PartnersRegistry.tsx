@@ -24,6 +24,7 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type Customer, type Supplier } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -60,6 +61,10 @@ export default function PartnersRegistry() {
   const [custTradePaperUrl, setCustTradePaperUrl] = useState("")
   const [custPaymentAdviceName, setCustPaymentAdviceName] = useState("")
   const [custPaymentAdviceUrl, setCustPaymentAdviceUrl] = useState("")
+
+  // Preview states
+  const [previewUrl, setPreviewUrl] = useState("")
+  const [previewName, setPreviewName] = useState("")
 
   // Supplier Form State
   const [suppName, setSuppName] = useState("")
@@ -439,15 +444,17 @@ export default function PartnersRegistry() {
                           <div className="flex flex-col items-center gap-1">
                             {c.tradePaperFileName || c.tradePaperUrl ? (
                               c.tradePaperUrl ? (
-                                <a
-                                  href={c.tradePaperUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewUrl(c.tradePaperUrl || "")
+                                    setPreviewName(c.tradePaperFileName || "Trade License")
+                                  }}
                                   className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors"
                                   title="View Trade License"
                                 >
                                   <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName || "Trade License"} ↗
-                                </a>
+                                </button>
                               ) : (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                   <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName}
@@ -461,15 +468,17 @@ export default function PartnersRegistry() {
 
                             {c.paymentAdviceFileName || c.paymentAdviceUrl ? (
                               c.paymentAdviceUrl ? (
-                                <a
-                                  href={c.paymentAdviceUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewUrl(c.paymentAdviceUrl || "")
+                                    setPreviewName(c.paymentAdviceFileName || "Payment Advice")
+                                  }}
                                   className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
                                   title="View Payment Advice"
                                 >
                                   <CheckCircle2 className="size-3 text-blue-600" /> {c.paymentAdviceFileName || "Payment Advice"} ↗
-                                </a>
+                                </button>
                               ) : (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
                                   <CheckCircle2 className="size-3 text-blue-600" /> {c.paymentAdviceFileName}
@@ -709,14 +718,16 @@ export default function PartnersRegistry() {
                       </label>
                       <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
                       {custTradePaperUrl && (
-                        <a
-                          href={custTradePaperUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewUrl(custTradePaperUrl)
+                            setPreviewName(custTradePaperName || "Trade License")
+                          }}
                           className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
                         >
                           View Doc ↗
-                        </a>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -738,14 +749,16 @@ export default function PartnersRegistry() {
                       </label>
                       <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custPaymentAdviceName || "No file chosen"}</span>
                       {custPaymentAdviceUrl && (
-                        <a
-                          href={custPaymentAdviceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewUrl(custPaymentAdviceUrl)
+                            setPreviewName(custPaymentAdviceName || "Payment Advice")
+                          }}
                           className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
                         >
                           View Doc ↗
-                        </a>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -959,6 +972,17 @@ export default function PartnersRegistry() {
           setShowAddSupplierModal(false)
           setEditingSupplier(null)
         }}
+      />
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={!!previewUrl}
+        onClose={() => {
+          setPreviewUrl("")
+          setPreviewName("")
+        }}
+        fileUrl={previewUrl}
+        fileName={previewName}
       />
     </div>
   )

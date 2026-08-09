@@ -29,6 +29,7 @@ import {
   uploadShipmentDoc,
   type ShipmentDocAttachment,
 } from "@/lib/shipmentDocumentEngine"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -112,6 +113,10 @@ export default function SalesOrders() {
   const [stagedTradePaperUrl, setStagedTradePaperUrl] = useState("")
   const [stagedPaymentAdviceName, setStagedPaymentAdviceName] = useState("")
   const [stagedPaymentAdviceUrl, setStagedPaymentAdviceUrl] = useState("")
+
+  // Document Preview Modal States
+  const [previewUrl, setPreviewUrl] = useState("")
+  const [previewName, setPreviewName] = useState("")
 
   const [newWarehouse, setNewWarehouse] = useState("")
   const [newDesc, setNewDesc] = useState("")
@@ -1018,14 +1023,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           {stagedTradePaperName || "No file selected"}
                         </span>
                         {stagedTradePaperUrl && (
-                          <a
-                            href={stagedTradePaperUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewUrl(stagedTradePaperUrl)
+                              setPreviewName(stagedTradePaperName || "Trade License")
+                            }}
                             className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
                           >
                             View Doc <ExternalLink className="size-3" />
-                          </a>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1065,14 +1072,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           {stagedPaymentAdviceName || "No file selected"}
                         </span>
                         {stagedPaymentAdviceUrl && (
-                          <a
-                            href={stagedPaymentAdviceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewUrl(stagedPaymentAdviceUrl)
+                              setPreviewName(stagedPaymentAdviceName || "Payment Advice")
+                            }}
                             className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
                           >
                             View Doc <ExternalLink className="size-3" />
-                          </a>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1346,14 +1355,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         </label>
                         <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedTradePaperName || "No file attached"}</span>
                         {stagedTradePaperUrl && (
-                          <a
-                            href={stagedTradePaperUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewUrl(stagedTradePaperUrl)
+                              setPreviewName(stagedTradePaperName || "Trade License")
+                            }}
                             className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
                           >
                             View Doc <ExternalLink className="size-3" />
-                          </a>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1391,14 +1402,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         </label>
                         <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedPaymentAdviceName || "No file attached"}</span>
                         {stagedPaymentAdviceUrl && (
-                          <a
-                            href={stagedPaymentAdviceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewUrl(stagedPaymentAdviceUrl)
+                              setPreviewName(stagedPaymentAdviceName || "Payment Advice")
+                            }}
                             className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
                           >
                             View Doc <ExternalLink className="size-3" />
-                          </a>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1634,6 +1647,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           setIsEditOrderOpen(false)
           setEditingOrder(null)
         }}
+      />
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      <DocumentPreviewModal
+        isOpen={!!previewUrl}
+        onClose={() => {
+          setPreviewUrl("")
+          setPreviewName("")
+        }}
+        fileUrl={previewUrl}
+        fileName={previewName}
       />
     </div>
   )
