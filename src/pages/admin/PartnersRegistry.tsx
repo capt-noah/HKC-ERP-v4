@@ -58,6 +58,8 @@ export default function PartnersRegistry() {
   const [custCategory, setCustCategory] = useState("Commercial Union")
   const [custTradePaperName, setCustTradePaperName] = useState("")
   const [custTradePaperUrl, setCustTradePaperUrl] = useState("")
+  const [custPaymentAdviceName, setCustPaymentAdviceName] = useState("")
+  const [custPaymentAdviceUrl, setCustPaymentAdviceUrl] = useState("")
 
   // Supplier Form State
   const [suppName, setSuppName] = useState("")
@@ -83,6 +85,8 @@ export default function PartnersRegistry() {
     setCustCategory("Commercial Union")
     setCustTradePaperName("")
     setCustTradePaperUrl("")
+    setCustPaymentAdviceName("")
+    setCustPaymentAdviceUrl("")
     setEditingCustomer(null)
     setShowAddCustomerModal(true)
   }
@@ -99,6 +103,8 @@ export default function PartnersRegistry() {
     setCustCategory(c.category || "Commercial Union")
     setCustTradePaperName(c.tradePaperFileName || "")
     setCustTradePaperUrl(c.tradePaperUrl || "")
+    setCustPaymentAdviceName(c.paymentAdviceFileName || "")
+    setCustPaymentAdviceUrl(c.paymentAdviceUrl || "")
     setShowAddCustomerModal(true)
   }
 
@@ -134,15 +140,18 @@ export default function PartnersRegistry() {
     setShowAddSupplierModal(true)
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, isSupplier = false) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "advice" | "supplier" = "trade") => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
       const url = (reader.result as string) || ""
-      if (isSupplier) {
+      if (fileType === "supplier") {
         setSuppTradePaperName(file.name)
         setSuppTradePaperUrl(url)
+      } else if (fileType === "advice") {
+        setCustPaymentAdviceName(file.name)
+        setCustPaymentAdviceUrl(url)
       } else {
         setCustTradePaperName(file.name)
         setCustTradePaperUrl(url)
@@ -170,6 +179,8 @@ export default function PartnersRegistry() {
         category: custCategory,
         tradePaperFileName: custTradePaperName,
         tradePaperUrl: custTradePaperUrl,
+        paymentAdviceFileName: custPaymentAdviceName,
+        paymentAdviceUrl: custPaymentAdviceUrl,
       })
       showToast("Customer Updated", "success", `Customer ${custName} successfully updated in registry.`)
     } else {
@@ -183,16 +194,14 @@ export default function PartnersRegistry() {
         email: custEmail,
         address: custAddress,
         category: custCategory,
-        warehouseTarget: "WH1",
-        creditLimit: 500000,
-        status: "Active",
         tradePaperFileName: custTradePaperName,
         tradePaperUrl: custTradePaperUrl,
+        paymentAdviceFileName: custPaymentAdviceName,
+        paymentAdviceUrl: custPaymentAdviceUrl,
       }
       erp.addCustomer(newCust)
-      showToast("Customer Added", "success", `New Customer ${custName} onboarded to registry.`)
+      showToast("Customer Added", "success", `New customer ${custName} added to registry.`)
     }
-
     setShowAddCustomerModal(false)
   }
 
@@ -427,15 +436,51 @@ export default function PartnersRegistry() {
                           </div>
                         </td>
                         <td className="px-4 py-3.5 text-center">
-                          {c.tradePaperFileName ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                              <AlertCircle className="size-3 text-amber-500" /> Missing Trade License
-                            </span>
-                          )}
+                          <div className="flex flex-col items-center gap-1">
+                            {c.tradePaperFileName || c.tradePaperUrl ? (
+                              c.tradePaperUrl ? (
+                                <a
+                                  href={c.tradePaperUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                                  title="View Trade License"
+                                >
+                                  <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName || "Trade License"} ↗
+                                </a>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName}
+                                </span>
+                              )
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                <AlertCircle className="size-2.5 text-amber-500" /> Trade License Missing
+                              </span>
+                            )}
+
+                            {c.paymentAdviceFileName || c.paymentAdviceUrl ? (
+                              c.paymentAdviceUrl ? (
+                                <a
+                                  href={c.paymentAdviceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                                  title="View Payment Advice"
+                                >
+                                  <CheckCircle2 className="size-3 text-blue-600" /> {c.paymentAdviceFileName || "Payment Advice"} ↗
+                                </a>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                                  <CheckCircle2 className="size-3 text-blue-600" /> {c.paymentAdviceFileName}
+                                </span>
+                              )
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                <AlertCircle className="size-2.5 text-amber-500" /> Advice Missing
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-1.5">
@@ -643,26 +688,66 @@ export default function PartnersRegistry() {
                   </div>
                 </div>
 
-                {/* Trade Paper File Upload */}
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-zinc-900 block">Default Trade Paper / Business License</span>
-                      <span className="text-[10px] text-zinc-500 font-medium block">Pre-attached automatically when selecting customer on Sales Orders</span>
+                {/* Customer Documents Section */}
+                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                  <span className="text-xs font-black uppercase text-zinc-900 tracking-wider block">Customer Documents & Licenses</span>
+                  
+                  {/* Trade License */}
+                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-800">Trade License / Business Permit</span>
+                      {custTradePaperName && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="size-3" /> Attached
+                        </span>
+                      )}
                     </div>
-                    {custTradePaperName && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
-                        <CheckCircle2 className="size-3" /> Attached
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 pt-1">
+                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                        <Upload className="size-3" /> Select File
+                        <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "trade")} />
+                      </label>
+                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
+                      {custTradePaperUrl && (
+                        <a
+                          href={custTradePaperUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                        >
+                          View Doc ↗
+                        </a>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3 pt-1">
-                    <label className="cursor-pointer px-4 py-1.5 rounded-xl bg-zinc-900 text-white font-bold text-xs hover:bg-zinc-800 shadow-sm flex items-center gap-1.5">
-                      <Upload className="size-3.5" /> Select Trade Paper File
-                      <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, false)} />
-                    </label>
-                    <span className="text-xs font-mono text-zinc-600 truncate">{custTradePaperName || "No file chosen"}</span>
+                  {/* Payment Advice */}
+                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-800">Payment Advice / Bank Receipt</span>
+                      {custPaymentAdviceName && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="size-3" /> Attached
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                        <Upload className="size-3" /> Select Advice File
+                        <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "advice")} />
+                      </label>
+                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custPaymentAdviceName || "No file chosen"}</span>
+                      {custPaymentAdviceUrl && (
+                        <a
+                          href={custPaymentAdviceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                        >
+                          View Doc ↗
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -814,7 +899,7 @@ export default function PartnersRegistry() {
                   <div className="flex items-center gap-3 pt-1">
                     <label className="cursor-pointer px-4 py-1.5 rounded-xl bg-zinc-900 text-white font-bold text-xs hover:bg-zinc-800 shadow-sm flex items-center gap-1.5">
                       <Upload className="size-3.5" /> Select Trade Paper File
-                      <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, true)} />
+                      <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "supplier")} />
                     </label>
                     <span className="text-xs font-mono text-zinc-600 truncate">{suppTradePaperName || "No file chosen"}</span>
                   </div>

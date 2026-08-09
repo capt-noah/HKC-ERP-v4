@@ -168,6 +168,8 @@ export default function ProcessingServices() {
     setEditStatus(order.status || "Received")
   }
 
+  const [createContractFile, setCreateContractFile] = useState<File | null>(null)
+
   // Create Service Order
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -193,11 +195,20 @@ export default function ProcessingServices() {
         notes: createNotes,
       })
 
+      if (createContractFile) {
+        try {
+          await uploadProcessingServiceContract(created.id, createContractFile)
+        } catch (contractErr) {
+          console.warn("Contract upload warning:", contractErr)
+        }
+      }
+
       showToast("Service Order Created", "success", `Order ${created.reference_number || created.id} registered for ${targetClient}.`)
       setIsCreateOpen(false)
       setCreateGoodsDesc("")
       setCreateClientInput("")
       setCreateCustomerId("")
+      setCreateContractFile(null)
       loadServices()
     } catch (err) {
       showToast("Creation Failed", "warning", err instanceof Error ? err.message : "Failed to create processing service order.")
@@ -898,6 +909,44 @@ export default function ProcessingServices() {
                       placeholder="e.g. Toll milling, moisture testing, custom packaging..."
                       className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-medium outline-none"
                     />
+                  </div>
+
+                  {/* Service Contract Attachment Section */}
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-2">
+                    <span className="text-xs font-black uppercase text-zinc-500 tracking-wider block">Attach Service Contract Document (Optional)</span>
+                    <div className="flex items-center gap-3 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                      <FileText className="size-5 text-emerald-600 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block truncate">
+                          {createContractFile ? createContractFile.name : "No contract document selected"}
+                        </span>
+                        <span className="text-[10px] text-zinc-500 font-medium block">
+                          PDF, PNG, or JPG contract file (will sync to HKC Docs)
+                        </span>
+                      </div>
+                      <label className="px-3.5 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer shrink-0">
+                        {createContractFile ? "Change File" : "Attach Contract"}
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) setCreateContractFile(file)
+                          }}
+                        />
+                      </label>
+                      {createContractFile && (
+                        <button
+                          type="button"
+                          onClick={() => setCreateContractFile(null)}
+                          className="p-1 text-zinc-400 hover:text-rose-600 rounded"
+                          title="Remove contract file"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">

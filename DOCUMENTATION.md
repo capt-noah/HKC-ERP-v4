@@ -69,8 +69,9 @@ The system uses a full-screen layout split into five main operational domains:
                       └── /sales/issued (Sales Issues & Stock Dispatch Vouchers)
 
 /inventory ─────────► /inventory (Inventory & Storage Operations Dashboard)
+                      ├── /inventory/reports (Inventory Movement & Valuation Analytics)
                       ├── /inventory/stock (Stock & Products Registry, Store Transfers)
-                      └── /inventory/reports (Inventory Movement & Valuation Analytics)
+                      └── /inventory/processing-services (Warehouse 1 Processing Services)
 
 /finance ───────────► /finance (Overview Charts & Financial Ratios)
                       ├── /finance/ledger (General Ledger, Journal Entries, COA, Periods, Forex Revaluation)
@@ -296,7 +297,7 @@ The Express server features a standard production logging module ([`server/logge
 
 #### 2. Stock Register (`/inventory/stock`)
 - **Functional Purpose:** Master catalog of active inventory products with SKU tracking, reorder levels, valuation rates, multi-warehouse distribution breakdowns, regulatory compliance documentation (Certificates of Analysis), inter-warehouse Store Transfers with GL voucher generation, and real-time automated Stock Movement Audit Logs.
-- **In-Page Add Stock Modal:** Clicking `+ Add Item` triggers an in-page modal (`isAddModalOpen`) using the `max-w-5xl` Sales Order modal design language. Page redirects to `/inventory/stock/add-item` are eliminated, and redundant side cards ("Stock Value" and "Saved Fields") are removed to keep the creation form clean and spacious.
+- **In-Page Add Stock Modal:** Clicking `+ Add Item` triggers an in-page modal (`isAddModalOpen`) using the `max-w-5xl` Sales Order modal design language. Unit Price is explicitly optional (`(optional)` label; defaults to 0) since unit prices fluctuate over time. Page redirects to `/inventory/stock/add-item` are eliminated, and redundant side cards ("Stock Value" and "Saved Fields") are removed to keep the creation form clean and spacious.
 - **Contents (Data & States):**
   - **Active Products:** Product codes, SKUs, categories, warehouse allocations, reorder levels, valuation rates, physical stock, active batch tags, and expiry horizons.
   - **Store Transfers:** Material Transfer Note tracking ledger with issue/receipt workflows that automatically log stock movements and post double-entry GL journal vouchers (`ACC-1410`).
@@ -417,3 +418,11 @@ The Express server features a standard production logging module ([`server/logge
 5. **Subpage Navigation Layout:** Sub-navigation pills must always be placed on the far right using `<SubPageNav />`.
 6. **Use `useFeedback()` for toasts:** All user notifications use `FeedbackContext`.
 7. **Concise Page Headers:** Keep page descriptions under main titles short and direct (5–10 words max).
+
+---
+
+## 🚀 Vercel Deployment Architecture
+
+1. **SPA Client-Side Route Fallbacks:** `vercel.json` maps all SPA frontend subroutes (`/(.*)`) to `/index.html`, eliminating 404 errors when refreshing or directly navigating to subpages like `/sales/hkc-docs`, `/inventory/stock`, or `/finance/ledger`.
+2. **Serverless API Bridge (`/api/index.js`):** Express backend API endpoints are bridged to Vercel Serverless Functions via [`/api/index.js`](file:///Users/Noah/Documents/React/HKC-ERP-v4/api/index.js). All requests to `/api/*` (e.g. `/api/processing-services`, `/api/shipment-documents`, `/api/products`, `/api/sales-issues`) are routed by `vercel.json` to `api/index.js`, executing full Express domain handlers and ensuring record creation works on Vercel out-of-the-box.
+3. **API Base URL Resolution (`API_BASE`):** Frontend API clients (`processingServicesApi.ts`, `shipmentDocumentEngine.ts`, `apiPersistence.ts`, `salesIssuesApi.ts`, `hrApi.ts`) resolve `API_BASE = import.meta.env.VITE_API_URL ?? ""`. When `VITE_API_URL` is omitted, relative `/api/*` calls seamlessly invoke Vercel's serverless backend function.

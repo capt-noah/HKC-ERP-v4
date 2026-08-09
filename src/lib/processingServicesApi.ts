@@ -27,9 +27,11 @@ export interface ProcessingServiceOrder {
   updated_at?: string
 }
 
+const API_BASE = import.meta.env.VITE_API_URL ?? ""
+
 export async function fetchProcessingServices(status?: string): Promise<ProcessingServiceOrder[]> {
   try {
-    const url = new URL("/api/processing-services", window.location.origin)
+    const url = new URL(`${API_BASE}/api/processing-services`, window.location.origin)
     if (status && status !== "ALL") {
       url.searchParams.set("status", status)
     }
@@ -45,7 +47,7 @@ export async function fetchProcessingServices(status?: string): Promise<Processi
 }
 
 export async function createProcessingService(payload: Partial<ProcessingServiceOrder>): Promise<ProcessingServiceOrder> {
-  const res = await fetch("/api/processing-services", {
+  const res = await fetch(`${API_BASE}/api/processing-services`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -58,7 +60,7 @@ export async function createProcessingService(payload: Partial<ProcessingService
 }
 
 export async function updateProcessingService(id: string, payload: Partial<ProcessingServiceOrder>): Promise<ProcessingServiceOrder> {
-  const res = await fetch(`/api/processing-services/${id}`, {
+  const res = await fetch(`${API_BASE}/api/processing-services/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -74,7 +76,7 @@ export async function transitionProcessingServiceStage(
   id: string,
   stage: ProcessingServiceStage
 ): Promise<{ ok: boolean; journalEntry?: unknown } & ProcessingServiceOrder> {
-  const res = await fetch(`/api/processing-services/${id}/transition`, {
+  const res = await fetch(`${API_BASE}/api/processing-services/${id}/transition`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ stage }),
@@ -94,7 +96,7 @@ export async function uploadProcessingServiceContract(
     const reader = new FileReader()
     reader.onload = async () => {
       try {
-        const res = await fetch(`/api/processing-services/${id}/upload-contract`, {
+        const res = await fetch(`${API_BASE}/api/processing-services/${id}/upload-contract`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -118,7 +120,7 @@ export async function uploadProcessingServiceContract(
 }
 
 export async function deleteProcessingService(id: string): Promise<void> {
-  const res = await fetch(`/api/processing-services/${id}`, { method: "DELETE" })
+  const res = await fetch(`${API_BASE}/api/processing-services/${id}`, { method: "DELETE" })
   if (!res.ok) {
     throw new Error("Failed to delete processing service order.")
   }

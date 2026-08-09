@@ -11,7 +11,8 @@ import {
   FileCheck,
   ChevronDown,
   ChevronUp,
-  Phone
+  Phone,
+  ExternalLink,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -261,15 +262,23 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     ])
 
-    // Load existing attached docs for editing
+    // Load existing attached docs for editing with fallback to so/customer properties
     const existingDocs = await fetchShipmentDocs(so.id, "sales_order")
+    const cust = customers.find((c) => c.id === so.customerId || c.name === so.customer)
+
     const tradeDoc = existingDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
     const adviceDoc = existingDocs.find((d) => d.document_type === "Payment Advice")
 
-    setStagedTradePaperName(tradeDoc ? tradeDoc.file_name : "")
-    setStagedTradePaperUrl(tradeDoc ? tradeDoc.file_url : "")
-    setStagedPaymentAdviceName(adviceDoc ? adviceDoc.file_name : "")
-    setStagedPaymentAdviceUrl(adviceDoc ? adviceDoc.file_url : "")
+    const tradeName = tradeDoc?.file_name || (so as any).tradePaperFileName || cust?.tradePaperFileName || (tradeDoc?.file_url ? "Trade License.pdf" : "")
+    const tradeUrl = tradeDoc?.file_url || (so as any).tradePaperUrl || cust?.tradePaperUrl || ""
+
+    const adviceName = adviceDoc?.file_name || (so as any).paymentAdviceFileName || (adviceDoc?.file_url ? "Payment Advice.pdf" : "")
+    const adviceUrl = adviceDoc?.file_url || (so as any).paymentAdviceUrl || ""
+
+    setStagedTradePaperName(tradeName)
+    setStagedTradePaperUrl(tradeUrl)
+    setStagedPaymentAdviceName(adviceName)
+    setStagedPaymentAdviceUrl(adviceUrl)
 
     setIsEditOrderOpen(true)
   }
@@ -987,7 +996,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         )}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
                           <FileCheck className="size-3" /> Select File
                           <input
                             type="file"
@@ -1008,6 +1017,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
                           {stagedTradePaperName || "No file selected"}
                         </span>
+                        {stagedTradePaperUrl && (
+                          <a
+                            href={stagedTradePaperUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                          >
+                            View Doc <ExternalLink className="size-3" />
+                          </a>
+                        )}
                       </div>
                     </div>
 
@@ -1024,7 +1043,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         )}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
                           <FileCheck className="size-3" /> Select Advice File
                           <input
                             type="file"
@@ -1045,6 +1064,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
                           {stagedPaymentAdviceName || "No file selected"}
                         </span>
+                        {stagedPaymentAdviceUrl && (
+                          <a
+                            href={stagedPaymentAdviceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                          >
+                            View Doc <ExternalLink className="size-3" />
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1297,7 +1326,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         )}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
                           <FileCheck className="size-3" /> Select File
                           <input
                             type="file"
@@ -1315,7 +1344,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             }}
                           />
                         </label>
-                        <span className="text-[11px] font-mono text-zinc-600 truncate">{stagedTradePaperName || "No file attached"}</span>
+                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedTradePaperName || "No file attached"}</span>
+                        {stagedTradePaperUrl && (
+                          <a
+                            href={stagedTradePaperUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                          >
+                            View Doc <ExternalLink className="size-3" />
+                          </a>
+                        )}
                       </div>
                     </div>
 
@@ -1323,16 +1362,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                          <FileText className="size-3.5 text-emerald-600" /> Payment Advice Receipt
+                          <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
                         </span>
                         {stagedPaymentAdviceName ? (
-                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
+                          <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
                         ) : (
                           <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Missing</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1">
+                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
                           <FileCheck className="size-3" /> Select File
                           <input
                             type="file"
@@ -1350,7 +1389,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             }}
                           />
                         </label>
-                        <span className="text-[11px] font-mono text-zinc-600 truncate">{stagedPaymentAdviceName || "No file attached"}</span>
+                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedPaymentAdviceName || "No file attached"}</span>
+                        {stagedPaymentAdviceUrl && (
+                          <a
+                            href={stagedPaymentAdviceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                          >
+                            View Doc <ExternalLink className="size-3" />
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>

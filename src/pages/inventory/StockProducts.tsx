@@ -168,7 +168,6 @@ export default function StockProducts() {
       addPackagingUnit &&
       addWarehouse &&
       addBatchNumber &&
-      addUnitPrice &&
       addMfgDate &&
       addExpDate &&
       addQtyPerPack &&
@@ -1022,7 +1021,7 @@ export default function StockProducts() {
 
                   <label className="space-y-1">
                     <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                      Unit Price (ETB) <span className="text-rose-600">*</span>
+                      Unit Price (ETB) <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span>
                     </span>
                     <input
                       type="number"

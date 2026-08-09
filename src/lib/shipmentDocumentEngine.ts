@@ -213,9 +213,11 @@ export function evaluateShipmentDocs({
 
 // ── API Helpers ─────────────────────────────────────────────────────────────
 
+const API_BASE = import.meta.env.VITE_API_URL ?? ""
+
 export async function fetchShipmentDocRules(appliesTo?: string): Promise<ShipmentDocRule[]> {
   try {
-    const url = new URL('/api/shipment-documents/rules', window.location.origin)
+    const url = new URL(`${API_BASE}/api/shipment-documents/rules`, window.location.origin)
     if (appliesTo) url.searchParams.set('applies_to', appliesTo)
     const res = await fetch(url.toString())
     if (res.ok) {
@@ -230,7 +232,7 @@ export async function fetchShipmentDocRules(appliesTo?: string): Promise<Shipmen
 
 export async function fetchShipmentDocs(recordId: string, recordType: string): Promise<ShipmentDocAttachment[]> {
   try {
-    const url = new URL('/api/shipment-documents', window.location.origin)
+    const url = new URL(`${API_BASE}/api/shipment-documents`, window.location.origin)
     url.searchParams.set('record_id', recordId)
     url.searchParams.set('record_type', recordType)
     const res = await fetch(url.toString())
@@ -245,7 +247,7 @@ export async function fetchShipmentDocs(recordId: string, recordType: string): P
 }
 
 export async function uploadShipmentDoc(doc: Partial<ShipmentDocAttachment>): Promise<ShipmentDocAttachment> {
-  const res = await fetch('/api/shipment-documents', {
+  const res = await fetch(`${API_BASE}/api/shipment-documents`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(doc),
@@ -265,7 +267,7 @@ export interface AssignedOfficerRecord {
 
 export async function fetchAssignedOfficers(): Promise<AssignedOfficerRecord[]> {
   try {
-    const res = await fetch('/api/shipment-documents/officers')
+    const res = await fetch(`${API_BASE}/api/shipment-documents/officers`)
     if (res.ok) {
       const data = await res.json()
       if (Array.isArray(data)) return data
@@ -277,7 +279,7 @@ export async function fetchAssignedOfficers(): Promise<AssignedOfficerRecord[]> 
 }
 
 export async function assignShipmentOfficer(recordId: string, employeeId: string | null, employeeName: string): Promise<AssignedOfficerRecord> {
-  const res = await fetch('/api/shipment-documents/assign', {
+  const res = await fetch(`${API_BASE}/api/shipment-documents/assign`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ record_id: recordId, assigned_employee_id: employeeId, assigned_employee_name: employeeName }),
@@ -289,7 +291,7 @@ export async function assignShipmentOfficer(recordId: string, employeeId: string
 }
 
 export async function deleteShipmentDoc(id: string): Promise<void> {
-  const res = await fetch(`/api/shipment-documents/${id}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/api/shipment-documents/${id}`, { method: 'DELETE' })
   if (!res.ok) {
     throw new Error('Failed to delete shipment document.')
   }
