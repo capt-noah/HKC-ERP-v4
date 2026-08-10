@@ -298,12 +298,20 @@ The Express server features a standard production logging module ([`server/logge
 #### 2. Stock Register (`/inventory/stock`)
 - **Functional Purpose:** Master catalog of active inventory products with SKU tracking, reorder levels, valuation rates, multi-warehouse distribution breakdowns, regulatory compliance documentation (Certificates of Analysis), inter-warehouse Store Transfers with GL voucher generation, and real-time automated Stock Movement Audit Logs.
 - **In-Page Add Stock Modal:** Clicking `+ Add Item` triggers an in-page modal (`isAddModalOpen`) using the `max-w-5xl` Sales Order modal design language. Unit Price is explicitly optional (`(optional)` label; defaults to 0) since unit prices fluctuate over time. Page redirects to `/inventory/stock/add-item` are eliminated, and redundant side cards ("Stock Value" and "Saved Fields") are removed to keep the creation form clean and spacious.
+- **Dynamic Columns & Warehouse 1 Layout:** Expiry and batch data are displayed in separate columns:
+  - **Standard Columns:** Product & SKU, Primary Warehouse, Available Qty, Stock Value, Batch, Expiry Date, and Action.
+  - **Warehouse 1 (Agro-specific) Columns:** When filtering the Stock Register table by Warehouse 1, columns dynamically switch to split **Batch**, **Entry Date**, and **Leave Date** into their own separate columns.
+- **Store Transfers (`<StoreTransfersTab />`):** 
+  - Rendered directly inside the **Store Transfer** tab (combining previous Transfers and History Ledgers into a single, clean status-filterable table).
+  - Sliding panels are replaced with standard, centered pop-up modals matching the premium glassmorphism modal design patterns.
+  - **Dynamic Warehouse Selection:** The "From Warehouse" (Origin) selector is unlocked and dynamically filtered to show only warehouses that hold inventory for the selected product. Selecting an item auto-fills its primary warehouse and UOM.
+  - **Stock Verification Validation:** Displays an inline badge (`Avail: [qty]`) under the Quantity field and applies red border/shadow highlighting if the entered transfer quantity exceeds the selected origin warehouse's current stock. Transfer initiation is blocked with warning toasts if any item quantity exceeds available stock.
+  - **Removed Controls:** Removed the top "Transfer Context" card and deleted the "Process Receipt" action button.
 - **Contents (Data & States):**
   - **Active Products:** Product codes, SKUs, categories, warehouse allocations, reorder levels, valuation rates, physical stock, active batch tags, and expiry horizons.
   - **Store Transfers:** Material Transfer Note tracking ledger with issue/receipt workflows that automatically log stock movements and post double-entry GL journal vouchers (`ACC-1410`).
-  - **Stock Movements Audit Log:** Automated real-time log tracking receipts, transfers, sales dispatches, and inventory audit adjustments with linked journal entry IDs.
 - **How it is Showed (Visualizations):**
-  - **Registry Toggle Tabs:** Active Products, Store Transfers, Stock Movements Log, and Regulatory Docs.
+  - **Registry Toggle Tabs:** Stock Register, Store Transfer, and Regulatory Docs.
   - **Interactive Quick Peek & Stock Adjuster:** Slide-in panel to adjust warehouse quantities, creating an automated stock movement audit log entry and double-entry accounting GL voucher.
 
 #### 3. Warehouse 1 Processing Services / Toll Processing (`/inventory/processing-services`)
