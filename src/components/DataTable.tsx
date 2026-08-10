@@ -20,6 +20,7 @@ export interface DataTableProps<T> {
   emptyMessage?: string
   renderRow: (item: T, colWidths: Record<string, number>) => ReactNode
   keyExtractor: (item: T) => string | number
+  onRowClick?: (item: T) => void
 }
 
 function DataTableSkeletonRows({ columnCount }: { columnCount: number }) {
@@ -53,6 +54,7 @@ export function DataTable<T>({
   emptyMessage = "No records match your active search filters.",
   renderRow,
   keyExtractor,
+  onRowClick,
 }: DataTableProps<T>) {
   const {
     colWidths,
@@ -120,7 +122,8 @@ export function DataTable<T>({
                 <motion.tr
                   key={keyExtractor(item)}
                   whileHover={{ scale: 1.001 }}
-                  className="hover:bg-white/50 transition-colors"
+                  className={`hover:bg-white/50 transition-colors ${onRowClick ? "cursor-pointer" : ""}`}
+                  onClick={() => onRowClick?.(item)}
                 >
                   {renderRow(item, colWidths)}
                 </motion.tr>

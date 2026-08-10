@@ -8,7 +8,6 @@ import {
   Eye, 
   Check, 
   Trash2, 
-  Lock, 
   Shield, 
   AlertTriangle, 
   Download, 
@@ -16,12 +15,11 @@ import {
   ArrowRight,
   Edit
 } from "lucide-react"
-import { GlassCard } from "@/components/GlassCard"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
-import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
-import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
+import { type TableColumn } from "@/components/ResizableTable"
+import { DataTable } from "@/components/DataTable"
 
 export type { TransferStatus, TransferLineItem, Transfer }
 
@@ -144,10 +142,39 @@ export default function StoreTransfersTab() {
     setFormLineItems(updated)
   }
 
+  const getAvailableStock = (itemName: string) => {
+    if (!itemName || !formFromW) return 0
+    const prod = products.find(p => p.name.toLowerCase() === itemName.toLowerCase())
+    if (!prod) return 0
+    return prod.stockBreakdown?.find(sb => sb.warehouse === formFromW)?.qty ?? 0
+  }
+
   const handleUpdateLineItem = (index: number, field: keyof TransferLineItem, value: any) => {
     setFormLineItems(prev => prev.map((row, idx) => {
       if (idx === index) {
-        return { ...row, [field]: value }
+        let updatedRow = { ...row, [field]: value }
+        
+        // Smart auto-fill: UOM and From Warehouse
+        if (field === "item" && value) {
+          const matchedProd = products.find(p => p.name.toLowerCase() === value.toLowerCase() || p.id === value)
+          if (matchedProd) {
+            if (matchedProd.unit) {
+              updatedRow.UOM = matchedProd.unit
+            }
+            if (matchedProd.warehouse) {
+              // Auto set origin warehouse to where this product has stock
+              const sbWarehouses = (matchedProd.stockBreakdown || [])
+                .filter(sb => sb.qty > 0)
+                .map(sb => sb.warehouse)
+              
+              const primaryW = sbWarehouses[0] || matchedProd.warehouse
+              if (primaryW) {
+                setFormFromW(primaryW)
+              }
+            }
+          }
+        }
+        return updatedRow
       }
       return row
     }))
@@ -174,6 +201,17 @@ export default function StoreTransfersTab() {
     const hasInvalidQty = formLineItems.some(item => Number(item.quantity) <= 0)
     if (hasInvalidQty) {
       showToast("Validation Error", "warning", "All line item quantities must be greater than zero.")
+      return
+    }
+
+    // Check line quantities do not exceed available stock in origin warehouse
+    const hasExceededQty = formLineItems.some(item => {
+      if (!item.item) return false
+      const avail = getAvailableStock(item.item)
+      return Number(item.quantity) > avail
+    })
+    if (hasExceededQty) {
+      showToast("Validation Error", "warning", "One or more line items exceed the available warehouse stock.")
       return
     }
 
@@ -254,6 +292,42 @@ export default function StoreTransfersTab() {
     }, 1500)
   }
 
+  // Dynamic warehouses computed based on the first line item's selected product
+  const availableWarehouses = useMemo(() => {
+    const firstLineProduct = formLineItems[0]?.item
+    if (!firstLineProduct) return warehouseOptions
+
+    const matchedProd = products.find(p => p.name.toLowerCase() === firstLineProduct.toLowerCase())
+    if (!matchedProd) return warehouseOptions
+
+    const sbWarehouses = (matchedProd.stockBreakdown || [])
+      .filter(sb => sb.qty > 0)
+      .map(sb => sb.warehouse)
+    
+    if (sbWarehouses.length === 0 && matchedProd.quantity > 0 && matchedProd.warehouse) {
+      sbWarehouses.push(matchedProd.warehouse)
+    }
+
+    return sbWarehouses.length > 0 ? sbWarehouses : warehouseOptions
+  }, [formLineItems, products, warehouseOptions])
+
+  // Automatically select first available warehouse if current formFromW isn't in it
+  useEffect(() => {
+    if (isFormOpen && formMode === "create") {
+      if (!availableWarehouses.includes(formFromW)) {
+        setFormFromW(availableWarehouses[0] || "")
+      }
+    }
+  }, [availableWarehouses, formFromW, isFormOpen, formMode])
+
+  // Automatically adjust destination warehouse to not match origin
+  useEffect(() => {
+    if (formFromW && formFromW === formToW) {
+      const other = warehouseOptions.find(w => w !== formFromW) || ""
+      setFormToW(other)
+    }
+  }, [formFromW, formToW, warehouseOptions])
+
   // --- FILTERED TRANSFERS ---
   const filteredTransfers = useMemo(() => {
     return transfers.filter(t => {
@@ -270,227 +344,153 @@ export default function StoreTransfersTab() {
     })
   }, [transfers, searchQuery, statusFilter])
 
-  const transferTable = useResizableTable(transferColumns, filteredTransfers, {
-    reference_number: 160,
-    from_warehouse: 180,
-    to_warehouse: 180,
-    total_quantity: 140,
-    date: 140,
-    status: 140,
-    _actions: 120,
-  })
+
 
   return (
     <div className="space-y-6">
-      <GlassCard className="p-5 border border-white/65 shadow-sm bg-white/40">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <h4 className="text-xs font-black text-zinc-950 uppercase tracking-widest flex items-center gap-1.5">
-              <Shield className="size-3.5 text-emerald-600 shrink-0" /> Transfer Context
-            </h4>
-            <p className="text-[11px] font-bold text-zinc-500 max-w-2xl leading-snug mt-1">
-              Transfers use warehouses and stock items saved in Supabase.
-            </p>
-          </div>
-          <div className="rounded-full border border-zinc-200/60 bg-zinc-100/80 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700">
-            Active warehouse: {currentWarehouse || "No saved warehouse"}
-          </div>
-        </div>
-      </GlassCard>
+      <DataTable
+        title="Warehouse Transfers"
+        subtitle={`${filteredTransfers.length} inter-warehouse movements recorded`}
+        columns={transferColumns}
+        data={filteredTransfers}
+        isLoading={false}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search TIN, From/To, Item..."
+        onRowClick={(transfer) => setSelectedTransfer(transfer)}
+        keyExtractor={(transfer) => transfer.reference_number}
+        actions={
+          warehouseOptions.length > 1
+            ? [
+                {
+                  label: "New Entry",
+                  onClick: handleInitiateNew,
+                  icon: <Plus className="size-4" />,
+                  variant: "primary",
+                },
+              ]
+            : []
+        }
+        filters={[
+          {
+            value: statusFilter,
+            onChange: (val) => setStatusFilter(val as any),
+            ariaLabel: "Filter by Status",
+            options: [
+              { value: "ALL", label: "All Statuses" },
+              { value: "Issued", label: "Issued / In Transit" },
+              { value: "Received", label: "Received & Posted" },
+              { value: "Discrepancy", label: "Discrepancy Flagged" },
+            ],
+          },
+        ]}
+        defaultWidths={{
+          reference_number: 160,
+          from_warehouse: 180,
+          to_warehouse: 180,
+          total_quantity: 140,
+          date: 140,
+          status: 140,
+          _actions: 120,
+        }}
+        renderRow={(transfer, colWidths) => {
+          const isIssued = transfer.status === "Issued"
+          const isReceived = transfer.status === "Received"
+          const isDiscrepancy = transfer.status === "Discrepancy"
 
-      {/* =========================================================================
-          2. TRANSFER ENTRIES LIST SCREEN (SCREEN 1)
-          ========================================================================= */}
-      <div className="space-y-4">
-        {/* Finance Toolbar */}
-        <FinanceTableToolbar
-          title="Transfer Entries"
-          subtitle={`${filteredTransfers.length} inter-warehouse movements recorded in the stock register`}
-          searchValue={searchQuery}
-          onSearchChange={setSearchQuery}
-          searchPlaceholder="Search TIN, From/To, Item..."
-          secondary={
-            <div className="flex bg-black/[0.03] p-1 rounded-2xl gap-1 w-fit">
-              {[
-                { id: "ALL", label: "All Entries" },
-                { id: "Issued", label: "Issued / In Transit" },
-                { id: "Received", label: "Received & Posted" },
-                { id: "Discrepancy", label: "Discrepancy Flagged" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setStatusFilter(tab.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    statusFilter === tab.id
-                      ? "bg-white text-black shadow-sm"
-                      : "text-gray-500 hover:text-black"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          }
-          actions={
-            currentWarehouse && warehouseOptions.length > 1
-              ? [
-                  {
-                    label: "New Entry",
-                    onClick: handleInitiateNew,
-                    icon: <Plus className="size-4" />,
-                  },
-                ]
-              : []
-          }
-        />
+          const statusPillColors = 
+            isReceived ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+            isIssued ? "bg-blue-50 text-blue-700 border-blue-200" :
+            isDiscrepancy ? "bg-amber-50 text-amber-800 border-amber-300/80 animate-pulse" :
+            "bg-zinc-100 text-zinc-700 border-zinc-200"
 
-        {/* Table View */}
-        <GlassCard className="p-0 overflow-hidden border border-white/65 shadow-md">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase select-none">
-                  <ResizableTh col={transferColumns[0]} width={transferTable.colWidths.reference_number} sortKey={transferTable.sortKey} sortDir={transferTable.sortDir} openMenuCol={transferTable.openMenuCol} onResizeStart={transferTable.handleResizeStart} onToggleMenu={transferTable.toggleMenu} onSortAsc={transferTable.setSortAsc} onSortDesc={transferTable.setSortDesc} onClearSort={transferTable.clearSort} />
-                  <ResizableTh col={transferColumns[1]} width={transferTable.colWidths.from_warehouse} sortKey={transferTable.sortKey} sortDir={transferTable.sortDir} openMenuCol={transferTable.openMenuCol} onResizeStart={transferTable.handleResizeStart} onToggleMenu={transferTable.toggleMenu} onSortAsc={transferTable.setSortAsc} onSortDesc={transferTable.setSortDesc} onClearSort={transferTable.clearSort} />
-                  <ResizableTh col={transferColumns[2]} width={transferTable.colWidths.to_warehouse} sortKey={transferTable.sortKey} sortDir={transferTable.sortDir} openMenuCol={transferTable.openMenuCol} onResizeStart={transferTable.handleResizeStart} onToggleMenu={transferTable.toggleMenu} onSortAsc={transferTable.setSortAsc} onSortDesc={transferTable.setSortDesc} onClearSort={transferTable.clearSort} />
-                  <ResizableTh col={transferColumns[3]} width={transferTable.colWidths.total_quantity} sortKey={transferTable.sortKey} sortDir={transferTable.sortDir} openMenuCol={transferTable.openMenuCol} onResizeStart={transferTable.handleResizeStart} onToggleMenu={transferTable.toggleMenu} onSortAsc={transferTable.setSortAsc} onSortDesc={transferTable.setSortDesc} onClearSort={transferTable.clearSort} />
-                  <ResizableTh col={transferColumns[4]} width={transferTable.colWidths.date} sortKey={transferTable.sortKey} sortDir={transferTable.sortDir} openMenuCol={transferTable.openMenuCol} onResizeStart={transferTable.handleResizeStart} onToggleMenu={transferTable.toggleMenu} onSortAsc={transferTable.setSortAsc} onSortDesc={transferTable.setSortDesc} onClearSort={transferTable.clearSort} />
-                  <ResizableTh col={transferColumns[5]} width={transferTable.colWidths.status} sortKey={transferTable.sortKey} sortDir={transferTable.sortDir} openMenuCol={transferTable.openMenuCol} onResizeStart={transferTable.handleResizeStart} onToggleMenu={transferTable.toggleMenu} onSortAsc={transferTable.setSortAsc} onSortDesc={transferTable.setSortDesc} onClearSort={transferTable.clearSort} />
-                  <ResizableTh col={transferColumns[6]} width={transferTable.colWidths._actions} sortKey={transferTable.sortKey} sortDir={transferTable.sortDir} openMenuCol={transferTable.openMenuCol} onResizeStart={transferTable.handleResizeStart} onToggleMenu={transferTable.toggleMenu} onSortAsc={transferTable.setSortAsc} onSortDesc={transferTable.setSortDesc} onClearSort={transferTable.clearSort} />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-150/40">
-                {transferTable.sorted().length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-zinc-400 text-xs font-medium">
-                      No transfer entries match the selected status or filters.
-                    </td>
-                  </tr>
-                ) : (
-                  transferTable.sorted().map((transfer: Transfer) => {
-                    const isIssued = transfer.status === "Issued"
-                    const isReceived = transfer.status === "Received"
-                    const isDiscrepancy = transfer.status === "Discrepancy"
+          const canEdit = isIssued || isDiscrepancy
 
-                    const statusPillColors = 
-                      isReceived ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                      isIssued ? "bg-blue-50 text-blue-700 border-blue-200" :
-                      isDiscrepancy ? "bg-amber-50 text-amber-800 border-amber-300/80 animate-pulse" :
-                      "bg-zinc-100 text-zinc-700 border-zinc-200"
+          return (
+            <>
+              {/* Reference Num */}
+              <td style={{ width: `${colWidths.reference_number}px` }} className="py-4 px-6 overflow-hidden">
+                <span className="font-mono font-black text-zinc-950 text-xs leading-none">
+                  {transfer.reference_number}
+                </span>
+              </td>
 
-                    // Check if current user has permission to process the incoming transfer
-                    const isIncomingForMe = transfer.to_warehouse === currentWarehouse
-                    const canProcessReceipt = isIssued && isIncomingForMe
-                    const canEdit = (isIssued || isDiscrepancy) && transfer.from_warehouse === currentWarehouse
+              {/* From Warehouse */}
+              <td style={{ width: `${colWidths.from_warehouse}px` }} className="py-4 px-4 overflow-hidden">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
+                  <WarehouseIcon className="size-3.5 text-zinc-400 shrink-0" />
+                  <span className="truncate">{transfer.from_warehouse}</span>
+                </div>
+              </td>
 
-                    return (
-                      <tr
-                        key={transfer.reference_number}
-                        onClick={() => setSelectedTransfer(transfer)}
-                        className="hover:bg-white/45 cursor-pointer transition-colors group"
-                      >
-                        {/* Reference Num */}
-                        <td className="py-4 px-6">
-                          <span className="font-mono font-black text-zinc-950 text-xs leading-none">
-                            {transfer.reference_number}
-                          </span>
-                        </td>
+              {/* To Warehouse */}
+              <td style={{ width: `${colWidths.to_warehouse}px` }} className="py-4 px-4 overflow-hidden">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
+                  <WarehouseIcon className="size-3.5 text-zinc-400 shrink-0" />
+                  <span className="truncate">{transfer.to_warehouse}</span>
+                </div>
+              </td>
 
-                        {/* From Warehouse */}
-                        <td className="py-4 px-4">
-                          <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
-                            <WarehouseIcon className="size-3.5 text-zinc-400 shrink-0" />
-                            <span>{transfer.from_warehouse}</span>
-                          </div>
-                        </td>
+              {/* Total Quantity */}
+              <td style={{ width: `${colWidths.total_quantity}px` }} className="py-4 px-4 text-right overflow-hidden">
+                <span className="font-mono font-extrabold text-xs text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200/50 inline-block">
+                  {transfer.total_quantity.toLocaleString()} units
+                </span>
+              </td>
 
-                        {/* To Warehouse */}
-                        <td className="py-4 px-4">
-                          <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
-                            <WarehouseIcon className="size-3.5 text-zinc-400 shrink-0" />
-                            <span>{transfer.to_warehouse}</span>
-                          </div>
-                        </td>
+              {/* Date */}
+              <td style={{ width: `${colWidths.date}px` }} className="py-4 px-4 overflow-hidden">
+                <div className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 font-mono">
+                  <Calendar className="size-3 text-zinc-400" />
+                  <span>{transfer.date}</span>
+                </div>
+              </td>
 
-                        {/* Total Quantity */}
-                        <td className="py-4 px-4 text-center">
-                          <span className="font-mono font-extrabold text-xs text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200/50">
-                            {transfer.total_quantity.toLocaleString()} units
-                          </span>
-                        </td>
+              {/* Status */}
+              <td style={{ width: `${colWidths.status}px` }} className="py-4 px-4 text-center overflow-hidden">
+                <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${statusPillColors}`}>
+                  {transfer.status}
+                </span>
+              </td>
 
-                        {/* Date */}
-                        <td className="py-4 px-4">
-                          <div className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 font-mono">
-                            <Calendar className="size-3 text-zinc-400" />
-                            <span>{transfer.date}</span>
-                          </div>
-                        </td>
+              {/* Custom Actions */}
+              <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-6 text-center overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-center gap-1.5">
+                  {/* View Details */}
+                  <button
+                    onClick={() => setSelectedTransfer(transfer)}
+                    className="p-1.5 rounded-md border border-zinc-200 hover:bg-zinc-50 text-zinc-500 hover:text-zinc-800 transition-colors"
+                    title="View Details"
+                  >
+                    <Eye className="size-3.5" />
+                  </button>
 
-                        {/* Status */}
-                        <td className="py-4 px-4 text-center">
-                          <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${statusPillColors}`}>
-                            {transfer.status}
-                          </span>
-                        </td>
+                  {/* Edit Action */}
+                  {canEdit && (
+                    <button
+                      onClick={() => {
+                        setFormMode("edit")
+                        setFormRefNum(transfer.reference_number)
+                        setFormFromW(transfer.from_warehouse)
+                        setFormToW(transfer.to_warehouse)
+                        setFormLineItems(transfer.line_items)
+                        setFormSubmitted(false)
+                        setWizardStep(1)
+                        setIsFormOpen(true)
+                      }}
+                      className="p-1.5 rounded-md border border-zinc-200 hover:bg-zinc-50 text-zinc-500 hover:text-zinc-800 transition-colors"
+                      title="Edit Transfer"
+                    >
+                      <Edit className="size-3.5" />
+                    </button>
+                  )}
 
-                        {/* Custom Context Actions Inline */}
-                        <td className="py-4 px-6 text-right" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* View TIN Document */}
-                            <button
-                              onClick={() => setSelectedTransfer(transfer)}
-                              className="p-1.5 rounded-md border border-zinc-200 hover:bg-zinc-50 text-zinc-500 hover:text-zinc-800 transition-colors"
-                              title="View TIN Document"
-                            >
-                              <Eye className="size-3.5" />
-                            </button>
-
-                            {/* Edit Action */}
-                            {canEdit && (
-                              <button
-                                onClick={() => {
-                                  setFormMode("edit")
-                                  setFormRefNum(transfer.reference_number)
-                                  setFormFromW(transfer.from_warehouse)
-                                  setFormToW(transfer.to_warehouse)
-                                  setFormLineItems(transfer.line_items)
-                                  setFormSubmitted(false)
-                                  setWizardStep(1)
-                                  setIsFormOpen(true)
-                                }}
-                                className="p-1.5 rounded-md border border-zinc-200 hover:bg-zinc-50 text-zinc-500 hover:text-zinc-800 transition-colors"
-                                title="Edit Transfer"
-                              >
-                                <Edit className="size-3.5" />
-                              </button>
-                            )}
-
-                            {/* Process Receipt Action (Visually highlighted to direct attention) */}
-                            {canProcessReceipt && (
-                              <button
-                                onClick={() => {
-                                  setSelectedTransfer(transfer)
-                                  setReceiptMode("match")
-                                  setIsReceiptOpen(true)
-                                }}
-                                className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black transition-all shadow-sm uppercase tracking-tight flex items-center gap-1 animate-pulse"
-                              >
-                                Process Receipt
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </GlassCard>
-      </div>
+                </div>
+              </td>
+            </>
+          )
+        }}
+      />
 
       {/* =========================================================================
           3. CREATE / EDIT DRAFT WIZARD PANEL (SCREEN 2 & SCREEN 3)
@@ -504,318 +504,343 @@ export default function StoreTransfersTab() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsFormOpen(false)}
-              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100]"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
             />
 
-            {/* Slide-over Container */}
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 26, stiffness: 220 }}
-              className="fixed top-0 right-0 h-screen w-full max-w-2xl bg-zinc-50/98 backdrop-blur-md shadow-2xl border-l border-zinc-200/80 z-[101] flex flex-col"
-            >
-              {/* Header */}
-              <div className="p-6 border-b border-zinc-200/60 shrink-0 flex items-center justify-between">
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">
-                    Stock Register
-                  </span>
-                  <h2 className="text-xl font-black text-zinc-950 tracking-tight leading-none">
-                    {formMode === "create" ? "New Transfer Entry" : "Edit Transfer Entry"}
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-
-              {/* SCROLLABLE BODY CONTENT */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* STEP PROGRESS BAR */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className={`h-1 rounded-full ${wizardStep >= 1 ? "bg-zinc-950" : "bg-zinc-200"}`} />
-                  <div className={`h-1 rounded-full ${wizardStep >= 2 ? "bg-zinc-950" : "bg-zinc-200"}`} />
-                </div>
-
-                {/* WIZARD STEP 1: FORM EDITING (SCREEN 2) */}
-                {wizardStep === 1 && (
-                  <div className="space-y-5">
-                    {/* Warehouses configuration */}
-                    <div className="grid grid-cols-2 gap-4 bg-zinc-100/50 p-4 rounded-2xl border border-zinc-200/40">
-                      <div>
-                        <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block mb-1">
-                          From Warehouse (Origin)
-                        </label>
-                        <div className="w-full bg-white border border-zinc-200 px-3 py-2 rounded-xl text-xs font-black text-zinc-600 flex items-center gap-2 cursor-not-allowed">
-                          <WarehouseIcon className="size-4 text-zinc-400" />
-                          <span>{formFromW}</span>
-                          <Lock className="size-3 text-zinc-400 ml-auto" />
-                        </div>
-                        <span className="text-[9px] text-zinc-400 mt-1 block font-bold leading-tight">
-                          Automatically locked to your assigned warehouse.
-                        </span>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block mb-1">
-                          To Warehouse (Destination)
-                        </label>
-                        <select
-                          value={formToW}
-                          onChange={e => setFormToW(e.target.value)}
-                          className="w-full bg-white border border-zinc-200 px-3 py-2 rounded-xl text-xs font-black outline-none cursor-pointer focus:border-zinc-950"
-                        >
-                          {warehouseOptions.filter(w => w !== formFromW).map(w => (
-                            <option key={w} value={w}>{w}</option>
-                          ))}
-                        </select>
-                        <span className="text-[9px] text-zinc-400 mt-1 block font-bold leading-tight">
-                          Select receiving storage vault.
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Line Items Container */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between pb-1 border-b border-zinc-200/50">
-                        <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                          Material Line Items List
-                        </h4>
-                        <button
-                          type="button"
-                          onClick={handleAddLineRow}
-                          className="flex items-center gap-1 text-[10px] font-black text-zinc-900 hover:text-zinc-600 transition-colors uppercase tracking-tight"
-                        >
-                          <Plus className="size-3.5" /> Add Row
-                        </button>
-                      </div>
-
-                      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
-                        {formLineItems.map((row, idx) => (
-                          <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-white p-3.5 rounded-xl border border-zinc-200/80 shadow-sm relative">
-                            {/* Product Selection */}
-                            <div className="col-span-4">
-                              <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Product</label>
-                              <div className={`flex items-center rounded-lg px-2 py-1 transition-all ${
-                                formSubmitted && (!row.item || !row.item.trim())
-                                  ? "bg-red-50 border border-red-500 shadow-sm shadow-red-100"
-                                  : "border border-zinc-200/60 focus-within:border-zinc-400 focus-within:bg-zinc-50/50"
-                              }`}>
-                                <input
-                                  type="text"
-                                  list="products-suggestions"
-                                  placeholder="Enter product name..."
-                                  value={row.item}
-                                  onChange={e => handleUpdateLineItem(idx, "item", e.target.value)}
-                                  className="w-full bg-transparent border-0 text-[11px] font-extrabold text-zinc-800 outline-none p-0"
-                                />
-                              </div>
-                              <datalist id="products-suggestions">
-                                {products.map(p => (
-                                  <option key={p.id} value={p.name} />
-                                ))}
-                              </datalist>
-                            </div>
-
-                            {/* UOM */}
-                            <div className="col-span-2">
-                              <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">UOM</label>
-                              <select
-                                value={row.UOM}
-                                onChange={e => handleUpdateLineItem(idx, "UOM", e.target.value)}
-                                className="w-full bg-transparent border-0 text-[11px] font-bold text-zinc-600 outline-none p-0 cursor-pointer"
-                              >
-                                {Array.from(new Set(products.map((product) => product.unit).filter(Boolean))).map(u => (
-                                  <option key={u} value={u}>{u}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Quantity */}
-                            <div className="col-span-2">
-                              <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Qty</label>
-                              <input
-                                type="number"
-                                required
-                                value={row.quantity}
-                                min="1"
-                                onChange={e => handleUpdateLineItem(idx, "quantity", e.target.value === "" ? "" : Number(e.target.value))}
-                                className="w-full bg-transparent border-0 text-[11px] font-mono font-black text-zinc-900 outline-none p-0"
-                              />
-                            </div>
-
-                            {/* Remark */}
-                            <div className="col-span-3">
-                              <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Remark</label>
-                              <input
-                                type="text"
-                                placeholder="Notes..."
-                                value={row.remark || ""}
-                                onChange={e => handleUpdateLineItem(idx, "remark", e.target.value)}
-                                className="w-full bg-transparent border-0 text-[11px] text-zinc-500 outline-none p-0 font-medium"
-                              />
-                            </div>
-
-                            {/* Trash action */}
-                            <div className="col-span-1 text-right">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveLineRow(idx)}
-                                className="p-1 rounded text-zinc-300 hover:text-zinc-600 transition-colors"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* LIVE AUTO-CALC TOTAL DISPLAY */}
-                      <div className="flex items-center justify-between p-3.5 bg-zinc-900 rounded-xl text-white shadow-md">
-                        <span className="text-[10px] font-black uppercase tracking-wider">Total:</span>
-                        <strong className="font-mono text-xs font-black uppercase">
-                          {formTotalQuantity.toLocaleString()} Units
-                        </strong>
-                      </div>
-                    </div>
+            {/* Center Modal Container */}
+            <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ duration: 0.2 }}
+                className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-3xl max-h-[90vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
+              >
+                {/* Header */}
+                <div className="p-6 border-b border-zinc-200/60 shrink-0 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">
+                      Stock Register
+                    </span>
+                    <h2 className="text-xl font-black text-zinc-950 dark:text-white tracking-tight leading-none">
+                      {formMode === "create" ? "New Transfer Entry" : "Edit Transfer Entry"}
+                    </h2>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => setIsFormOpen(false)}
+                    className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
 
-                {/* WIZARD STEP 2: SUMMARY & DIGITAL DISPATCH SIGNATURE (SCREEN 3) */}
-                {wizardStep === 2 && (
-                  <div className="space-y-6">
-                    <div className="border border-zinc-200 bg-white p-5 rounded-2xl shadow-inner space-y-4 relative">
-                      <div className="border-b border-zinc-150 pb-3 flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">Document Registry #</span>
-                          <strong className="font-mono text-sm font-black text-zinc-950">{formRefNum}</strong>
-                        </div>
-                        <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
-                          Ready for Dispatch
-                        </span>
-                      </div>
+                {/* SCROLLABLE BODY CONTENT */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  {/* STEP PROGRESS BAR */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className={`h-1 rounded-full ${wizardStep >= 1 ? "bg-zinc-950 dark:bg-white" : "bg-zinc-200"}`} />
+                    <div className={`h-1 rounded-full ${wizardStep >= 2 ? "bg-zinc-950 dark:bg-white" : "bg-zinc-200"}`} />
+                  </div>
 
-                      {/* Details Grid */}
-                      <div className="grid grid-cols-2 gap-3 text-xs">
+                  {/* WIZARD STEP 1: FORM EDITING (SCREEN 2) */}
+                  {wizardStep === 1 && (
+                    <div className="space-y-5">
+                      {/* Warehouses configuration */}
+                      <div className="grid grid-cols-2 gap-4 bg-zinc-100/50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200/40 dark:border-zinc-700/40">
                         <div>
-                          <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Dispatched Origin (Sender)</span>
-                          <span className="font-extrabold text-zinc-800">{formFromW}</span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Designated Destination (Receiver)</span>
-                          <span className="font-extrabold text-zinc-800">{formToW}</span>
-                        </div>
-                      </div>
-
-                      {/* Summary Table */}
-                      <div className="border-t border-zinc-150 pt-3">
-                        <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-2">Validated Material Ledger</span>
-                        <table className="w-full text-xs text-left">
-                          <thead>
-                            <tr className="text-[8px] font-black text-zinc-400 uppercase border-b border-zinc-100 pb-1">
-                              <th className="py-1">No.</th>
-                              <th className="py-1">Product Description</th>
-                              <th className="py-1 text-center">UOM</th>
-                              <th className="py-1 text-right">Dispatch Qty</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-100 font-bold text-zinc-700">
-                            {formLineItems.map((line, index) => (
-                              <tr key={index}>
-                                <td className="py-1.5 font-mono text-zinc-400">{line.line_no}</td>
-                                <td className="py-1.5 text-zinc-950">{line.item}</td>
-                                <td className="py-1.5 text-center text-zinc-500">{line.UOM}</td>
-                                <td className="py-1.5 text-right font-mono text-zinc-950">{line.quantity}</td>
-                              </tr>
+                          <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block mb-1">
+                            From Warehouse (Origin)
+                          </label>
+                          <select
+                            value={formFromW}
+                            onChange={e => setFormFromW(e.target.value)}
+                            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2 rounded-xl text-xs font-black outline-none cursor-pointer focus:border-zinc-950 dark:focus:border-white text-zinc-800 dark:text-zinc-200"
+                          >
+                            {availableWarehouses.map(w => (
+                              <option key={w} value={w}>{w}</option>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Grand total */}
-                      <div className="border-t border-zinc-150 pt-3 flex justify-between text-xs font-black">
-                        <span className="uppercase text-zinc-400">Total:</span>
-                        <span className="font-mono text-zinc-950">{formTotalQuantity} units</span>
-                      </div>
-                    </div>
-
-                    {/* DIGITAL CERTIFICATION & REGISTERED SIGNATURE BOX */}
-                    <div className="bg-zinc-150/40 p-4.5 rounded-2xl border border-zinc-200/80 space-y-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <Shield className="size-4.5 text-zinc-800 shrink-0" />
-                        <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">
-                          Digital Dispatch Certification
-                        </h4>
-                      </div>
-                      <p className="text-[10px] font-bold text-zinc-500 leading-normal">
-                        By authorizing this Material Transfer, you authenticate the shipment under compliance standards. 
-                        Your registered digital signature will be embedded dynamically into the locked document below:
-                      </p>
-
-                      <div className="bg-white border border-zinc-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                        <div className="space-y-0.5">
-                          <span className="text-[8px] font-black text-zinc-400 uppercase">Authorized Dispatcher</span>
-                          <h5 className="text-xs font-black text-zinc-800">{currentOperator}</h5>
-                          <span className="text-[8px] font-bold text-zinc-400 uppercase block">{currentWarehouse || "No warehouse"}</span>
+                          </select>
+                          <span className="text-[9px] text-zinc-400 mt-1 block font-bold leading-tight">
+                            Select dispatching storage facility.
+                          </span>
                         </div>
 
-                        {/* Script signature style */}
-                        <div className="border-l border-zinc-150 pl-6 pr-4 py-1 text-center">
-                          <span className="text-[8px] font-black text-zinc-400 uppercase block mb-1">Pre-registered Digital Sig</span>
-                          <span className="font-serif italic text-2xl tracking-widest text-zinc-800 font-extrabold select-none">
-                            {currentSignature}
+                        <div>
+                          <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block mb-1">
+                            To Warehouse (Destination)
+                          </label>
+                          <select
+                            value={formToW}
+                            onChange={e => setFormToW(e.target.value)}
+                            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2 rounded-xl text-xs font-black outline-none cursor-pointer focus:border-zinc-950 dark:focus:border-white text-zinc-800 dark:text-zinc-200"
+                          >
+                            {warehouseOptions.filter(w => w !== formFromW).map(w => (
+                              <option key={w} value={w}>{w}</option>
+                            ))}
+                          </select>
+                          <span className="text-[9px] text-zinc-400 mt-1 block font-bold leading-tight">
+                            Select receiving storage vault.
                           </span>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
-              </div>
 
-              {/* FOOTER ACTIONS (SCREEN 2 & SCREEN 3 TRIGGERS) */}
-              <div className="p-6 border-t border-zinc-200/80 bg-zinc-100/50 shrink-0 flex items-center justify-between gap-3">
-                {wizardStep === 1 ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setIsFormOpen(false)}
-                      className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 text-xs font-black transition-colors uppercase tracking-tight"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleContinueToConfirm}
-                      className="px-5 py-2.5 rounded-full bg-zinc-950 hover:bg-zinc-900 text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight flex items-center gap-1"
-                    >
-                      Continue <ArrowRight className="size-3.5" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setWizardStep(1)}
-                      className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 text-xs font-black transition-colors uppercase tracking-tight"
-                    >
-                      Back to Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleConfirmAndIssue}
-                      className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight flex items-center gap-1"
-                    >
-                      <Check className="size-4" /> Sign & Dispatch Stock
-                    </button>
-                  </>
-                )}
-              </div>
-            </motion.div>
+                      {/* Line Items Container */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between pb-1 border-b border-zinc-200/50">
+                          <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">
+                            Material Line Items List
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={handleAddLineRow}
+                            className="flex items-center gap-1 text-[10px] font-black text-zinc-900 dark:text-white hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors uppercase tracking-tight"
+                          >
+                            <Plus className="size-3.5" /> Add Row
+                          </button>
+                        </div>
+
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                          {formLineItems.map((row, idx) => (
+                            <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-white dark:bg-zinc-850 p-3.5 rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm relative">
+                              {/* Product Selection */}
+                              <div className="col-span-4">
+                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Product</label>
+                                <div className={`flex items-center rounded-lg px-2 py-1 transition-all ${
+                                  formSubmitted && (!row.item || !row.item.trim())
+                                    ? "bg-red-50 dark:bg-red-950/30 border border-red-500 shadow-sm shadow-red-100"
+                                    : "border border-zinc-200/60 dark:border-zinc-700 focus-within:border-zinc-400 focus-within:bg-zinc-50/50"
+                                }`}>
+                                  <input
+                                    type="text"
+                                    list="products-suggestions"
+                                    placeholder="Enter product name..."
+                                    value={row.item}
+                                    onChange={e => handleUpdateLineItem(idx, "item", e.target.value)}
+                                    className="w-full bg-transparent border-0 text-[11px] font-extrabold text-zinc-800 dark:text-zinc-200 outline-none p-0"
+                                  />
+                                </div>
+                                <datalist id="products-suggestions">
+                                  {products.map(p => (
+                                    <option key={p.id} value={p.name} />
+                                  ))}
+                                </datalist>
+                              </div>
+
+                              {/* UOM */}
+                              <div className="col-span-2">
+                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">UOM</label>
+                                <select
+                                  value={row.UOM}
+                                  onChange={e => handleUpdateLineItem(idx, "UOM", e.target.value)}
+                                  className="w-full bg-transparent border-0 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 outline-none p-0 cursor-pointer"
+                                >
+                                  {Array.from(new Set(products.map((product) => product.unit).filter(Boolean))).map(u => (
+                                    <option key={u} value={u}>{u}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Quantity */}
+                              <div className="col-span-2">
+                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Qty</label>
+                                {(() => {
+                                  const availableStock = getAvailableStock(row.item)
+                                  const exceedsStock = row.item && row.quantity && Number(row.quantity) > availableStock
+                                  return (
+                                    <>
+                                      <div className={`flex items-center rounded-lg px-2 py-1 transition-all border ${
+                                        exceedsStock
+                                          ? "bg-rose-50 dark:bg-rose-950/30 border-rose-500 shadow-sm shadow-rose-100"
+                                          : "border-zinc-200/60 dark:border-zinc-700 focus-within:border-zinc-400"
+                                      }`}>
+                                        <input
+                                          type="number"
+                                          required
+                                          value={row.quantity}
+                                          min="1"
+                                          onChange={e => handleUpdateLineItem(idx, "quantity", e.target.value === "" ? "" : Number(e.target.value))}
+                                          className="w-full bg-transparent border-0 text-[11px] font-mono font-black text-zinc-900 dark:text-zinc-100 outline-none p-0"
+                                        />
+                                      </div>
+                                      {row.item && (
+                                        <span className={`text-[8px] font-black block mt-0.5 tracking-tight ${
+                                          exceedsStock ? "text-rose-600 dark:text-rose-400" : "text-zinc-400 dark:text-zinc-500"
+                                        }`}>
+                                          Avail: {availableStock}
+                                        </span>
+                                      )}
+                                    </>
+                                  )
+                                })()}
+                              </div>
+
+                              {/* Remark */}
+                              <div className="col-span-3">
+                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Remark</label>
+                                <input
+                                  type="text"
+                                  placeholder="Notes..."
+                                  value={row.remark || ""}
+                                  onChange={e => handleUpdateLineItem(idx, "remark", e.target.value)}
+                                  className="w-full bg-transparent border-0 text-[11px] text-zinc-500 outline-none p-0 font-medium"
+                                />
+                              </div>
+
+                              {/* Trash action */}
+                              <div className="col-span-1 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLineRow(idx)}
+                                  className="p-1 rounded text-zinc-300 hover:text-zinc-600 dark:hover:text-zinc-400 transition-colors"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* LIVE AUTO-CALC TOTAL DISPLAY */}
+                        <div className="flex items-center justify-between p-3.5 bg-zinc-900 rounded-xl text-white shadow-md">
+                          <span className="text-[10px] font-black uppercase tracking-wider">Total:</span>
+                          <strong className="font-mono text-xs font-black uppercase">
+                            {formTotalQuantity.toLocaleString()} Units
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* WIZARD STEP 2: SUMMARY & DIGITAL DISPATCH SIGNATURE (SCREEN 3) */}
+                  {wizardStep === 2 && (
+                    <div className="space-y-6">
+                      <div className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 p-5 rounded-2xl shadow-inner space-y-4 relative">
+                        <div className="border-b border-zinc-150 dark:border-zinc-700 pb-3 flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">Document Registry #</span>
+                            <strong className="font-mono text-sm font-black text-zinc-950 dark:text-white">{formRefNum}</strong>
+                          </div>
+                          <span className="bg-blue-50 dark:bg-blue-950/45 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                            Ready for Dispatch
+                          </span>
+                        </div>
+
+                        {/* Details Grid */}
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Dispatched Origin (Sender)</span>
+                            <span className="font-extrabold text-zinc-800 dark:text-zinc-200">{formFromW}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Designated Destination (Receiver)</span>
+                            <span className="font-extrabold text-zinc-800 dark:text-zinc-200">{formToW}</span>
+                          </div>
+                        </div>
+
+                        {/* Summary Table */}
+                        <div className="border-t border-zinc-150 dark:border-zinc-700 pt-3">
+                          <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-2">Validated Material Ledger</span>
+                          <table className="w-full text-xs text-left">
+                            <thead>
+                              <tr className="text-[8px] font-black text-zinc-400 uppercase border-b border-zinc-100 dark:border-zinc-700 pb-1">
+                                <th className="py-1">No.</th>
+                                <th className="py-1">Product Description</th>
+                                <th className="py-1 text-center">UOM</th>
+                                <th className="py-1 text-right">Dispatch Qty</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700 font-bold text-zinc-700 dark:text-zinc-300">
+                              {formLineItems.map((line, index) => (
+                                <tr key={index}>
+                                  <td className="py-1.5 font-mono text-zinc-400">{line.line_no}</td>
+                                  <td className="py-1.5 text-zinc-950 dark:text-white">{line.item}</td>
+                                  <td className="py-1.5 text-center text-zinc-500">{line.UOM}</td>
+                                  <td className="py-1.5 text-right font-mono text-zinc-950 dark:text-white">{line.quantity}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Grand total */}
+                        <div className="border-t border-zinc-150 dark:border-zinc-700 pt-3 flex justify-between text-xs font-black">
+                          <span className="uppercase text-zinc-400">Total:</span>
+                          <span className="font-mono text-zinc-950 dark:text-white">{formTotalQuantity} units</span>
+                        </div>
+                      </div>
+
+                      {/* DIGITAL CERTIFICATION & REGISTERED SIGNATURE BOX */}
+                      <div className="bg-zinc-150/40 dark:bg-zinc-800/40 p-4.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/80 space-y-3.5">
+                        <div className="flex items-center gap-1.5">
+                          <Shield className="size-4.5 text-zinc-800 dark:text-zinc-200 shrink-0" />
+                          <h4 className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-wider">
+                            Digital Dispatch Certification
+                          </h4>
+                        </div>
+                        <p className="text-[10px] font-bold text-zinc-500 leading-normal">
+                          By authorizing this Material Transfer, you authenticate the shipment under compliance standards. 
+                          Your registered digital signature will be embedded dynamically into the locked document below:
+                        </p>
+
+                        <div className="bg-white dark:bg-zinc-955 border border-zinc-200 dark:border-zinc-750 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                          <div className="space-y-0.5">
+                            <span className="text-[8px] font-black text-zinc-400 uppercase block">Authorized Operator</span>
+                            <h5 className="text-xs font-black text-zinc-800 dark:text-zinc-200">{currentOperator}</h5>
+                            <span className="text-[8px] font-bold text-zinc-400 uppercase block">{formFromW || "No warehouse"}</span>
+                          </div>
+                          <div className="text-right space-y-0.5">
+                            <span className="text-[8px] font-black text-zinc-400 uppercase block mb-1">Pre-registered Digital Sig</span>
+                            <span className="font-serif italic text-xs font-bold text-emerald-700 dark:text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800 px-3 py-1 rounded-md">
+                              {currentSignature}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Controls */}
+                <div className="p-6 border-t border-zinc-200/80 bg-zinc-100/50 dark:bg-zinc-850 shrink-0 flex items-center justify-between">
+                  {wizardStep === 1 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsFormOpen(false)}
+                        className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
+                      >
+                        Cancel Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleContinueToConfirm}
+                        className="px-5 py-2.5 rounded-full bg-zinc-950 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-150 text-white dark:text-zinc-950 text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight flex items-center gap-1"
+                      >
+                        Continue to Dispatch <ArrowRight className="size-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setWizardStep(1)}
+                        className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
+                      >
+                        Back to Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmAndIssue}
+                        className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight flex items-center gap-1"
+                      >
+                        <Check className="size-4" /> Sign & Dispatch Stock
+                      </button>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>
@@ -832,281 +857,223 @@ export default function StoreTransfersTab() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedTransfer(null)}
-              className="fixed inset-0 bg-black/45 backdrop-blur-sm z-[100]"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
             />
 
-            {/* Slide-over compliance document container */}
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 200 }}
-              className="fixed top-0 right-0 h-screen w-full max-w-2xl bg-zinc-50 shadow-2xl border-l border-zinc-200 z-[101] flex flex-col"
-            >
-              {/* Header */}
-              <div className="p-6 border-b border-zinc-200/60 shrink-0 flex items-center justify-between">
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Transfer Form</span>
-                  <h2 className="text-base font-black text-zinc-950 tracking-tight leading-none uppercase">
-                    {selectedTransfer.reference_number}
-                  </h2>
+            {/* Center Compliance Document Modal Container */}
+            <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ duration: 0.2 }}
+                className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-3xl max-h-[90vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
+              >
+                {/* Header */}
+                <div className="p-6 border-b border-zinc-200/60 shrink-0 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Transfer Form</span>
+                    <h2 className="text-base font-black text-zinc-950 dark:text-white tracking-tight leading-none uppercase">
+                      {selectedTransfer.reference_number}
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => setSelectedTransfer(null)}
+                    className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500"
+                  >
+                    <X className="size-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setSelectedTransfer(null)}
-                  className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
 
-              {/* SCROLLABLE BODY CONTENT */}
-              <div className="flex-1 overflow-y-auto p-6">
-                {/* THE FORMAL DOCUMENT (SCREEN 5 GRAPHICAL LAYOUT) */}
-                <div className="bg-white border border-zinc-250 p-6 sm:p-8 rounded-2xl shadow-md relative flex flex-col justify-between max-w-full min-h-full">
-                  {/* 1. DOCUMENT WATERMARK & COMPANY STAMP (STRICT REQUIREMENT FOR 'RECEIVED' STATE) */}
-                  <AnimatePresence>
-                    {selectedTransfer.status === "Received" && (
-                      <motion.div
-                        initial={{ scale: 0.6, opacity: 0, rotate: 10 }}
-                        animate={{ scale: 1, opacity: 0.85, rotate: -6 }}
-                        transition={{ type: "spring", duration: 0.8 }}
-                        className="absolute left-12 bottom-28 size-36 rounded-full border-4 border-dashed border-emerald-600/80 flex items-center justify-center p-2 text-center pointer-events-none select-none z-10"
-                      >
-                        <div className="size-full border-2 border-dashed border-emerald-600/80 rounded-full flex flex-col items-center justify-center p-1 uppercase">
-                          <span className="text-[7px] font-black text-emerald-600 tracking-wider">STORES DEPT</span>
-                          <div className="h-px w-full bg-emerald-600/50 my-0.5" />
-                          <span className="text-[9px] font-black text-emerald-600 tracking-widest">VERIFIED</span>
-                          <span className="text-[6px] font-extrabold text-emerald-600/70 mt-0.5">STORES DEPT</span>
-                          <div className="h-px w-full bg-emerald-600/50 my-0.5" />
-                          <span className="text-[6px] font-black text-emerald-600/60 font-mono">{selectedTransfer.received_at?.split(" ")[0]}</span>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* 2. LETTERHEAD HEADER */}
-                  <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-zinc-150">
-                      <div className="space-y-1">
-                        <h3 className="text-sm font-black tracking-widest text-zinc-950 uppercase leading-none">
-                          STORE TO STORE TRANSFER
-                        </h3>
-                        <div className="flex flex-col gap-0.5 text-[10px] font-bold text-zinc-500 font-mono pt-1">
-                          <span>Date: {selectedTransfer.date}</span>
-                          <span>TIN: 0006935118</span>
-                          <span>Tel: +251-911122102</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col sm:items-end gap-1.5">
-                        <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">Status</span>
-                        <span className={`text-[10px] font-black px-3 py-0.5 rounded-full border uppercase tracking-wider text-center ${
-                          selectedTransfer.status === "Received" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                          selectedTransfer.status === "Issued" ? "bg-blue-50 text-blue-700 border-blue-200" :
-                          selectedTransfer.status === "Discrepancy" ? "bg-amber-50 text-amber-800 border-amber-300" :
-                          "bg-zinc-100 text-zinc-700 border-zinc-200"
-                        }`}>
-                          {selectedTransfer.status}
+                {/* DOCUMENT SCROLLABLE CONTENT */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-zinc-50/50 dark:bg-zinc-900/50">
+                  <div className="border border-zinc-250/60 dark:border-zinc-850 bg-white dark:bg-zinc-955 p-6 rounded-2xl shadow-sm space-y-5">
+                    {/* Compliance header banner */}
+                    <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div>
+                        <h4 className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">
+                          Material Transfer Note (MTN)
+                        </h4>
+                        <span className="text-[9px] font-bold text-zinc-400 uppercase block mt-0.5">
+                          Official internal transport clearance registry
                         </span>
                       </div>
+                      <span className={`text-[9px] font-black px-2.5 py-0.5 rounded border uppercase tracking-wider ${
+                        selectedTransfer.status === "Received" ? "bg-emerald-50 text-emerald-850 border-emerald-200" :
+                        selectedTransfer.status === "Issued" ? "bg-blue-50 text-blue-800 border-blue-200" :
+                        "bg-amber-50 text-amber-800 border-amber-300"
+                      }`}>
+                        {selectedTransfer.status}
+                      </span>
                     </div>
 
-                    {/* 3. DISCREPANCY DETAILED ALERT PANEL */}
-                    {selectedTransfer.status === "Discrepancy" && (
-                      <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex gap-3 text-amber-900 animate-pulse">
-                        <AlertTriangle className="size-5 text-amber-600 shrink-0 mt-0.5" />
-                        <div className="space-y-1">
-                          <h4 className="text-[10px] font-black uppercase tracking-wider text-amber-900">
-                            Discrepancy Report Logged
-                          </h4>
-                          <p className="text-[10px] font-semibold leading-relaxed text-amber-800">
-                            "{selectedTransfer.discrepancy_remark}"
-                          </p>
-                          <span className="text-[8px] font-bold text-amber-700 block uppercase mt-1">
-                            Filed By: {selectedTransfer.received_by} on {selectedTransfer.received_at}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 4. SENDER VS RECEIVER DETAILS */}
-                    <div className="grid grid-cols-2 gap-4 text-xs py-1">
-                      <div className="space-y-1">
+                    {/* Routing section info card */}
+                    <div className="grid grid-cols-2 gap-4 bg-zinc-100/50 dark:bg-zinc-800/40 p-4 rounded-xl text-xs">
+                      <div>
                         <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block">Origin (Sending Facility)</span>
-                        <div className="flex items-center gap-1.5 text-zinc-800 font-extrabold bg-zinc-50 p-2 rounded-xl border border-zinc-200/40">
-                          <WarehouseIcon className="size-4 text-zinc-400" />
-                          <span>{selectedTransfer.from_warehouse}</span>
-                        </div>
+                        <strong className="text-zinc-800 dark:text-zinc-200 block text-[11px] mt-0.5">{selectedTransfer.from_warehouse}</strong>
                       </div>
-
-                      <div className="space-y-1">
+                      <div>
                         <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block">Destination (Receiving Vault)</span>
-                        <div className="flex items-center gap-1.5 text-zinc-800 font-extrabold bg-zinc-50 p-2 rounded-xl border border-zinc-200/40">
-                          <WarehouseIcon className="size-4 text-zinc-400" />
-                          <span>{selectedTransfer.to_warehouse}</span>
-                        </div>
+                        <strong className="text-zinc-800 dark:text-zinc-200 block text-[11px] mt-0.5">{selectedTransfer.to_warehouse}</strong>
                       </div>
                     </div>
 
-                    {/* 5. MATERIAL RECORD TABLE */}
-                    <div className="border-t border-zinc-150 pt-4">
-                      <table className="w-full text-xs text-left">
+                    {/* Material inventory lines table */}
+                    <div className="space-y-1.5">
+                      <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider">Registered inventory items</span>
+                      <table className="w-full text-xs text-left border-collapse">
                         <thead>
-                          <tr className="text-[8px] font-black text-zinc-400 uppercase tracking-wider border-b border-zinc-150 pb-1.5">
-                            <th className="py-2">NO.</th>
-                            <th className="py-2">Product Name</th>
-                            <th className="py-2 text-center">UOM</th>
-                            <th className="py-2 text-right">Qty</th>
-                            <th className="py-2 pl-4">Remarks</th>
+                          <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[8px] font-black text-zinc-400 uppercase">
+                            <th className="pb-1 w-10">No.</th>
+                            <th className="pb-1">Item SKU & Name</th>
+                            <th className="pb-1 text-center w-20">UOM</th>
+                            <th className="pb-1 text-right w-24">Cleared Qty</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-zinc-100 font-bold text-zinc-700">
-                          {selectedTransfer.line_items.map((line) => (
-                            <tr key={line.line_no}>
+                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
+                          {selectedTransfer.line_items.map((line, idx) => (
+                            <tr key={idx} className="hover:bg-zinc-50/40 dark:hover:bg-zinc-850/40">
                               <td className="py-2.5 font-mono text-zinc-400">{line.line_no}</td>
-                              <td className="py-2.5 text-zinc-950">{line.item}</td>
-                              <td className="py-2.5 text-center text-zinc-500">{line.UOM}</td>
-                              <td className="py-2.5 text-right font-mono text-zinc-950">{line.quantity}</td>
-                              <td className="py-2.5 pl-4 text-zinc-400 font-semibold text-[11px] max-w-[150px] truncate" title={line.remark}>
-                                {line.remark || "—"}
+                              <td className="py-2.5">
+                                <span className="text-zinc-950 dark:text-white font-extrabold">{line.item}</span>
+                                {line.remark && (
+                                  <span className="text-[9px] text-zinc-400 block font-normal mt-0.5">Remark: {line.remark}</span>
+                                )}
                               </td>
+                              <td className="py-2.5 text-center font-bold text-zinc-500">{line.UOM}</td>
+                              <td className="py-2.5 text-right font-mono text-zinc-950 dark:text-white font-black">{line.quantity}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  </div>
 
-                  {/* 6. IMMUTABLE TOTALS & COMPLIANCE SIGNATURE BLOCKS (STRICT COMPLIANCE SPECIFICATION) */}
-                  <div className="space-y-6 mt-8">
-                    <div className="border-t border-zinc-200 pt-3 flex justify-between text-xs font-black">
-                      <span className="uppercase text-zinc-400">Total:</span>
-                      <span className="font-mono text-zinc-950 text-sm bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded">
-                        {selectedTransfer.total_quantity.toLocaleString()} UNITS
-                      </span>
+                    {/* Total units count */}
+                    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3 flex justify-between text-xs font-black">
+                      <span className="uppercase text-zinc-400">Total volume size:</span>
+                      <span className="font-mono text-zinc-950 dark:text-white">{selectedTransfer.total_quantity} units</span>
                     </div>
 
-                    {/* DOUBLE SIGNATURES SECTION */}
-                    <div className="grid grid-cols-2 gap-4 border-t border-zinc-150 pt-4 text-xs font-bold">
-                      {/* Issued Section */}
-                      <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200/60 relative">
+                    {/* MTN Audit Logs */}
+                    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 grid grid-cols-2 gap-4 text-[10px] leading-relaxed">
+                      {/* Dispatch compliance sign block */}
+                      <div className="bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-lg border border-zinc-150 dark:border-zinc-800">
                         <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-2">
-                          Issued By:
+                          1. Issuance Sign-off (Origin)
                         </span>
-                        {selectedTransfer.issued_by ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1">
-                              <Shield className="size-3 text-zinc-400" />
-                              <span className="text-zinc-950 font-extrabold">{selectedTransfer.issued_by}</span>
-                            </div>
-                            <div className="flex items-center gap-1 text-[9px] text-zinc-400 font-mono">
-                              <Clock className="size-3" />
-                              <span>{selectedTransfer.issued_at}</span>
-                            </div>
-                            <div className="mt-3.5 border-t border-dashed border-zinc-200 pt-2 flex items-center justify-between">
-                              <span className="text-[8px] text-zinc-400 uppercase">Seal-Signature</span>
-                              <span className="font-serif italic text-base font-extrabold tracking-widest text-blue-800 pr-2 select-none">
-                                {selectedTransfer.issued_signature}
-                              </span>
-                            </div>
+                        <div className="space-y-1">
+                          <div>
+                            Date/Time: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.issued_at || selectedTransfer.date}</strong>
                           </div>
-                        ) : (
-                          <div className="py-6 text-center text-zinc-400 text-[10px] border border-dashed border-zinc-200 rounded-lg">
-                            Pending Dispatch Release
+                          <div>
+                            Dispatcher: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.issued_by}</strong>
                           </div>
-                        )}
+                          <div className="pt-2 flex items-center gap-1.5">
+                            <span className="text-[8px] text-zinc-400 uppercase font-black">Sig:</span>
+                            <span className="font-serif italic font-extrabold text-emerald-700 dark:text-emerald-500 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded">
+                              {selectedTransfer.issued_signature || "SYSTEM"}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Received Section */}
-                      <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200/60 relative">
+                      {/* Reception compliance sign block */}
+                      <div className="bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-lg border border-zinc-150 dark:border-zinc-800">
                         <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-2">
-                          Received By:
+                          2. Receipt Verification (Receiver)
                         </span>
-                        {selectedTransfer.received_by ? (
+                        {selectedTransfer.status === "Received" ? (
                           <div className="space-y-1">
-                            <div className="flex items-center gap-1">
-                              <Shield className="size-3 text-zinc-400" />
-                              <span className="text-zinc-950 font-extrabold">{selectedTransfer.received_by}</span>
+                            <div>
+                              Date/Time: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.received_at || selectedTransfer.date}</strong>
                             </div>
-                            <div className="flex items-center gap-1 text-[9px] text-zinc-400 font-mono">
-                              <Clock className="size-3" />
-                              <span>{selectedTransfer.received_at}</span>
+                            <div>
+                              Verified By: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.received_by}</strong>
                             </div>
-                            <div className="mt-3.5 border-t border-dashed border-zinc-200 pt-2 flex items-center justify-between">
-                              <span className="text-[8px] text-zinc-400 uppercase">Seal-Signature</span>
-                              <span className="font-serif italic text-base font-extrabold tracking-widest text-blue-800 pr-2 select-none">
+                            <div className="pt-2 flex items-center gap-1.5">
+                              <span className="text-[8px] text-zinc-400 uppercase font-black">Sig:</span>
+                              <span className="font-serif italic font-extrabold text-emerald-700 dark:text-emerald-500 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded">
                                 {selectedTransfer.received_signature}
                               </span>
                             </div>
                           </div>
+                        ) : selectedTransfer.status === "Discrepancy" ? (
+                          <div className="space-y-1">
+                            <div className="text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
+                              <AlertTriangle className="size-3" /> QA Review Required
+                            </div>
+                            <div className="text-[9px] text-zinc-500 mt-1">
+                              Comment: {selectedTransfer.discrepancy_remark}
+                            </div>
+                          </div>
                         ) : (
-                          <div className="py-6 text-center text-zinc-400 text-[10px] border border-dashed border-zinc-200 rounded-lg">
-                            Pending Shipment Arrival
+                          <div className="text-zinc-400 flex items-center gap-1 py-4 justify-center">
+                            <Clock className="size-3.5" /> Pending receipt delivery
                           </div>
                         )}
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* ACTION TOOLBAR AT FOOTER */}
-              <div className="p-6 border-t border-zinc-200/80 bg-zinc-100/50 shrink-0 flex items-center justify-between gap-3">
-                <button
-                  onClick={() => setSelectedTransfer(null)}
-                  className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 text-xs font-black transition-colors uppercase tracking-tight"
-                >
-                  Close Document
-                </button>
-
-                <div className="flex items-center gap-2">
+                {/* ACTION TOOLBAR AT FOOTER */}
+                <div className="p-6 border-t border-zinc-200/80 bg-zinc-100/50 dark:bg-zinc-850 shrink-0 flex items-center justify-between gap-3">
                   <button
-                    onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
-                    disabled={isExporting}
-                    className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-800 text-xs font-black transition-colors uppercase tracking-tight flex items-center gap-1.5"
+                    onClick={() => setSelectedTransfer(null)}
+                    className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
                   >
-                    <Download className={`size-4 ${isExporting ? "animate-spin" : ""}`} />
-                    {isExporting ? "Exporting..." : "Export TIN"}
+                    Close Document
                   </button>
 
-                  {/* Edit Transfer action from document view */}
-                  {((selectedTransfer.status === "Issued" || selectedTransfer.status === "Discrepancy") &&
-                    selectedTransfer.from_warehouse === currentWarehouse) && (
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => {
-                        const tr = selectedTransfer
-                        setSelectedTransfer(null)
-                        setFormMode("edit")
-                        setFormRefNum(tr.reference_number)
-                        setFormFromW(tr.from_warehouse)
-                        setFormToW(tr.to_warehouse)
-                        setFormLineItems(tr.line_items)
-                        setFormSubmitted(false)
-                        setWizardStep(1)
-                        setIsFormOpen(true)
-                      }}
-                      className="px-4.5 py-2.5 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-black transition-colors uppercase tracking-tight flex items-center gap-1.5"
+                      onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
+                      disabled={isExporting}
+                      className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-800 dark:text-zinc-200 text-xs font-black transition-colors uppercase tracking-tight flex items-center gap-1.5"
                     >
-                      <Edit className="size-4" />
-                      Edit Transfer
+                      <Download className={`size-4 ${isExporting ? "animate-spin" : ""}`} />
+                      {isExporting ? "Exporting..." : "Export TIN"}
                     </button>
-                  )}
 
-                  {/* Confirm Receipt Action inside document (SCREEN 4) */}
-                  {selectedTransfer.status === "Issued" && selectedTransfer.to_warehouse === currentWarehouse && (
-                    <button
-                      onClick={() => {
-                        setReceiptMode("match")
-                        setIsReceiptOpen(true)}
-                      }
-                      className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight"
-                    >
-                      Process Receipt
-                    </button>
-                  )}
+                    {/* Edit Transfer action from document view */}
+                    {(selectedTransfer.status === "Issued" || selectedTransfer.status === "Discrepancy") && (
+                      <button
+                        onClick={() => {
+                          const tr = selectedTransfer
+                          setSelectedTransfer(null)
+                          setFormMode("edit")
+                          setFormRefNum(tr.reference_number)
+                          setFormFromW(tr.from_warehouse)
+                          setFormToW(tr.to_warehouse)
+                          setFormLineItems(tr.line_items)
+                          setFormSubmitted(false)
+                          setWizardStep(1)
+                          setIsFormOpen(true)
+                        }}
+                        className="px-4.5 py-2.5 rounded-full bg-zinc-950 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-150 text-white dark:text-zinc-950 text-xs font-black transition-colors uppercase tracking-tight flex items-center gap-1.5"
+                      >
+                        <Edit className="size-4" />
+                        Edit Transfer
+                      </button>
+                    )}
+
+                    {/* Confirm Receipt Action inside document (SCREEN 4) */}
+                    {selectedTransfer.status === "Issued" && (
+                      <button
+                        onClick={() => {
+                          setReceiptMode("match")
+                          setIsReceiptOpen(true)}
+                        }
+                        className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight"
+                      >
+                        Process Receipt
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>
@@ -1123,7 +1090,7 @@ export default function StoreTransfersTab() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsReceiptOpen(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110]"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110]"
             />
 
             {/* Modal Dialog */}
@@ -1131,13 +1098,13 @@ export default function StoreTransfersTab() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="fixed inset-0 m-auto h-fit w-full max-w-lg bg-zinc-50 border border-zinc-200 shadow-2xl p-6 rounded-3xl z-[111] overflow-hidden flex flex-col justify-between"
+              className="fixed inset-0 m-auto h-fit w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-850 shadow-2xl p-6 rounded-3xl z-[111] overflow-hidden flex flex-col justify-between"
             >
               {/* Header */}
-              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 mb-4">
+              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 dark:border-zinc-800 mb-4">
                 <div className="flex flex-col">
                   <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-0.5">Verification & Audit</span>
-                  <h3 className="text-sm font-black text-zinc-950 uppercase">
+                  <h3 className="text-sm font-black text-zinc-950 dark:text-white uppercase">
                     Confirm Receipt: {selectedTransfer.reference_number}
                   </h3>
                 </div>
@@ -1150,11 +1117,11 @@ export default function StoreTransfersTab() {
               </div>
 
               {/* Sub-header Context Banner */}
-              <div className="bg-zinc-100 border border-zinc-200 rounded-xl p-3 mb-4 text-[10px] font-bold text-zinc-600 leading-snug flex items-center gap-2">
+              <div className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3 mb-4 text-[10px] font-bold text-zinc-600 dark:text-zinc-300 leading-snug flex items-center gap-2">
                 <Shield className="size-4 text-zinc-500" />
                 <div>
-                  Receiving Manager: <strong className="text-zinc-800">{currentOperator}</strong>
-                  <span className="text-zinc-400 px-1">|</span> Facility: <strong className="text-zinc-800">{currentWarehouse || "No saved warehouse"}</strong>
+                  Receiving Manager: <strong className="text-zinc-800 dark:text-zinc-200">{currentOperator}</strong>
+                  <span className="text-zinc-400 px-1">|</span> Facility: <strong className="text-zinc-800 dark:text-zinc-200">{selectedTransfer.to_warehouse}</strong>
                 </div>
               </div>
 
@@ -1167,15 +1134,15 @@ export default function StoreTransfersTab() {
                     onClick={() => setReceiptMode("match")}
                     className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 ${
                       receiptMode === "match"
-                        ? "border-emerald-600 bg-emerald-50/50 shadow-inner"
-                        : "border-zinc-200 bg-white hover:border-zinc-400"
+                        ? "border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-inner"
+                        : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 hover:border-zinc-450 dark:hover:border-zinc-700"
                     }`}
                   >
-                    <div className="size-6 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
+                    <div className="size-6 rounded-full bg-emerald-100 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
                       <Check className="size-4" />
                     </div>
                     <div className="space-y-0.5">
-                      <strong className="text-xs font-black text-zinc-950 uppercase tracking-tight block">Quantities Match</strong>
+                      <strong className="text-xs font-black text-zinc-950 dark:text-white uppercase tracking-tight block">Quantities Match</strong>
                       <span className="text-[9px] font-semibold text-zinc-400 leading-none">Perfect compliance delivery</span>
                     </div>
                   </button>
@@ -1186,15 +1153,15 @@ export default function StoreTransfersTab() {
                     onClick={() => setReceiptMode("discrepancy")}
                     className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 ${
                       receiptMode === "discrepancy"
-                        ? "border-amber-500 bg-amber-50/50 shadow-inner"
-                        : "border-zinc-200 bg-white hover:border-zinc-400"
+                        ? "border-amber-500 bg-amber-50/50 dark:bg-amber-955/20 shadow-inner"
+                        : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 hover:border-zinc-450 dark:hover:border-zinc-700"
                     }`}
                   >
-                    <div className="size-6 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+                    <div className="size-6 rounded-full bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center text-amber-700 dark:text-amber-400">
                       <AlertTriangle className="size-3.5" />
                     </div>
                     <div className="space-y-0.5">
-                      <strong className="text-xs font-black text-zinc-950 uppercase tracking-tight block">Report Discrepancy</strong>
+                      <strong className="text-xs font-black text-zinc-950 dark:text-white uppercase tracking-tight block">Report Discrepancy</strong>
                       <span className="text-[9px] font-semibold text-zinc-400 leading-none">Damaged items or mismatches</span>
                     </div>
                   </button>
@@ -1217,7 +1184,7 @@ export default function StoreTransfersTab() {
                         value={discrepancyText}
                         onChange={e => setDiscrepancyText(e.target.value)}
                         placeholder="Detail the exact count discrepancy, damages, temperature breaches, or packaging damage..."
-                        className="w-full bg-white border border-zinc-200 px-3.5 py-2.5 rounded-xl text-xs font-semibold outline-none focus:border-amber-500 h-20 transition-all font-sans resize-none"
+                        className="w-full bg-white dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2.5 rounded-xl text-xs font-semibold outline-none focus:border-amber-500 h-20 transition-all font-sans resize-none text-zinc-800 dark:text-zinc-200"
                       />
                     </motion.div>
                   )}
@@ -1226,16 +1193,16 @@ export default function StoreTransfersTab() {
                 {/* Terms Disclaimer */}
                 <div className="text-[9px] text-zinc-400 leading-normal font-bold pt-1">
                   * Submission of this audit will automatically register your digital signature 
-                  <strong className="text-zinc-600"> "{currentSignature}"</strong> and timestamp on the Transfer Document.
+                  <strong className="text-zinc-650 dark:text-zinc-300"> "{currentSignature}"</strong> and timestamp on the Transfer Document.
                 </div>
               </div>
 
               {/* FOOTER ACTIONS */}
-              <div className="border-t border-zinc-200/80 pt-4 mt-5 flex items-center justify-end gap-2.5">
+              <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-5 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setIsReceiptOpen(false)}
-                  className="px-4.5 py-2 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 text-xs font-black transition-colors uppercase tracking-tight"
+                  className="px-4.5 py-2 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
                 >
                   Cancel
                 </button>

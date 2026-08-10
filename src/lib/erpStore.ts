@@ -54,6 +54,8 @@ export interface Product {
   batch: string
   manufacturingDate?: string
   expiry: string
+  entryDate?: string
+  leaveDate?: string
   shelfLifeMonths?: number
   expiryAlertEnabled?: boolean
   expiryAlertPeriod?: string
