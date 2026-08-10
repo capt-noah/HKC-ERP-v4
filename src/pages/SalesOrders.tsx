@@ -437,8 +437,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       paymentTerms,
     }
 
-    erp.addSalesOrder(newSo)
-
     // Upload staged attachments
     if (stagedTradePaperUrl && stagedTradePaperName) {
       try {
@@ -476,6 +474,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     const docs = await fetchShipmentDocs(soId, "sales_order")
     setSoAttachmentsMap((prev) => ({ ...prev, [soId]: docs }))
+
+    erp.addSalesOrder(newSo)
 
     showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
     setIsNewOrderOpen(false)
