@@ -180,6 +180,18 @@ export async function deleteRow({ resource, id, headers = {} }) {
   }
 }
 
+// Tables that must NEVER be wiped by an accidental empty-array PUT.
+// If a PUT with an empty body arrives for one of these, we skip the delete and return success.
+const PROTECTED_TABLES = new Set([
+  "chart_of_accounts",
+  "journal_entries",
+  "journal_entry_lines",
+  "invoices",
+  "payments",
+  "tax_rules",
+  "company_settings",
+])
+
 export async function replaceRows({ resource, body, headers = {} }) {
   if (!Array.isArray(body)) {
     return {
@@ -190,6 +202,14 @@ export async function replaceRows({ resource, body, headers = {} }) {
   }
 
   if (body.length === 0) {
+    // Never wipe protected finance tables — silently skip and return success
+    if (PROTECTED_TABLES.has(resource.table)) {
+      return {
+        status: 200,
+        headers: {},
+        body: { ok: true, count: 0, skipped: "Protected table: empty-array wipe prevented." },
+      }
+    }
     try {
       const deleteUrl = new URL(resource.table, config.supabaseRestUrl)
       deleteUrl.searchParams.set("id", "neq._empty_table_flush_")

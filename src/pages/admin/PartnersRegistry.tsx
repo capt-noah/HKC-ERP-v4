@@ -59,8 +59,7 @@ export default function PartnersRegistry() {
   const [custCategory, setCustCategory] = useState("Commercial Union")
   const [custTradePaperName, setCustTradePaperName] = useState("")
   const [custTradePaperUrl, setCustTradePaperUrl] = useState("")
-  const [custPaymentAdviceName, setCustPaymentAdviceName] = useState("")
-  const [custPaymentAdviceUrl, setCustPaymentAdviceUrl] = useState("")
+
 
   // Preview states
   const [previewUrl, setPreviewUrl] = useState("")
@@ -90,8 +89,6 @@ export default function PartnersRegistry() {
     setCustCategory("Commercial Union")
     setCustTradePaperName("")
     setCustTradePaperUrl("")
-    setCustPaymentAdviceName("")
-    setCustPaymentAdviceUrl("")
     setEditingCustomer(null)
     setShowAddCustomerModal(true)
   }
@@ -108,8 +105,6 @@ export default function PartnersRegistry() {
     setCustCategory(c.category || "Commercial Union")
     setCustTradePaperName(c.tradePaperFileName || "")
     setCustTradePaperUrl(c.tradePaperUrl || "")
-    setCustPaymentAdviceName(c.paymentAdviceFileName || "")
-    setCustPaymentAdviceUrl(c.paymentAdviceUrl || "")
     setShowAddCustomerModal(true)
   }
 
@@ -145,7 +140,7 @@ export default function PartnersRegistry() {
     setShowAddSupplierModal(true)
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "advice" | "supplier" = "trade") => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "supplier" = "trade") => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
@@ -154,9 +149,6 @@ export default function PartnersRegistry() {
       if (fileType === "supplier") {
         setSuppTradePaperName(file.name)
         setSuppTradePaperUrl(url)
-      } else if (fileType === "advice") {
-        setCustPaymentAdviceName(file.name)
-        setCustPaymentAdviceUrl(url)
       } else {
         setCustTradePaperName(file.name)
         setCustTradePaperUrl(url)
@@ -184,8 +176,6 @@ export default function PartnersRegistry() {
         category: custCategory,
         tradePaperFileName: custTradePaperName,
         tradePaperUrl: custTradePaperUrl,
-        paymentAdviceFileName: custPaymentAdviceName,
-        paymentAdviceUrl: custPaymentAdviceUrl,
       })
       showToast("Customer Updated", "success", `Customer ${custName} successfully updated in registry.`)
     } else {
@@ -201,8 +191,6 @@ export default function PartnersRegistry() {
         category: custCategory,
         tradePaperFileName: custTradePaperName,
         tradePaperUrl: custTradePaperUrl,
-        paymentAdviceFileName: custPaymentAdviceName,
-        paymentAdviceUrl: custPaymentAdviceUrl,
       }
       erp.addCustomer(newCust)
       showToast("Customer Added", "success", `New customer ${custName} added to registry.`)
@@ -466,29 +454,6 @@ export default function PartnersRegistry() {
                               </span>
                             )}
 
-                            {c.paymentAdviceFileName || c.paymentAdviceUrl ? (
-                              c.paymentAdviceUrl ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPreviewUrl(c.paymentAdviceUrl || "")
-                                    setPreviewName(c.paymentAdviceFileName || "Payment Advice")
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
-                                  title="View Payment Advice"
-                                >
-                                  <CheckCircle2 className="size-3 text-blue-600" /> {c.paymentAdviceFileName || "Payment Advice"} ↗
-                                </button>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
-                                  <CheckCircle2 className="size-3 text-blue-600" /> {c.paymentAdviceFileName}
-                                </span>
-                              )
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                <AlertCircle className="size-2.5 text-amber-500" /> Advice Missing
-                              </span>
-                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3.5 text-right">
@@ -732,36 +697,6 @@ export default function PartnersRegistry() {
                     </div>
                   </div>
 
-                  {/* Payment Advice */}
-                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-zinc-800">Payment Advice / Bank Receipt</span>
-                      {custPaymentAdviceName && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="size-3" /> Attached
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                        <Upload className="size-3" /> Select Advice File
-                        <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "advice")} />
-                      </label>
-                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custPaymentAdviceName || "No file chosen"}</span>
-                      {custPaymentAdviceUrl && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewUrl(custPaymentAdviceUrl)
-                            setPreviewName(custPaymentAdviceName || "Payment Advice")
-                          }}
-                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
-                        >
-                          View Doc ↗
-                        </button>
-                      )}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">

@@ -234,6 +234,98 @@ export async function transitionProcessingServiceStage(id, targetStage) {
   if (targetStage === "Delivered" && !existing.invoice_id) {
     invoiceId = `INV-PS-${id}`
     journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id })
+
+    // Save invoice to Supabase invoices table
+    try {
+      const clientName = existing.client_company_name || existing.customer_name || "Client Company"
+      const invoicePayload = {
+        id: invoiceId,
+        invoice_number: invoiceId,
+        customer_name: clientName,
+        issue_date: new Date().toISOString().split("T")[0],
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        line_items: [
+          {
+            description: `Toll processing fee for ${existing.goods_description} (${existing.quantity} ${existing.uom})`,
+            qty: Number(existing.quantity || 1),
+            unit_price: Number(existing.agreed_price || 0) / Number(existing.quantity || 1),
+            total: Number(existing.agreed_price || 0),
+          }
+        ],
+        subtotal: Number(existing.agreed_price || 0),
+        tax_amount: 0,
+        discount_amount: 0,
+        total_amount: Number(existing.agreed_price || 0),
+        amount_paid: 0,
+        balance_due: Number(existing.agreed_price || 0),
+        status: "Unpaid",
+        currency: "ETB",
+      }
+
+      const invUrl = new URL("invoices", config.supabaseRestUrl)
+      await fetch(invUrl, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          id: invoiceId,
+          payload: invoicePayload,
+        })
+      })
+    } catch (err) {
+      console.warn("Failed to persist service invoice in DB:", err.message)
+    }
+
+    // Save journal entry & lines to Supabase
+    try {
+      // 1. Journal Entry
+      const jeUrl = new URL("journal_entries", config.supabaseRestUrl)
+      await fetch(jeUrl, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          id: journalEntry.id,
+          payload: {
+            id: journalEntry.id,
+            entry_number: journalEntry.id,
+            entry_date: journalEntry.date,
+            description: journalEntry.description,
+            source_type: journalEntry.sourceType,
+            source_id: journalEntry.sourceId,
+            created_by: journalEntry.createdBy,
+            currency: "ETB",
+            exchange_rate: 1.0,
+            posting_status: "POSTED",
+          }
+        })
+      })
+
+      // 2. Journal Entry Lines
+      const jeLinesUrl = new URL("journal_entry_lines", config.supabaseRestUrl)
+      await fetch(jeLinesUrl, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(
+          journalEntry.lines.map((l, idx) => ({
+            id: `${journalEntry.id}-${idx + 1}`,
+            payload: {
+              id: `${journalEntry.id}-${idx + 1}`,
+              journal_entry_id: journalEntry.id,
+              account_id: l.accountId === "1200" ? "ACC-1200" : l.accountId === "4002" ? "ACC-4002" : l.accountId,
+              debit_amount: l.debitAmount,
+              credit_amount: l.creditAmount,
+              currency: "ETB",
+              exchange_rate_at_time: 1.0,
+              warehouse_id: "WH1",
+              party_type: l.accountId === "1200" ? "Customer" : null,
+              party_id: l.party_id || null,
+              party_name: l.party_name || null,
+            }
+          }))
+        )
+      })
+    } catch (err) {
+      console.warn("Failed to persist service journal entry in DB:", err.message)
+    }
   }
 
   const updatedDoc = {

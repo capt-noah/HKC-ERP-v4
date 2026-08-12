@@ -296,3 +296,84 @@ export async function deleteShipmentDoc(id: string): Promise<void> {
     throw new Error('Failed to delete shipment document.')
   }
 }
+
+export interface ResolvedOrderDocs {
+  tradeLicense: { file_name: string; file_url: string } | null
+  paymentAdvice: { file_name: string; file_url: string } | null
+  isComplete: boolean
+  docsList: ShipmentDocAttachment[]
+}
+
+export function resolveSalesOrderDocs(
+  orderId: string,
+  customerName: string,
+  customerTradePaperUrl: string | undefined,
+  customerTradePaperFileName: string | undefined,
+  dbDocs: ShipmentDocAttachment[]
+): ResolvedOrderDocs {
+  // 1. Resolve Trade License (specific order attachment has higher priority than default customer profile document)
+  const orderTradeDoc = dbDocs.find(
+    (d) => d.document_type === "Trade License" || d.document_type === "Trade Paper"
+  )
+  
+  let tradeLicense: { file_name: string; file_url: string } | null = null
+  if (orderTradeDoc) {
+    tradeLicense = {
+      file_name: orderTradeDoc.file_name,
+      file_url: orderTradeDoc.file_url,
+    }
+  } else if (customerTradePaperUrl) {
+    tradeLicense = {
+      file_name: customerTradePaperFileName || "Trade License.pdf",
+      file_url: customerTradePaperUrl,
+    }
+  }
+
+  // 2. Resolve Payment Advice (strictly transaction/order-specific)
+  const orderAdviceDoc = dbDocs.find((d) => d.document_type === "Payment Advice")
+  
+  let paymentAdvice: { file_name: string; file_url: string } | null = null
+  if (orderAdviceDoc) {
+    paymentAdvice = {
+      file_name: orderAdviceDoc.file_name,
+      file_url: orderAdviceDoc.file_url,
+    }
+  }
+
+  // 3. Compile Unified Docs List for compliance evaluation and document registries
+  const docsList: ShipmentDocAttachment[] = []
+  if (tradeLicense) {
+    docsList.push({
+      id: orderTradeDoc?.id || `SO-TRADE-${orderId}`,
+      record_id: orderId,
+      record_type: "sales_order",
+      document_type: "Trade License",
+      file_name: tradeLicense.file_name,
+      file_size: 1024,
+      file_url: tradeLicense.file_url,
+      uploaded_at: orderTradeDoc?.uploaded_at || new Date().toISOString(),
+      uploaded_by: orderTradeDoc?.uploaded_by || customerName || "Customer Registry",
+    })
+  }
+  if (paymentAdvice) {
+    docsList.push({
+      id: orderAdviceDoc?.id || `SO-ADVICE-${orderId}`,
+      record_id: orderId,
+      record_type: "sales_order",
+      document_type: "Payment Advice",
+      file_name: paymentAdvice.file_name,
+      file_size: 1024,
+      file_url: paymentAdvice.file_url,
+      uploaded_at: orderAdviceDoc?.uploaded_at || new Date().toISOString(),
+      uploaded_by: orderAdviceDoc?.uploaded_by || "Sales Officer",
+    })
+  }
+
+  return {
+    tradeLicense,
+    paymentAdvice,
+    isComplete: !!tradeLicense && !!paymentAdvice,
+    docsList,
+  }
+}
+

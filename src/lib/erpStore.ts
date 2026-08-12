@@ -270,8 +270,6 @@ export interface Customer {
   creditLimit?: number
   tradePaperUrl?: string
   tradePaperFileName?: string
-  paymentAdviceUrl?: string
-  paymentAdviceFileName?: string
   status?: string
 }
 

@@ -392,134 +392,246 @@ class FinanceStore {
       this.taxRules = taxRules
 
       // CROSS-MODULE LIVE FINANCE SYNC ENGINE:
-      // Fetch source module records and ensure all Sales Issues, Sales Orders, Purchase Orders, Expense Claims, and Payroll Records appear in Finance
+      // Fetch source module records and ensure all posted transactions appear in Finance GL.
+      // Safety rules:
+      //   1. Never run if Chart of Accounts is not loaded (prevents empty-account fallbacks)
+      //   2. Never persist incomplete journal entries (entry without lines)
+      //   3. Skip any transaction with amount <= 0
       try {
-        const [, , purchaseOrders, expenseClaims, payrollRecords] = await Promise.all([
-          loadResource<any>("sales_issues").catch(() => []),
-          loadResource<any>("sales_orders").catch(() => []),
-          loadResource<any>("purchase_orders").catch(() => []),
-          loadResource<any>("expense_claims").catch(() => []),
-          loadResource<any>("payroll_records").catch(() => []),
-        ])
+        if (this.accounts.length === 0) {
+          // COA not loaded yet — skip sync entirely to avoid corrupting GL with wrong account IDs
+          console.warn("[FinanceSync] Chart of Accounts not loaded. Skipping cross-module sync.")
+        } else {
+          const [salesIssues, , purchaseOrders, expenseClaims, payrollRecords] = await Promise.all([
+            loadResource<any>("sales_issues").catch(() => []),
+            loadResource<any>("sales_orders").catch(() => []),
+            loadResource<any>("purchase_orders").catch(() => []),
+            loadResource<any>("expense_claims").catch(() => []),
+            loadResource<any>("payroll_records").catch(() => []),
+          ])
 
-        let hasNewSync = false
+          let hasNewSync = false
 
-        // Background sync for invoices disabled to prevent duplicate invoice generation.
-        // Invoices are created strictly on-demand via financeStore.createInvoice().
+          // Helper: look up a specific account by code. Returns null if not found — callers must check.
+          const acc = (code: string) => this.accounts.find((a) => a.code === code) ?? null
 
-        // C. Sync Purchase Orders -> Procurement GL Entries
-        purchaseOrders.forEach((po: any, idx: number) => {
-          const jeId = `JE-PO-${po.id || idx + 1}`
-          const poAmt = Number(po.amount || po.total_amount || 20000)
+          // A. Sync Sales Issues → Sales Revenue & COGS GL Entries
+          salesIssues.forEach((si: any) => {
+            if ((si.status || "").toLowerCase() !== "posted") return
+            const totalAmt = Number(si.total_amount || 0)
+            if (totalAmt <= 0) return  // Skip zero-amount records
 
-          if (!this.entries.some((e) => e.id === jeId || e.source_id === po.id)) {
-            const stockAcc = this.accounts.find((a) => a.code === "1010" || a.code === "1410" || a.id === "acc-1010") || this.accounts[0]
-            const apAcc = this.accounts.find((a) => a.code === "2000" || a.code === "2100" || a.id === "acc-2000") || this.accounts[0]
+            const saleJeId = `JE-SALE-${si.id}`
+            const cogsJeId = `JE-COGS-${si.id}`
+            const isCredit = si.payment_type === "Credit"
 
-            this.entries.push({
-              id: jeId,
-              entry_date: po.date || new Date().toISOString().split("T")[0],
-              source_type: "Purchase Invoice",
-              source_id: po.id,
-              created_by: "Supply Chain Manager",
-              currency: "ETB",
-              exchange_rate: 1.0,
-              description: `Supplier Procurement Accrual PO ${po.id} for ${po.supplier || "Supplier"}`,
-              is_reversal_of: null,
-            })
+            // ── Sale Revenue entry ──
+            const hasSaleEntry = this.entries.some((e) => e.id === saleJeId)
+            const hasSaleLines = this.lines.some((l) => l.journal_entry_id === saleJeId)
 
-            if (stockAcc && apAcc) {
-              this.lines.push(
-                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: stockAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: apAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || "SUPP-001", party_name: po.supplier || "Supplier" }
-              )
+            if (!hasSaleEntry || !hasSaleLines) {
+              // Clear any orphaned/incomplete pair before rebuilding
+              this.entries = this.entries.filter((e) => e.id !== saleJeId)
+              this.lines = this.lines.filter((l) => l.journal_entry_id !== saleJeId)
+
+              const debitAcc = acc(isCredit ? "1200" : "1010")  // AR or Cash/Bank
+              const creditAcc = acc("4010")                     // Sales Revenue
+
+              if (!debitAcc || !creditAcc) {
+                console.warn(`[FinanceSync] Missing accounts for Sales Issue ${si.id} — skipping.`)
+              } else {
+                this.entries.push({
+                  id: saleJeId,
+                  entry_date: si.sale_date || new Date().toISOString().split("T")[0],
+                  source_type: "Sales Invoice",
+                  source_id: si.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `Sales Issue ${si.fs_no || si.id} — ${si.customer_name || "Customer"}`,
+                  is_reversal_of: null,
+                })
+                this.lines.push(
+                  { id: `${saleJeId}-1`, journal_entry_id: saleJeId, account_id: debitAcc.id, debit_amount: totalAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null, party_type: "Customer", party_id: si.customer_id || null, party_name: si.customer_name || null },
+                  { id: `${saleJeId}-2`, journal_entry_id: saleJeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: totalAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null, party_type: "Customer", party_id: si.customer_id || null, party_name: si.customer_name || null }
+                )
+                hasNewSync = true
+              }
             }
-            hasNewSync = true
-          }
-        })
 
-        // D. Sync Expense Claims -> Expenses & GL Entries
-        expenseClaims.forEach((ec: any, idx: number) => {
-          const expId = `EXP-${ec.id || idx + 1}`
-          const jeId = `JE-EXP-${ec.id || idx + 1}`
-          const expAmt = Number(ec.amount || 3500)
+            // ── COGS entry ──
+            const hasCogsEntry = this.entries.some((e) => e.id === cogsJeId)
+            const hasCogsLines = this.lines.some((l) => l.journal_entry_id === cogsJeId)
 
-          if (!this.expenses.some((e) => e.id === expId)) {
-            this.expenses.push({
-              id: expId,
-              merchant: ec.vendor || ec.merchant || "Vendor Supply",
-              category: ec.category || "Office Expenses",
-              date: ec.date || new Date().toISOString().split("T")[0],
-              employee: ec.employee_name || ec.employee || "Employee",
-              amount: expAmt,
-              currency: "ETB",
-              status: "APPROVED",
-            })
-            hasNewSync = true
-          }
+            if (!hasCogsEntry || !hasCogsLines) {
+              this.entries = this.entries.filter((e) => e.id !== cogsJeId)
+              this.lines = this.lines.filter((l) => l.journal_entry_id !== cogsJeId)
 
-          if (!this.entries.some((e) => e.id === jeId || e.source_id === ec.id)) {
-            const expAcc = this.accounts.find((a) => a.code === "5100" || a.id === "acc-5100") || this.accounts[0]
-            const cashAcc = this.accounts.find((a) => a.code === "1000" || a.id === "acc-1000") || this.accounts[0]
+              const debitAcc = acc("5001")  // Cost of Goods Sold
+              const creditAcc = acc("1410") // Inventory Asset
+              const estimatedCost = Math.round(totalAmt * 0.7)
 
-            this.entries.push({
-              id: jeId,
-              entry_date: ec.date || new Date().toISOString().split("T")[0],
-              source_type: "Recurring Expense",
-              source_id: ec.id,
-              created_by: "Finance Manager",
-              currency: "ETB",
-              exchange_rate: 1.0,
-              description: `Employee Expense Claim Disbursement for ${ec.employee_name || ec.employee || "Employee"}`,
-              is_reversal_of: null,
-            })
-
-            if (expAcc && cashAcc) {
-              this.lines.push(
-                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: expAcc.id, debit_amount: expAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: expAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: ec.employee_id || "EMP-001", party_name: ec.employee_name || ec.employee || "Employee" }
-              )
+              if (!debitAcc || !creditAcc) {
+                console.warn(`[FinanceSync] Missing COGS accounts for Sales Issue ${si.id} — skipping.`)
+              } else {
+                this.entries.push({
+                  id: cogsJeId,
+                  entry_date: si.sale_date || new Date().toISOString().split("T")[0],
+                  source_type: "Sales Invoice",
+                  source_id: si.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `COGS — Sales Issue ${si.fs_no || si.id}`,
+                  is_reversal_of: null,
+                })
+                this.lines.push(
+                  { id: `${cogsJeId}-1`, journal_entry_id: cogsJeId, account_id: debitAcc.id, debit_amount: estimatedCost, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null },
+                  { id: `${cogsJeId}-2`, journal_entry_id: cogsJeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: estimatedCost, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null }
+                )
+                hasNewSync = true
+              }
             }
-            hasNewSync = true
-          }
-        })
+          })
 
-        // E. Sync Payroll Records -> Payroll GL Entries
-        payrollRecords.forEach((pr: any, idx: number) => {
-          const jeId = `JE-PAY-${pr.id || idx + 1}`
-          const payAmt = Number(pr.net_salary || pr.net_pay || pr.amount || 18000)
+          // B. Sync Purchase Orders → Inventory & AP GL Entries
+          purchaseOrders.forEach((po: any, idx: number) => {
+            const jeId = `JE-PO-${po.id || idx + 1}`
+            const poAmt = Number(po.amount || po.total_amount || 0)
+            if (poAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
 
-          if (!this.entries.some((e) => e.id === jeId || e.source_id === pr.id)) {
-            const salaryAcc = this.accounts.find((a) => a.code === "5010" || a.id === "acc-5010") || this.accounts[0]
-            const cashAcc = this.accounts.find((a) => a.code === "1000" || a.id === "acc-1000") || this.accounts[0]
+            const hasPoEntry = this.entries.some((e) => e.id === jeId || e.source_id === po.id)
+            const hasPoLines = this.lines.some((l) => l.journal_entry_id === jeId)
 
-            this.entries.push({
-              id: jeId,
-              entry_date: pr.payment_date || new Date().toISOString().split("T")[0],
-              source_type: "Payroll Payment",
-              source_id: pr.id,
-              created_by: "HR & Payroll Manager",
-              currency: "ETB",
-              exchange_rate: 1.0,
-              description: `Salaries & Wages Disbursement for ${pr.employee_name || "Employee"}`,
-              is_reversal_of: null,
-            })
+            if (!hasPoEntry || !hasPoLines) {
+              this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== po.id)
+              this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-            if (salaryAcc && cashAcc) {
-              this.lines.push(
-                { id: `${jeId}-1`, journal_entry_id: jeId, account_id: salaryAcc.id, debit_amount: payAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || "EMP-001", party_name: pr.employee_name || "Employee" }
-              )
+              const stockAcc = acc("1410") // Inventory Asset
+              const apAcc = acc("2100")    // Accounts Payable
+
+              if (!stockAcc || !apAcc) {
+                console.warn(`[FinanceSync] Missing accounts for PO ${po.id} — skipping.`)
+              } else {
+                this.entries.push({
+                  id: jeId,
+                  entry_date: po.date || new Date().toISOString().split("T")[0],
+                  source_type: "Purchase Invoice",
+                  source_id: po.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `Purchase Order ${po.id} — ${po.supplier || "Supplier"}`,
+                  is_reversal_of: null,
+                })
+                this.lines.push(
+                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: stockAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: apAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || null, party_name: po.supplier || null }
+                )
+                hasNewSync = true
+              }
             }
-            hasNewSync = true
-          }
-        })
+          })
 
-        if (hasNewSync) {
-          this.saveToApi().catch((err) => console.error("Failed to auto-persist synced Finance records:", err))
+          // C. Sync Expense Claims → Expense & Cash GL Entries
+          expenseClaims.forEach((ec: any, idx: number) => {
+            const expId = `EXP-${ec.id || idx + 1}`
+            const jeId = `JE-EXP-${ec.id || idx + 1}`
+            const expAmt = Number(ec.amount || 0)
+            if (expAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
+
+            if (!this.expenses.some((e) => e.id === expId)) {
+              this.expenses.push({
+                id: expId,
+                merchant: ec.vendor || ec.merchant || "Vendor",
+                category: ec.category || "General Expenses",
+                date: ec.date || new Date().toISOString().split("T")[0],
+                employee: ec.employee_name || ec.employee || "Employee",
+                amount: expAmt,
+                currency: "ETB",
+                status: "APPROVED",
+              })
+              hasNewSync = true
+            }
+
+            const hasExpEntry = this.entries.some((e) => e.id === jeId || e.source_id === ec.id)
+            const hasExpLines = this.lines.some((l) => l.journal_entry_id === jeId)
+
+            if (!hasExpEntry || !hasExpLines) {
+              this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== ec.id)
+              this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
+
+              const expAcc = acc("5000")  // General Expenses
+              const cashAcc = acc("1010") // Cash/Bank
+
+              if (!expAcc || !cashAcc) {
+                console.warn(`[FinanceSync] Missing accounts for Expense Claim ${ec.id} — skipping.`)
+              } else {
+                this.entries.push({
+                  id: jeId,
+                  entry_date: ec.date || new Date().toISOString().split("T")[0],
+                  source_type: "Recurring Expense",
+                  source_id: ec.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `Expense Claim — ${ec.employee_name || ec.employee || "Employee"}`,
+                  is_reversal_of: null,
+                })
+                this.lines.push(
+                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: expAcc.id, debit_amount: expAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: expAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: ec.employee_id || null, party_name: ec.employee_name || ec.employee || null }
+                )
+                hasNewSync = true
+              }
+            }
+          })
+
+          // D. Sync Payroll Records → Salary Expense & Cash GL Entries
+          payrollRecords.forEach((pr: any, idx: number) => {
+            const jeId = `JE-PAY-${pr.id || idx + 1}`
+            const payAmt = Number(pr.net_salary || pr.net_pay || pr.amount || 0)
+            if (payAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
+
+            const hasPayEntry = this.entries.some((e) => e.id === jeId || e.source_id === pr.id)
+            const hasPayLines = this.lines.some((l) => l.journal_entry_id === jeId)
+
+            if (!hasPayEntry || !hasPayLines) {
+              this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== pr.id)
+              this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
+
+              const salaryAcc = acc("5010") // Salaries & Employee Wages
+              const cashAcc = acc("1010")   // Cash/Bank
+
+              if (!salaryAcc || !cashAcc) {
+                console.warn(`[FinanceSync] Missing accounts for Payroll Record ${pr.id} — skipping.`)
+              } else {
+                this.entries.push({
+                  id: jeId,
+                  entry_date: pr.payment_date || new Date().toISOString().split("T")[0],
+                  source_type: "Payroll Payment",
+                  source_id: pr.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `Payroll — ${pr.employee_name || "Employee"}`,
+                  is_reversal_of: null,
+                })
+                this.lines.push(
+                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: salaryAcc.id, debit_amount: payAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || null, party_name: pr.employee_name || null }
+                )
+                hasNewSync = true
+              }
+            }
+          })
+
+          if (hasNewSync) {
+            this.saveToApi().catch((err) => console.error("[FinanceSync] Failed to persist synced GL records:", err))
+          }
         }
       } catch (syncErr) {
-        console.error("Cross-module live finance sync error:", syncErr)
+        console.error("[FinanceSync] Cross-module sync error (GL not modified):", syncErr)
       }
 
       this._isLoading = false

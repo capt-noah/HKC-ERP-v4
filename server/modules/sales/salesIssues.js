@@ -276,7 +276,24 @@ export async function postSalesIssue(arg1, arg2) {
     return { status: 400, body: { error: `Sales issue '${id}' is already posted.` } }
   }
 
-  // EXCLUSIVE INVENTORY STOCK DEDUCTION
+  // 1. Try DB RPC Posting first
+  try {
+    const rpcRes = await invokeRpc("hkc_post_sales_issue", {
+      p_sales_issue_id: id,
+      p_posted_by: "Sales Officer"
+    })
+    if (rpcRes && rpcRes.status === 200) {
+      return { status: 200, body: { ...existing, status: "Posted", ok: true } }
+    }
+  } catch (err) {
+    console.warn("RPC hkc_post_sales_issue failed, executing JS fallback:", err.message)
+  }
+
+  // 2. JS Fallback Posting (deducts stock AND inserts all general ledger journal entries)
+  let totalCost = 0
+  let totalAmount = 0
+  let totalQty = 0
+
   try {
     for (const item of (existing.items || [])) {
       const prodId = item.item_id || item.productId
@@ -292,12 +309,20 @@ export async function postSalesIssue(arg1, arg2) {
         const row = prodRows[0]
         const prod = row.payload ? { id: row.id, ...row.payload } : row
         const issueQty = Number(item.quantity || item.qty || 0)
+        const unitPrice = Number(item.unit_price || item.unitPrice || 0)
+        const unitCost = Number(prod.unitCost || 0)
+
+        totalQty += issueQty
+        totalAmount += issueQty * unitPrice
+        totalCost += issueQty * unitCost
 
         const newQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
         const newSold = Number(prod.quantitySold || 0) + issueQty
         const targetWh = existing.warehouse_id || existing.warehouse || prod.warehouse
+        const targetWhBase = (targetWh || "").split("-")[0]
+        
         const updatedBreakdown = (prod.stockBreakdown || []).map((sb) =>
-          sb.warehouse === targetWh
+          sb.warehouse === targetWh || (sb.warehouse || "").split("-")[0] === targetWhBase
             ? { ...sb, qty: Math.max(0, Number(sb.qty || 0) - issueQty) }
             : sb
         )
@@ -342,10 +367,164 @@ export async function postSalesIssue(arg1, arg2) {
     await fetch(updateUrl, {
       method: "PATCH",
       headers: headers("return=representation"),
-      body: JSON.stringify({ status: "Posted", posted_at: new Date().toISOString() }),
+      body: JSON.stringify({
+        status: "Posted",
+        posted_at: new Date().toISOString(),
+        total_quantity: totalQty,
+        total_amount: totalAmount,
+      }),
     })
   } catch (err) {
     console.warn("Sales issue status update DB warning:", err.message)
+  }
+
+  // Insert GL journal entries and lines in JS fallback
+  try {
+    const isCredit = existing.payment_type === "Credit"
+    const saleJeId = `JE-SALE-${id}`
+    const cogsJeId = `JE-COGS-${id}`
+
+    // 1. Sales Journal Entry
+    const saleEntryUrl = new URL("journal_entries", config.supabaseRestUrl)
+    await fetch(saleEntryUrl, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        id: saleJeId,
+        payload: {
+          id: saleJeId,
+          entry_date: new Date().toISOString().split("T")[0],
+          description: `Sales issue ${existing.fs_no || id}`,
+          source_type: "Sales Issue",
+          source_id: id,
+          created_by: "Sales Officer",
+          currency: "ETB",
+          exchange_rate: 1.0,
+          posting_status: "POSTED",
+        }
+      })
+    })
+
+    // 2. Sales Journal Entry Lines
+    const saleLinesUrl = new URL("journal_entry_lines", config.supabaseRestUrl)
+    await fetch(saleLinesUrl, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify([
+        {
+          id: `${saleJeId}-DR`,
+          payload: {
+            id: `${saleJeId}-DR`,
+            journal_entry_id: saleJeId,
+            account_id: isCredit ? "ACC-1200" : "ACC-1000",
+            debit_amount: totalAmount,
+            credit_amount: 0,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: existing.warehouse_id || null,
+            party_type: "Customer",
+            party_id: existing.customer_id || null,
+            party_name: existing.customer_name || existing.customer || null,
+          }
+        },
+        {
+          id: `${saleJeId}-CR`,
+          payload: {
+            id: `${saleJeId}-CR`,
+            journal_entry_id: saleJeId,
+            account_id: "ACC-4000",
+            debit_amount: 0,
+            credit_amount: totalAmount,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: existing.warehouse_id || null,
+            party_type: "Customer",
+            party_id: existing.customer_id || null,
+            party_name: existing.customer_name || existing.customer || null,
+          }
+        }
+      ])
+    })
+
+    // 3. COGS Journal Entry
+    const cogsEntryUrl = new URL("journal_entries", config.supabaseRestUrl)
+    await fetch(cogsEntryUrl, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        id: cogsJeId,
+        payload: {
+          id: cogsJeId,
+          entry_date: new Date().toISOString().split("T")[0],
+          description: `Inventory cost for sales issue ${existing.fs_no || id}`,
+          source_type: "Sales Issue",
+          source_id: id,
+          created_by: "Sales Officer",
+          currency: "ETB",
+          exchange_rate: 1.0,
+          posting_status: "POSTED",
+        }
+      })
+    })
+
+    // 4. COGS Journal Entry Lines
+    const cogsLinesUrl = new URL("journal_entry_lines", config.supabaseRestUrl)
+    await fetch(cogsLinesUrl, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify([
+        {
+          id: `${cogsJeId}-DR`,
+          payload: {
+            id: `${cogsJeId}-DR`,
+            journal_entry_id: cogsJeId,
+            account_id: "ACC-5000",
+            debit_amount: totalCost,
+            credit_amount: 0,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: existing.warehouse_id || null,
+          }
+        },
+        {
+          id: `${cogsJeId}-CR`,
+          payload: {
+            id: `${cogsJeId}-CR`,
+            journal_entry_id: cogsJeId,
+            account_id: "ACC-1010",
+            debit_amount: 0,
+            credit_amount: totalCost,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: existing.warehouse_id || null,
+          }
+        }
+      ])
+    })
+
+    // 5. Customer Receivables
+    if (isCredit) {
+      const arUrl = new URL("accounts_receivable", config.supabaseRestUrl)
+      await fetch(arUrl, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          id: `AR-${id}`,
+          payload: {
+            id: `AR-${id}`,
+            sales_issue_id: id,
+            customer_id: existing.customer_id || null,
+            customer_name: existing.customer_name || existing.customer || null,
+            amount: totalAmount,
+            balance: totalAmount,
+            status: "Open",
+            created_at: new Date().toISOString(),
+          }
+        })
+      })
+    }
+  } catch (err) {
+    console.warn("Manual GL posting failed:", err.message)
   }
 
   return { status: 200, body: { ...existing, status: "Posted", ok: true } }

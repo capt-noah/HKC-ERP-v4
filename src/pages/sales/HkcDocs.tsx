@@ -40,6 +40,7 @@ import {
   fetchShipmentDocs,
   fetchShipmentDocRules,
   fetchAssignedOfficers,
+  resolveSalesOrderDocs,
   type ShipmentDocAttachment,
   type ShipmentDocRule,
   type AssignedOfficerRecord,
@@ -166,36 +167,14 @@ export default function HkcDocs() {
         if (shipment.recordType === "sales_order") {
           const so = shipment.rawRecord as any
           const cust = erp.getCustomers().find((c) => c.id === so.customerId || c.name === so.customer)
-          const tradeUrl = so.tradePaperUrl || cust?.tradePaperUrl
-          const tradeName = so.tradePaperFileName || cust?.tradePaperFileName || "Trade License.pdf"
-          if (tradeUrl && !finalDocs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")) {
-            finalDocs.push({
-              id: `SO-TRADE-${so.id}`,
-              record_id: so.id,
-              record_type: "sales_order",
-              document_type: "Trade License",
-              file_name: tradeName,
-              file_size: 1024,
-              file_url: tradeUrl,
-              uploaded_at: so.createdAt || new Date().toISOString(),
-              uploaded_by: so.customer || "System Registry",
-            })
-          }
-          const adviceUrl = so.paymentAdviceUrl || cust?.paymentAdviceUrl
-          const adviceName = so.paymentAdviceFileName || cust?.paymentAdviceFileName || "Payment Advice.pdf"
-          if (adviceUrl && !finalDocs.some((d) => d.document_type === "Payment Advice")) {
-            finalDocs.push({
-              id: `SO-ADVICE-${so.id}`,
-              record_id: so.id,
-              record_type: "sales_order",
-              document_type: "Payment Advice",
-              file_name: adviceName,
-              file_size: 1024,
-              file_url: adviceUrl,
-              uploaded_at: so.createdAt || new Date().toISOString(),
-              uploaded_by: so.customer || "System Registry",
-            })
-          }
+          const resolved = resolveSalesOrderDocs(
+            so.id,
+            so.customer,
+            cust?.tradePaperUrl,
+            cust?.tradePaperFileName,
+            docs
+          )
+          finalDocs = resolved.docsList
         }
         if (shipment.recordType === "processing_service") {
           const ps = shipment.rawRecord as ProcessingServiceOrder

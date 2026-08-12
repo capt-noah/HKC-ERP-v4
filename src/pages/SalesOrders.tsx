@@ -27,6 +27,7 @@ import { DataTable } from "@/components/DataTable"
 import {
   fetchShipmentDocs,
   uploadShipmentDoc,
+  resolveSalesOrderDocs,
   type ShipmentDocAttachment,
 } from "@/lib/shipmentDocumentEngine"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
@@ -267,23 +268,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     ])
 
-    // Load existing attached docs for editing with fallback to so/customer properties
+    // Load existing attached docs for editing using the unified resolution engine
     const existingDocs = await fetchShipmentDocs(so.id, "sales_order")
     const cust = customers.find((c) => c.id === so.customerId || c.name === so.customer)
 
-    const tradeDoc = existingDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-    const adviceDoc = existingDocs.find((d) => d.document_type === "Payment Advice")
+    const resolved = resolveSalesOrderDocs(
+      so.id,
+      so.customer,
+      cust?.tradePaperUrl,
+      cust?.tradePaperFileName,
+      existingDocs
+    )
 
-    const tradeName = tradeDoc?.file_name || (so as any).tradePaperFileName || cust?.tradePaperFileName || (tradeDoc?.file_url ? "Trade License.pdf" : "")
-    const tradeUrl = tradeDoc?.file_url || (so as any).tradePaperUrl || cust?.tradePaperUrl || ""
-
-    const adviceName = adviceDoc?.file_name || (so as any).paymentAdviceFileName || (adviceDoc?.file_url ? "Payment Advice.pdf" : "")
-    const adviceUrl = adviceDoc?.file_url || (so as any).paymentAdviceUrl || ""
-
-    setStagedTradePaperName(tradeName)
-    setStagedTradePaperUrl(tradeUrl)
-    setStagedPaymentAdviceName(adviceName)
-    setStagedPaymentAdviceUrl(adviceUrl)
+    setStagedTradePaperName(resolved.tradeLicense?.file_name || "")
+    setStagedTradePaperUrl(resolved.tradeLicense?.file_url || "")
+    setStagedPaymentAdviceName(resolved.paymentAdvice?.file_name || "")
+    setStagedPaymentAdviceUrl(resolved.paymentAdvice?.file_url || "")
 
     setIsEditOrderOpen(true)
   }
@@ -307,6 +307,15 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }
 
     erp.updateSalesOrder(updatedSo)
+
+    // Sync attachments to customer registry profile
+    const matchedCust = customers.find((c) => c.id === editingOrder.customerId || c.name === editingOrder.customer)
+    if (matchedCust) {
+      erp.updateCustomer(matchedCust.id, {
+        tradePaperFileName: stagedTradePaperName || matchedCust.tradePaperFileName,
+        tradePaperUrl: stagedTradePaperUrl || matchedCust.tradePaperUrl,
+      })
+    }
 
     // Save/Upload staged files
     if (stagedTradePaperUrl && stagedTradePaperName) {
@@ -387,6 +396,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       if (saveCustomerToRegistry) {
         erp.addCustomer(selectedCust)
       }
+    } else {
+      erp.updateCustomer(selectedCust.id, {
+        tradePaperFileName: stagedTradePaperName || selectedCust.tradePaperFileName,
+        tradePaperUrl: stagedTradePaperUrl || selectedCust.tradePaperUrl,
+      })
     }
 
     const rawItems = orderItems.length > 0 ? orderItems : [

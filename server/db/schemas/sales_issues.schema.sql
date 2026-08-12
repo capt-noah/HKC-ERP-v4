@@ -274,7 +274,7 @@ begin
 
     for v_stock_row in select value from jsonb_array_elements(coalesce(v_payload->'stockBreakdown', '[]'::jsonb))
     loop
-      if v_stock_row->>'warehouse' = v_issue.warehouse_id then
+      if v_stock_row->>'warehouse' = v_issue.warehouse_id or split_part(v_stock_row->>'warehouse', '-', 1) = v_issue.warehouse_id then
         v_stock_found := true;
         v_stock_qty := coalesce((v_stock_row->>'qty')::numeric, 0);
         if v_item.quantity > v_stock_qty then
