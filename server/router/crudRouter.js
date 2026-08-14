@@ -1,6 +1,7 @@
 import { Router } from "express"
 import { getResource, listResources } from "../db/resourceRegistry.js"
 import { crudService } from "../modules/common/crudService.js"
+import bcrypt from "bcrypt"
 
 export const crudRouter = Router()
 
@@ -73,7 +74,15 @@ crudRouter.patch("/:resource/:id", async (req, res, next) => {
       res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
       return
     }
-    const result = await crudService.update({ resource, id: req.params.id, body: req.body, headers: req.headers })
+
+    let body = req.body
+    if (req.params.resource === "users" && body && body.password) {
+      const password_hash = await bcrypt.hash(body.password, 10)
+      body = { ...body, password_hash }
+      delete body.password
+    }
+
+    const result = await crudService.update({ resource, id: req.params.id, body, headers: req.headers })
     res.status(result.status).json(result.body)
   } catch (err) {
     next(err)

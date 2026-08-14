@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Mail, Users, UserX, Edit, Shield, LayoutGrid, Loader2 } from "lucide-react"
+import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Mail, Users, UserX, Edit, Shield, LayoutGrid, Loader2, Eye, EyeOff } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -58,6 +58,36 @@ const avatarBgPresets = [
   "bg-indigo-50 text-indigo-700 border border-indigo-100"
 ]
 
+interface PasswordStrength {
+  score: number
+  label: "Weak" | "Medium" | "Strong"
+  color: string
+  width: string
+}
+
+function getPasswordStrength(password: string): PasswordStrength {
+  if (!password) {
+    return { score: 0, label: "Weak", color: "bg-red-500", width: "0%" }
+  }
+  let score = 0
+  if (password.length >= 8) score++
+  if (password.length >= 10) score++
+  if (/[a-z]/.test(password)) score++
+  if (/[A-Z]/.test(password)) score++
+  if (/[0-9]/.test(password)) score++
+  if (/[^a-zA-Z0-9]/.test(password)) score++
+
+  const finalScore = Math.min(score, 5)
+
+  if (password.length < 8 || finalScore <= 3) {
+    return { score: finalScore, label: "Weak", color: "bg-red-500", width: "33%" }
+  }
+  if (password.length >= 8 && finalScore === 4) {
+    return { score: finalScore, label: "Medium", color: "bg-yellow-500", width: "66%" }
+  }
+  return { score: finalScore, label: "Strong", color: "bg-green-600", width: "100%" }
+}
+
 export default function UserManagement() {
   const [users, setUsers] = useState<UserAccount[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -85,6 +115,10 @@ export default function UserManagement() {
 
   // Edit user form state
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null)
+  
+  const [showNewUserPassword, setShowNewUserPassword] = useState(false)
+  const [showEditingUserPassword, setShowEditingUserPassword] = useState(false)
+  const [editPassword, setEditPassword] = useState("")
 
   const fetchAllData = async () => {
     setLoading(true)
@@ -113,6 +147,12 @@ export default function UserManagement() {
     e.preventDefault()
     if (!newUser.username || !newUser.password || newUser.roles.length === 0) {
       showToast("Username, password, and at least one role are required.", "warning")
+      return
+    }
+
+    const strength = getPasswordStrength(newUser.password)
+    if (strength.label !== "Strong") {
+      showToast("Password must be strong.", "warning")
       return
     }
 
@@ -150,6 +190,7 @@ export default function UserManagement() {
 
       showToast("User Created Successfully", "success", `${newUser.username} has been added.`)
       setShowAddModal(false)
+      setShowNewUserPassword(false)
       // Reset form
       setNewUser({
         username: "",
@@ -175,18 +216,33 @@ export default function UserManagement() {
       return
     }
 
+    if (editPassword) {
+      const strength = getPasswordStrength(editPassword)
+      if (strength.label !== "Strong") {
+        showToast("Password must be strong.", "warning")
+        return
+      }
+    }
+
     setActionLoading(true)
     try {
-      await updateResource<UserAccount>("users", editingUser.id, {
+      const updateData: any = {
         fullname: editingUser.fullname,
         roles: editingUser.roles,
         status: editingUser.status,
         warehouse_ids: editingUser.roles.includes("inventory_admin") ? editingUser.warehouse_ids || [] : [],
-      })
+      }
+      if (editPassword) {
+        updateData.password = editPassword
+      }
+
+      await updateResource<UserAccount>("users", editingUser.id, updateData)
 
       showToast("User Updated Successfully", "success", `${editingUser.username}'s settings have been saved.`)
       setShowEditModal(false)
       setEditingUser(null)
+      setEditPassword("")
+      setShowEditingUserPassword(false)
       fetchAllData()
     } catch (err: any) {
       showToast(err.message, "error")
@@ -424,6 +480,8 @@ export default function UserManagement() {
                                 <button
                                   onClick={() => {
                                     setEditingUser(user)
+                                    setEditPassword("")
+                                    setShowEditingUserPassword(false)
                                     setShowEditModal(true)
                                   }}
                                   className="p-1.5 hover:bg-black/5 rounded-lg border border-black/5 text-zinc-700 transition-all active:scale-90"
@@ -527,14 +585,47 @@ export default function UserManagement() {
               {/* Password */}
               <div>
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  placeholder="Password"
-                  className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
-                />
+                <div className="relative">
+                  <input
+                    type={showNewUserPassword ? "text" : "password"}
+                    required
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    placeholder="Password"
+                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl pl-4 pr-12 py-3 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewUserPassword(!showNewUserPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-black rounded-lg transition-colors"
+                  >
+                    {showNewUserPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+                {newUser.password && (
+                  <div className="mt-2.5 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold tracking-wider uppercase">
+                      <span className="text-gray-400">Password Strength</span>
+                      <span className={
+                        getPasswordStrength(newUser.password).label === "Weak" ? "text-red-500" :
+                        getPasswordStrength(newUser.password).label === "Medium" ? "text-yellow-600" : "text-green-600"
+                      }>
+                        {getPasswordStrength(newUser.password).label}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-black/[0.05] rounded-full overflow-hidden">
+                      <div 
+                        className={cn("h-full transition-all duration-300", getPasswordStrength(newUser.password).color)}
+                        style={{ width: getPasswordStrength(newUser.password).width }}
+                      />
+                    </div>
+                    {getPasswordStrength(newUser.password).label !== "Strong" && (
+                      <p className="text-[10px] font-semibold text-red-500 leading-normal">
+                        Password must be strong. Add uppercase, lowercase, numbers, and special symbols (min 10 chars).
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Multiple Roles Selector Checkboxes */}
@@ -630,8 +721,8 @@ export default function UserManagement() {
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
-                  className="flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75"
+                  disabled={actionLoading || getPasswordStrength(newUser.password).label !== "Strong"}
+                  className="flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
                   {actionLoading ? <Loader2 className="size-3.5 animate-spin" /> : "Save User"}
                 </button>
@@ -776,6 +867,51 @@ export default function UserManagement() {
                 </div>
               )}
 
+              {/* Reset Password */}
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Reset Password (Optional)</label>
+                <div className="relative">
+                  <input
+                    type={showEditingUserPassword ? "text" : "password"}
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="Leave blank to keep current password"
+                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl pl-4 pr-12 py-3 text-sm font-semibold text-black outline-none focus:border-green-700 focus:bg-white transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditingUserPassword(!showEditingUserPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-black rounded-lg transition-colors"
+                  >
+                    {showEditingUserPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+                {editPassword && (
+                  <div className="mt-2.5 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold tracking-wider uppercase">
+                      <span className="text-gray-400">Password Strength</span>
+                      <span className={
+                        getPasswordStrength(editPassword).label === "Weak" ? "text-red-500" :
+                        getPasswordStrength(editPassword).label === "Medium" ? "text-yellow-600" : "text-green-600"
+                      }>
+                        {getPasswordStrength(editPassword).label}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-black/[0.05] rounded-full overflow-hidden">
+                      <div 
+                        className={cn("h-full transition-all duration-300", getPasswordStrength(editPassword).color)}
+                        style={{ width: getPasswordStrength(editPassword).width }}
+                      />
+                    </div>
+                    {getPasswordStrength(editPassword).label !== "Strong" && (
+                      <p className="text-[10px] font-semibold text-red-500 leading-normal">
+                        Password must be strong. Add uppercase, lowercase, numbers, and special symbols (min 10 chars).
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Security Status */}
               <div>
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Security Status</label>
@@ -812,8 +948,8 @@ export default function UserManagement() {
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
-                  className="flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75"
+                  disabled={actionLoading || (editPassword !== "" && getPasswordStrength(editPassword).label !== "Strong")}
+                  className="flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
                   {actionLoading ? <Loader2 className="size-3.5 animate-spin" /> : "Save Changes"}
                 </button>
