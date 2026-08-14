@@ -544,19 +544,41 @@ export default function UserManagement() {
                   {Object.keys(roleLabels).map((rKey) => {
                     const role = rKey as Role
                     const isChecked = newUser.roles.includes(role)
+                    const isSuperadminChecked = newUser.roles.includes("superadmin")
+                    const isDisabled = role !== "superadmin" && isSuperadminChecked
+
                     return (
-                      <label key={role} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer">
+                      <label 
+                        key={role} 
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer",
+                          isDisabled && "opacity-50 cursor-not-allowed"
+                        )}
+                      >
                         <input
                           type="checkbox"
                           checked={isChecked}
+                          disabled={isDisabled}
                           onChange={() => {
                             if (isChecked) {
                               setNewUser({ ...newUser, roles: newUser.roles.filter(r => r !== role) })
                             } else {
-                              setNewUser({ ...newUser, roles: [...newUser.roles, role] })
+                              if (role === "superadmin") {
+                                confirm({
+                                  title: "Assign Super Admin Role",
+                                  message: "You have selected super admin this will give full access are you sure?",
+                                  confirmLabel: "Yes, Assign",
+                                  cancelLabel: "Cancel",
+                                  onConfirm: () => {
+                                    setNewUser({ ...newUser, roles: ["superadmin"] })
+                                  }
+                                })
+                              } else {
+                                setNewUser({ ...newUser, roles: [...newUser.roles, role] })
+                              }
                             }
                           }}
-                          className="accent-green-700 size-4 cursor-pointer"
+                          className="accent-green-700 size-4 cursor-pointer disabled:cursor-not-allowed"
                         />
                         <span className="text-xs font-semibold text-black">{roleLabels[role]}</span>
                       </label>
@@ -672,19 +694,41 @@ export default function UserManagement() {
                   {Object.keys(roleLabels).map((rKey) => {
                     const role = rKey as Role
                     const isChecked = editingUser.roles.includes(role)
+                    const isSuperadminChecked = editingUser.roles.includes("superadmin")
+                    const isDisabled = role !== "superadmin" && isSuperadminChecked
+
                     return (
-                      <label key={role} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer">
+                      <label 
+                        key={role} 
+                        className={cn(
+                          "flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer",
+                          isDisabled && "opacity-50 cursor-not-allowed"
+                        )}
+                      >
                         <input
                           type="checkbox"
                           checked={isChecked}
+                          disabled={isDisabled}
                           onChange={() => {
                             if (isChecked) {
                               setEditingUser({ ...editingUser, roles: editingUser.roles.filter(r => r !== role) })
                             } else {
-                              setEditingUser({ ...editingUser, roles: [...editingUser.roles, role] })
+                              if (role === "superadmin") {
+                                confirm({
+                                  title: "Assign Super Admin Role",
+                                  message: "You have selected super admin this will give full access are you sure?",
+                                  confirmLabel: "Yes, Assign",
+                                  cancelLabel: "Cancel",
+                                  onConfirm: () => {
+                                    setEditingUser({ ...editingUser, roles: ["superadmin"] })
+                                  }
+                                })
+                              } else {
+                                setEditingUser({ ...editingUser, roles: [...editingUser.roles, role] })
+                              }
                             }
                           }}
-                          className="accent-green-700 size-4 cursor-pointer"
+                          className="accent-green-700 size-4 cursor-pointer disabled:cursor-not-allowed"
                         />
                         <span className="text-xs font-semibold text-black">{roleLabels[role]}</span>
                       </label>
