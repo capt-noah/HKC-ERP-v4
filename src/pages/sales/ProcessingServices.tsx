@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Plus,
@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+import { useAuthStore } from "@/lib/authStore"
 import {
   type ProcessingServiceOrder,
   type ProcessingServiceStage,
@@ -87,6 +88,26 @@ export default function ProcessingServices() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
   const customers = erp.getCustomers()
+
+  const { user } = useAuthStore()
+  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const userWarehouseIds = user?.warehouse_ids || (user?.warehouse_id ? [user.warehouse_id] : [])
+  const resolvedWarehouseIds = useMemo(() => {
+    const allWhs = erp.getWarehouses()
+    const set = new Set<string>()
+    userWarehouseIds.forEach(id => {
+      set.add(id)
+      const matched = allWhs.find(w => w.id === id || w.code === id)
+      if (matched) {
+        if (matched.id) set.add(matched.id)
+        if (matched.code) set.add(matched.code)
+      }
+    })
+    return Array.from(set)
+  }, [userWarehouseIds, erp])
+
+  const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
+  const hasWH1Access = !isInventoryAdminOnly || resolvedWarehouseIds.includes("WH1") || resolvedWarehouseIds.includes("WH1-AGRI-EXP")
 
   const [services, setServices] = useState<ProcessingServiceOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -308,6 +329,23 @@ export default function ProcessingServices() {
     agreed_price: 130,
     _actions: 120,
   })
+
+  if (!hasWH1Access) {
+    return (
+      <div className="min-h-screen page-gradient flex items-center justify-center">
+        <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+        <GlassCard className="max-w-md p-8 text-center border border-white/60 shadow-xl">
+          <div className="size-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100">
+            <X className="size-8" />
+          </div>
+          <h2 className="text-xl font-black text-black">Access Denied</h2>
+          <p className="text-xs text-gray-500 mt-2">
+            You do not have authorization to view or manage processing services at Warehouse 1. Please contact your system administrator to update your assigned warehouse scopes.
+          </p>
+        </GlassCard>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen page-gradient">

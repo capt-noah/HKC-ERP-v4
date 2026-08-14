@@ -3,6 +3,8 @@ import { listResources } from "../db/resourceRegistry.js"
 import { crudRouter } from "./crudRouter.js"
 import { financeRouter } from "./financeRouter.js"
 import { salesRouter } from "./salesRouter.js"
+import { authRouter } from "../modules/auth/authRouter.js"
+import { authenticateToken, authorizeRoles } from "../modules/auth/authMiddleware.js"
 
 export const masterRouter = Router()
 
@@ -10,6 +12,15 @@ export const masterRouter = Router()
 masterRouter.get("/health", (_req, res) => {
   res.json({ ok: true, service: "hkc-erp-server" })
 })
+
+// Auth routes (unprotected for login)
+masterRouter.use("/api/auth", authRouter)
+
+// Protect all other /api routes
+masterRouter.use("/api", authenticateToken)
+
+// Restrict users management endpoint to superadmin only
+masterRouter.use("/api/users", authorizeRoles("superadmin"))
 
 // Resource registry endpoint
 masterRouter.get("/api", (_req, res) => {

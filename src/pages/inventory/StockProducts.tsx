@@ -22,6 +22,7 @@ import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuthStore } from "@/lib/authStore"
 
 const packagingUnits = ["Box", "Bottle", "Vial"]
 
@@ -96,9 +97,41 @@ function ProductTableSkeletonRows() {
 export default function StockProducts() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
-  const products = erp.getProducts()
+  
+  const { user } = useAuthStore()
+  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const userWarehouseIds = user?.warehouse_ids || (user?.warehouse_id ? [user.warehouse_id] : [])
+  const resolvedWarehouseIds = useMemo(() => {
+    const allWhs = erp.getWarehouses()
+    const set = new Set<string>()
+    userWarehouseIds.forEach(id => {
+      set.add(id)
+      const matched = allWhs.find(w => w.id === id || w.code === id)
+      if (matched) {
+        if (matched.id) set.add(matched.id)
+        if (matched.code) set.add(matched.code)
+      }
+    })
+    return Array.from(set)
+  }, [userWarehouseIds, erp])
+
+  const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
+
+  const allProducts = erp.getProducts()
+  const products = isInventoryAdminOnly
+    ? allProducts.filter(p => 
+        resolvedWarehouseIds.includes(p.warehouse) || 
+        (p.stockBreakdown || []).some(entry => resolvedWarehouseIds.includes(entry.warehouse))
+      )
+    : allProducts
+
   const isLoading = erp.isLoading()
-  const warehouseRecords = withOperatingWarehouses(erp.getWarehouses())
+
+  const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
+  const warehouseRecords = isInventoryAdminOnly
+    ? allWarehouses.filter(w => resolvedWarehouseIds.includes(w.id) || resolvedWarehouseIds.includes(w.code))
+    : allWarehouses
+
   const isWH1 = (w: string) => w === "WH1" || w === "WH1-AGRI-EXP"
   const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer" | "Regulatory Docs">("Register")
   const [docs] = useState<RegulatoryDoc[]>([])

@@ -1,0 +1,108 @@
+import bcrypt from "bcrypt"
+import jwt from "jsonwebtoken"
+import { listRows, createRow } from "../../db/supabaseClient.js"
+
+const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_dev_only"
+
+const USERS_RESOURCE = { table: "users", storage: "direct" }
+
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
+
+export async function login(req, res) {
+  const { username, password } = req.body
+
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required" })
+  }
+
+  try {
+    // Find user
+    const response = await listRows({
+      resource: USERS_RESOURCE,
+      query: { username: `eq.${username}`, limit: 1 },
+    })
+
+    if (response.status !== 200 || !response.body || response.body.length === 0) {
+      return res.status(401).json({ error: "Invalid credentials" })
+    }
+
+    const user = response.body[0]
+
+    // Check suspension status
+    if (user.status === "suspended") {
+      return res.status(403).json({ error: "Your account is suspended. Please contact the administrator." })
+    }
+
+    // Verify password
+    const isMatch = await bcrypt.compare(password, user.password_hash)
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid credentials" })
+    }
+
+    // Generate JWT
+    const token = jwt.sign(
+      {
+        id: user.id,
+        username: user.username,
+        roles: user.roles || [],
+        fullname: user.fullname || "",
+        warehouse_ids: user.warehouse_ids || [],
+      },
+      JWT_SECRET,
+      { expiresIn: "1d" }
+    )
+
+    res.status(200).json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        roles: user.roles || [],
+        fullname: user.fullname || "",
+        warehouse_ids: user.warehouse_ids || [],
+      },
+    })
+  } catch (error) {
+    console.error("Auth login controller error:", error)
+    res.status(500).json({ error: "Internal server error", details: error.message })
+  }
+}
+
+export async function register(req, res) {
+  const { username, password, roles, status, fullname, employee_id, warehouse_ids } = req.body
+
+  if (!username || !password || !roles || !Array.isArray(roles) || roles.length === 0) {
+    return res.status(400).json({ error: "Username, password, and at least one role are required" })
+  }
+
+  const validRoles = ["superadmin", "sales_manager", "hr_manager", "inventory_admin", "finance_manager", "hkc_docs_manager"]
+  const hasInvalidRole = roles.some(role => !validRoles.includes(role))
+  if (hasInvalidRole) {
+    return res.status(400).json({ error: "One or more invalid roles specified" })
+  }
+
+  try {
+    const password_hash = await bcrypt.hash(password, 10)
+
+    const response = await createRow({
+      resource: USERS_RESOURCE,
+      body: { 
+        username, 
+        password_hash, 
+        roles, 
+        status: status || "active", 
+        fullname: fullname || "", 
+        employee_id: employee_id || null, 
+        warehouse_ids: warehouse_ids || [] 
+      },
+    })
+
+    if (response.status >= 400) {
+      return res.status(response.status).json(response.body)
+    }
+
+    res.status(201).json({ message: "User created successfully" })
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error", details: error.message })
+  }
+}

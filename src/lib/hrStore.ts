@@ -306,6 +306,10 @@ class HRStore {
     this.loadFromApi()
   }
 
+  public async reloadFromApi() {
+    await this.loadFromApi()
+  }
+
   private async loadFromApi() {
     try {
       const [

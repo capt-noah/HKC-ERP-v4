@@ -1,8 +1,19 @@
 import { useState } from "react"
-import { Link, useLocation } from "react-router-dom"
-import { Bell, Settings, User, Check, Inbox } from "lucide-react"
+import { Link, useLocation, useNavigate } from "react-router-dom"
+import { Bell, Settings, User, Check, Inbox, LogOut } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
+import { useAuthStore } from "@/lib/authStore"
+import type { Role } from "@/lib/authStore"
+
+const sectionRoleMapping: Record<string, Role[]> = {
+  Sales: ["superadmin", "sales_manager", "hkc_docs_manager"],
+  "HKC Docs": ["superadmin", "sales_manager", "hkc_docs_manager"],
+  Inventory: ["superadmin", "inventory_admin"],
+  Finance: ["superadmin", "finance_manager"],
+  HR: ["superadmin", "hr_manager"],
+  Admin: ["superadmin"],
+}
 
 export interface NavChild {
   label: string
@@ -31,9 +42,19 @@ export function FloatingNav({
   rightActions,
 }: FloatingNavProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const isDark = variant === "dark"
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showProfile, setShowProfile] = useState(false)
+  const { user, logout } = useAuthStore()
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; desc: string; time: string; type: string; icon?: typeof Inbox; unread: boolean }>>([])
+
+  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const visibleSections = sections.filter((s) => {
+    const allowed = sectionRoleMapping[s.label]
+    if (!allowed) return true
+    return allowed.some((r) => userRoles.includes(r))
+  })
 
   const unreadCount = notifications.filter((n) => n.unread).length
 
@@ -96,7 +117,7 @@ export function FloatingNav({
                 : "glass-nav border-white/80"
             )}
           >
-            {sections.map((section) => {
+            {visibleSections.map((section) => {
               const isActive = activeSection?.label === section.label
               return (
                 <Link
@@ -283,16 +304,65 @@ export function FloatingNav({
                 </AnimatePresence>
 
                 {/* Minimalist User Avatar Circle */}
-                <div
-                  className={cn(
-                    "size-8 rounded-full flex items-center justify-center border cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95",
-                    isDark
-                      ? "bg-green-700/20 text-green-400 border-green-700/30"
-                      : "bg-[#e5e5ea] text-[#1c1c1e] border-black/10"
-                  )}
-                  title="Profile"
-                >
-                  <User className="size-[18px]" />
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setShowProfile(!showProfile)
+                      setShowNotifications(false)
+                    }}
+                    className={cn(
+                      "size-8 rounded-full flex items-center justify-center border cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95",
+                      isDark
+                        ? "bg-green-700/20 text-green-400 border-green-700/30"
+                        : "bg-[#e5e5ea] text-[#1c1c1e] border-black/10"
+                    )}
+                    title="Profile"
+                  >
+                    <User className="size-[18px]" />
+                  </button>
+
+                  <AnimatePresence>
+                    {showProfile && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40 cursor-default" 
+                          onClick={() => setShowProfile(false)} 
+                        />
+                        
+                        <motion.div
+                          initial={{ opacity: 0, y: 15, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                          className="absolute right-0 top-11 z-50 w-64 rounded-3xl border border-zinc-200/80 bg-white text-zinc-900 p-5 shadow-2xl text-left overflow-hidden"
+                        >
+                          <div className="mb-3">
+                            <h4 className="text-xs font-black tracking-wider text-zinc-400 uppercase mb-1">Logged In As</h4>
+                            <p className="text-sm font-extrabold text-zinc-900 leading-tight">
+                              {user?.fullname || user?.username || "Guest User"}
+                            </p>
+                            <p className="text-[10px] font-mono font-bold text-green-700 bg-green-50 border border-green-100 rounded px-1.5 py-0.5 inline-block mt-1">
+                              {(user?.roles || ((user as any)?.role ? [(user as any).role] : [])).join(", ") || "No Roles"}
+                            </p>
+                          </div>
+
+                          <div className="border-t border-zinc-100 pt-3 mt-3">
+                            <button
+                              onClick={() => {
+                                logout()
+                                setShowProfile(false)
+                                navigate("/login")
+                              }}
+                              className="flex items-center gap-2 w-full text-left text-xs font-bold text-red-500 hover:text-red-700 transition-colors py-1.5"
+                            >
+                              <LogOut className="size-4" />
+                              Logout
+                            </button>
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             )}

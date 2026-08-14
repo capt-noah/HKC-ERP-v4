@@ -11,6 +11,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuthStore } from "@/lib/authStore"
 
 type CurrentStockRow = {
   id: string
@@ -86,9 +87,40 @@ function ReportTableSkeletonRows() {
 export default function Reports() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
-  const products = erp.getProducts()
+  
+  const { user } = useAuthStore()
+  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const userWarehouseIds = user?.warehouse_ids || (user?.warehouse_id ? [user.warehouse_id] : [])
+  const resolvedWarehouseIds = useMemo(() => {
+    const allWhs = erp.getWarehouses()
+    const set = new Set<string>()
+    userWarehouseIds.forEach(id => {
+      set.add(id)
+      const matched = allWhs.find(w => w.id === id || w.code === id)
+      if (matched) {
+        if (matched.id) set.add(matched.id)
+        if (matched.code) set.add(matched.code)
+      }
+    })
+    return Array.from(set)
+  }, [userWarehouseIds, erp])
+
+  const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
+
+  const allProducts = erp.getProducts()
+  const products = isInventoryAdminOnly
+    ? allProducts.filter(p => 
+        resolvedWarehouseIds.includes(p.warehouse) || 
+        (p.stockBreakdown || []).some(entry => resolvedWarehouseIds.includes(entry.warehouse))
+      )
+    : allProducts
+
   const isLoading = erp.isLoading()
-  const warehouses = withOperatingWarehouses(erp.getWarehouses())
+
+  const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
+  const warehouses = isInventoryAdminOnly
+    ? allWarehouses.filter(w => resolvedWarehouseIds.includes(w.id) || resolvedWarehouseIds.includes(w.code))
+    : allWarehouses
   const [warehouseFilter, setWarehouseFilter] = useState("ALL")
   const [searchQuery, setSearchQuery] = useState("")
 

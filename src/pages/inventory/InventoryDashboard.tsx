@@ -21,6 +21,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Product, type StockMovementLog } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuthStore } from "@/lib/authStore"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -114,10 +115,54 @@ function InventoryRowSkeleton() {
 export default function InventoryDashboard() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
-  const products = erp.getProducts()
-  const warehouses = withOperatingWarehouses(erp.getWarehouses())
-  const movements = erp.getStockMovements()
-  const purchaseOrders = erp.getPurchaseOrders()
+  
+  const { user } = useAuthStore()
+  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const userWarehouseIds = user?.warehouse_ids || (user?.warehouse_id ? [user.warehouse_id] : [])
+  const resolvedWarehouseIds = useMemo(() => {
+    const allWhs = erp.getWarehouses()
+    const set = new Set<string>()
+    userWarehouseIds.forEach(id => {
+      set.add(id)
+      const matched = allWhs.find(w => w.id === id || w.code === id)
+      if (matched) {
+        if (matched.id) set.add(matched.id)
+        if (matched.code) set.add(matched.code)
+      }
+    })
+    return Array.from(set)
+  }, [userWarehouseIds, erp])
+
+  const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
+
+  const allProducts = erp.getProducts()
+  const products = isInventoryAdminOnly
+    ? allProducts.filter(p => 
+        resolvedWarehouseIds.includes(p.warehouse) || 
+        (p.stockBreakdown || []).some(entry => resolvedWarehouseIds.includes(entry.warehouse))
+      )
+    : allProducts
+
+  const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
+  const warehouses = isInventoryAdminOnly
+    ? allWarehouses.filter(w => resolvedWarehouseIds.includes(w.id) || resolvedWarehouseIds.includes(w.code))
+    : allWarehouses
+
+  const allMovements = erp.getStockMovements()
+  const movements = isInventoryAdminOnly
+    ? allMovements.filter(m => 
+        resolvedWarehouseIds.includes(m.warehouse) || 
+        resolvedWarehouseIds.includes(m.fromWarehouse) || 
+        resolvedWarehouseIds.includes(m.toWarehouse) ||
+        resolvedWarehouseIds.includes(m.warehouse_id)
+      )
+    : allMovements
+
+  const allPurchaseOrders = erp.getPurchaseOrders()
+  const purchaseOrders = isInventoryAdminOnly
+    ? allPurchaseOrders.filter(o => resolvedWarehouseIds.includes(o.warehouse))
+    : allPurchaseOrders
+
   const isLoading = erp.isLoading()
 
   const [activeRole, setActiveRole] = useState<DashboardRole>("Overview")
@@ -276,6 +321,11 @@ export default function InventoryDashboard() {
     const product = selectedReceiptProduct
     if (!product || !newReceiptQty || !newReceiptWarehouse) {
       showToast("Missing fields", "info", "Select a product, quantity, and receiving warehouse.")
+      return
+    }
+
+    if (isInventoryAdminOnly && !resolvedWarehouseIds.includes(newReceiptWarehouse)) {
+      showToast("Access Denied", "error", "You do not have permissions to register receipts at this warehouse.")
       return
     }
 
