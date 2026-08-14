@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Mail, Users, UserX, Edit, Shield, LayoutGrid, Loader2, Eye, EyeOff } from "lucide-react"
+import { motion } from "framer-motion"
+import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Mail, Users, UserX, Edit, Loader2, Eye, EyeOff } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -133,7 +133,7 @@ export default function UserManagement() {
       setWarehouses(warehousesData)
     } catch (err: any) {
       console.error(err)
-      showToast("Error loading user management data", "error")
+      showToast("Error loading user management data", "warning")
     } finally {
       setLoading(false)
     }
@@ -203,7 +203,7 @@ export default function UserManagement() {
       })
       fetchAllData()
     } catch (err: any) {
-      showToast(err.message, "error")
+      showToast(err.message, "warning")
     } finally {
       setActionLoading(false)
     }
@@ -245,7 +245,7 @@ export default function UserManagement() {
       setShowEditingUserPassword(false)
       fetchAllData()
     } catch (err: any) {
-      showToast(err.message, "error")
+      showToast(err.message, "warning")
     } finally {
       setActionLoading(false)
     }
@@ -264,7 +264,7 @@ export default function UserManagement() {
           showToast("User Deleted Successfully", "warning", `${username} has been removed.`)
           fetchAllData()
         } catch (err: any) {
-          showToast(err.message, "error")
+          showToast(err.message, "warning")
         }
       }
     })
@@ -288,7 +288,7 @@ export default function UserManagement() {
           )
           fetchAllData()
         } catch (err: any) {
-          showToast(err.message, "error")
+          showToast(err.message, "warning")
         }
       }
     })

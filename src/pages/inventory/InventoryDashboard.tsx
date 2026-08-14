@@ -118,7 +118,7 @@ export default function InventoryDashboard() {
   
   const { user } = useAuthStore()
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
-  const userWarehouseIds = user?.warehouse_ids || (user?.warehouse_id ? [user.warehouse_id] : [])
+  const userWarehouseIds = user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])
   const resolvedWarehouseIds = useMemo(() => {
     const allWhs = erp.getWarehouses()
     const set = new Set<string>()
@@ -151,10 +151,8 @@ export default function InventoryDashboard() {
   const allMovements = erp.getStockMovements()
   const movements = isInventoryAdminOnly
     ? allMovements.filter(m => 
-        resolvedWarehouseIds.includes(m.warehouse) || 
-        resolvedWarehouseIds.includes(m.fromWarehouse) || 
-        resolvedWarehouseIds.includes(m.toWarehouse) ||
-        resolvedWarehouseIds.includes(m.warehouse_id)
+        (m.fromWarehouse && resolvedWarehouseIds.includes(m.fromWarehouse)) || 
+        (m.toWarehouse && resolvedWarehouseIds.includes(m.toWarehouse))
       )
     : allMovements
 
@@ -325,7 +323,7 @@ export default function InventoryDashboard() {
     }
 
     if (isInventoryAdminOnly && !resolvedWarehouseIds.includes(newReceiptWarehouse)) {
-      showToast("Access Denied", "error", "You do not have permissions to register receipts at this warehouse.")
+      showToast("Access Denied", "warning", "You do not have permissions to register receipts at this warehouse.")
       return
     }
 
