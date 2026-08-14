@@ -81,8 +81,33 @@ In [`src/pages/admin/UserManagement.tsx`](file:///Users/menelikalemayehu/Documen
 * Checking the **Super Admin** role displays a confirmation prompt: *"You have selected super admin this will give full access are you sure?"*
 * If checked, all other role checkbox inputs are disabled.
 
-### Password Integrity & Validation
+### Password Strength Check
 * **Password Visibility**: Visibility toggle ("eye" icon) has been added to password fields inside both creation and edit dialogs.
 * **Password Strength Check**: Real-time strength estimation is displayed via a progress bar (Red = Weak, Yellow = Medium, Green = Strong). 
 * **Submit Constraint**: Form submission is disabled unless the password meets `"Strong"` criteria (minimum 10 characters combining uppercase, lowercase, numbers, and special symbols).
 * **Backend Hashing**: Any password changes sent to the general PATCH `/api/users/:id` endpoint are intercepted in the router and hashed using `bcrypt` before being stored.
+
+---
+
+## 5. Activity Logger & Control Center Audit Trail
+
+### Database Table
+The `public.user_activity_logs` table records state-modifying actions in the database:
+* **Columns**: `id` (uuid), `user_id` (uuid references users), `username` (text), `fullname` (text), `action` (text), `resource` (text), `details` (jsonb), `created_at` (timestamptz).
+
+### Backend Middleware & Auth Hook
+* **Automatic Logging**: The Express `activityLoggerMiddleware` in [`server/modules/common/activityLogger.js`](file:///Users/menelikalemayehu/Documents/HKC-ERP-V4/server/modules/common/activityLogger.js) intercepts POST, PUT, PATCH, and DELETE requests on the API, parsing the resource and specific action, logging details (path, IP address, and changed items).
+* **Manual Logging**: Logins are manually recorded in the user login controller [`authController.js`](file:///Users/menelikalemayehu/Documents/HKC-ERP-V4/server/modules/auth/authController.js).
+* **Security Guard**: The route `/api/user_activity_logs` is protected by `authorizeRoles("superadmin")` to prevent unauthorized access.
+
+### Control Center Dashboard
+The Control Center page at [`src/pages/ControlCenter.tsx`](file:///Users/menelikalemayehu/Documents/HKC-ERP-V4/src/pages/ControlCenter.tsx) is split into two tabs:
+1. **System Overview**: Displays core totals (revenue, inventory value, low stock count, employee count) and recent transactions.
+2. **Audit Activity Logs**: Displays the database audit logs. Superadmins can filter logs dynamically by:
+   * Operator User
+   * Affected Module / Resource
+   * Action Type (Create, Update, Delete, Login, etc.)
+   * Date Timeframe (Today, Yesterday, Last 7/30 days)
+   * Free-text search
+* **View Module Redirection**: Logs include a **View Module** navigation shortcut mapping the resource name to its respective client-side route.
+

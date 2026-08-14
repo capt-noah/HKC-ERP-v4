@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import { listRows, createRow } from "../../db/supabaseClient.js"
+import { logActivity } from "../common/activityLogger.js"
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_dev_only"
 
@@ -51,6 +52,16 @@ export async function login(req, res) {
       JWT_SECRET,
       { expiresIn: "1d" }
     )
+
+    // Log login activity asynchronously
+    logActivity(
+      user.id,
+      user.username,
+      user.fullname || "",
+      "Login",
+      "auth",
+      { ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "127.0.0.1").split(",")[0].trim() }
+    ).catch(err => console.error("[AUTH LOGIN LOG ERROR]", err.message))
 
     res.status(200).json({
       token,

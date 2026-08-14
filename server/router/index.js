@@ -5,6 +5,7 @@ import { financeRouter } from "./financeRouter.js"
 import { salesRouter } from "./salesRouter.js"
 import { authRouter } from "../modules/auth/authRouter.js"
 import { authenticateToken, authorizeRoles } from "../modules/auth/authMiddleware.js"
+import { activityLoggerMiddleware } from "../modules/common/activityLogger.js"
 
 export const masterRouter = Router()
 
@@ -19,8 +20,12 @@ masterRouter.use("/api/auth", authRouter)
 // Protect all other /api routes
 masterRouter.use("/api", authenticateToken)
 
+// Track user activity on mutations
+masterRouter.use("/api", activityLoggerMiddleware)
+
 // Restrict users management endpoint to superadmin only
 masterRouter.use("/api/users", authorizeRoles("superadmin"))
+masterRouter.use("/api/user_activity_logs", authorizeRoles("superadmin"))
 
 // Resource registry endpoint
 masterRouter.get("/api", (_req, res) => {

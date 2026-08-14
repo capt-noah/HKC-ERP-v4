@@ -16,6 +16,7 @@ export const resources = {
   customers: { table: "customers", module: "sales", ...jsonb },
   suppliers: { table: "suppliers", module: "sales", ...jsonb },
   users: { table: "users", module: "admin", storage: "relational" },
+  user_activity_logs: { table: "user_activity_logs", module: "admin", storage: "relational" },
 
   chart_of_accounts: { table: "chart_of_accounts", module: "finance", ...jsonb },
   journal_entries: { table: "journal_entries", module: "finance", ...jsonb },
