@@ -16,7 +16,7 @@ import {
   Calendar,
   MapPin,
   RefreshCw,
-  Info,
+
   Loader2,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -201,7 +201,7 @@ export default function ControlCenter() {
           // Cross reference employee payload
           const emp = hrData.employees.find((e) => e.id === user.employee_id)
           if (emp) {
-            personName = emp.payload?.name || emp.name || personName
+            personName = emp.full_name || personName
           }
         }
         if (!personName) {
