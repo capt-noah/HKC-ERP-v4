@@ -7,7 +7,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { cn } from "@/lib/utils"
 import { useFeedback } from "@/context/FeedbackContext"
-import { loadResource, updateResource, deleteResource } from "@/lib/apiPersistence"
+import { loadResource, updateResource, deleteResource, API_BASE } from "@/lib/apiPersistence"
 import type { Role } from "@/lib/authStore"
 
 export interface UserAccount {
@@ -167,7 +167,7 @@ export default function UserManagement() {
 
     setActionLoading(true)
     try {
-      const response = await fetch("/api/auth/register", {
+      const response = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

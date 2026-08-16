@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useAuthStore } from "@/lib/authStore"
+import { API_BASE } from "@/lib/apiPersistence"
 import { toast } from "sonner"
 import { KeyRound, User, Loader2, Eye, EyeOff } from "lucide-react"
 
@@ -20,7 +21,7 @@ export default function Login() {
     setLoading(true)
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

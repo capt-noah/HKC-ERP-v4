@@ -3,7 +3,7 @@ type Identified = { id?: string }
 // In dev, API_BASE is empty and Vite's proxy forwards /api/* to the local server.
 // In production (Vercel), VITE_API_URL must be set to the Render service URL
 // so requests go directly to the backend (e.g. https://hkc-erp-api.onrender.com).
-const API_BASE = import.meta.env.VITE_API_URL ?? ""
+export const API_BASE = import.meta.env.VITE_API_URL ?? ""
 
 function itemId(item: Identified, fallbackIndex: number) {
   return item.id ? String(item.id) : `row-${fallbackIndex + 1}`
