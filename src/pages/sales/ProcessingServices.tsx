@@ -96,7 +96,7 @@ export default function ProcessingServices() {
   const resolvedWarehouseIds = useMemo(() => {
     const allWhs = erp.getWarehouses()
     const set = new Set<string>()
-    userWarehouseIds.forEach(id => {
+    userWarehouseIds.forEach((id: string) => {
       set.add(id)
       const matched = allWhs.find(w => w.id === id || w.code === id)
       if (matched) {

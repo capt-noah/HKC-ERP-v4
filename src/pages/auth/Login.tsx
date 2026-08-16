@@ -10,7 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const login = useAuthStore((state) => state.login)
+  const login = useAuthStore((state: any) => state.login)
   const navigate = useNavigate()
   const location = useLocation()
 

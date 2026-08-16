@@ -47,15 +47,13 @@ function KpiSkeleton() {
 
 export default function InventoryDashboard() {
   const erp = useErpStore()
-<<<<<<< HEAD
-  
   const { user } = useAuthStore()
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
   const userWarehouseIds = user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])
   const resolvedWarehouseIds = useMemo(() => {
     const allWhs = erp.getWarehouses()
     const set = new Set<string>()
-    userWarehouseIds.forEach(id => {
+    userWarehouseIds.forEach((id: string) => {
       set.add(id)
       const matched = allWhs.find(w => w.id === id || w.code === id)
       if (matched) {
@@ -89,16 +87,6 @@ export default function InventoryDashboard() {
       )
     : allMovements
 
-  const allPurchaseOrders = erp.getPurchaseOrders()
-  const purchaseOrders = isInventoryAdminOnly
-    ? allPurchaseOrders.filter(o => resolvedWarehouseIds.includes(o.warehouse))
-    : allPurchaseOrders
-
-=======
-  const products = erp.getProducts()
-  const warehouses = withOperatingWarehouses(erp.getWarehouses())
-  const movements = erp.getStockMovements()
->>>>>>> 9ae24a3 (feat: implement Bin Card, HKC Docs, exportUtils, and UI refinements)
   const isLoading = erp.isLoading()
 
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("ALL")
@@ -206,7 +194,6 @@ export default function InventoryDashboard() {
   const totalInventoryValue = useMemo(() => {
     if (selectedWarehouse === "ALL") {
       return products.reduce((sum, p) => sum + Number(p.totalStockValue ?? Number(p.quantity || 0) * Number(p.unitCost || 0)), 0)
-    }
     }
     return products.reduce((sum, p) => {
       const match = p.stockBreakdown.filter(entry => entry.warehouse === selectedWarehouse)
