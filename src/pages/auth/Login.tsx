@@ -81,10 +81,14 @@ export default function Login() {
 
       <div className="w-full max-w-md p-8 space-y-8 glass-card border border-white/60 shadow-xl relative z-10">
         <div className="text-center">
-          <div className="inline-flex items-center justify-center size-14 rounded-3xl bg-green-50 text-green-700 border border-green-150/40 mb-4">
-            <KeyRound className="h-6 w-6" />
+          <div className="flex items-center justify-center mb-3">
+            <img
+              src="/hkc_logo.png"
+              alt="HKC Trading Logo"
+              className="h-16 w-auto object-contain"
+            />
           </div>
-          <h2 className="text-3xl font-extrabold text-black tracking-tight">HKC ERP</h2>
+          <h2 className="text-3xl font-extrabold text-black tracking-tight">HKC Trading</h2>
           <p className="mt-2 text-sm font-semibold text-zinc-500">Sign in to your dashboard</p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
