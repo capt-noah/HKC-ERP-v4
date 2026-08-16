@@ -33,22 +33,51 @@ function errorMessage(body: unknown, fallback: string) {
   return fallback
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  try {
+    const raw = localStorage.getItem("auth-storage")
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const token = parsed?.state?.token
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`
+      }
+    }
+  } catch {}
+  return headers
+}
+
 export async function loadResource<T>(resource: string): Promise<T[]> {
-  const response = await fetch(`${API_BASE}/api/${resource}`)
+  const authHeaders = getAuthHeaders()
+  if (!authHeaders["Authorization"]) {
+    return []
+  }
+
+  const response = await fetch(`${API_BASE}/api/${resource}`, {
+    headers: {
+      ...authHeaders,
+    },
+  })
   const body = await parseResponse(response)
 
   if (!response.ok) {
+    if (response.status === 401) {
+      return []
+    }
     throw new Error(errorMessage(body, `Failed to load ${resource}.`))
   }
 
-  return Array.isArray(body) ? body as T[] : []
+  return Array.isArray(body) ? (body as T[]) : []
 }
 
 export async function replaceResource<T extends Identified>(resource: string, items: T[]) {
+  const authHeaders = getAuthHeaders()
   const response = await fetch(`${API_BASE}/api/${resource}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
     },
     body: JSON.stringify(items.map((item, index) => ({ ...item, id: itemId(item, index) }))),
   })
@@ -60,10 +89,12 @@ export async function replaceResource<T extends Identified>(resource: string, it
 }
 
 export async function createResource<T extends Identified>(resource: string, item: T) {
+  const authHeaders = getAuthHeaders()
   const response = await fetch(`${API_BASE}/api/${resource}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
     },
     body: JSON.stringify(item),
   })
@@ -77,10 +108,12 @@ export async function createResource<T extends Identified>(resource: string, ite
 }
 
 export async function updateResource<T extends Identified>(resource: string, id: string, item: Partial<T>) {
+  const authHeaders = getAuthHeaders()
   const response = await fetch(`${API_BASE}/api/${resource}/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
     },
     body: JSON.stringify(item),
   })
@@ -94,8 +127,12 @@ export async function updateResource<T extends Identified>(resource: string, id:
 }
 
 export async function deleteResource(resource: string, id: string) {
+  const authHeaders = getAuthHeaders()
   const response = await fetch(`${API_BASE}/api/${resource}/${encodeURIComponent(id)}`, {
     method: "DELETE",
+    headers: {
+      ...authHeaders,
+    },
   })
   const body = await parseResponse(response)
 

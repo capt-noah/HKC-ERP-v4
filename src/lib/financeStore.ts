@@ -153,10 +153,25 @@ export interface CompanySettings {
   base_storage_rate_per_quintal_day?: number
   storage_increment_per_month?: number
   max_storage_month_cap?: number
+  tin_number?: string
+  address?: string
+  contact_email?: string
+  contact_phone?: string
+  fiscal_year_start?: string
+  storage_free_days?: number
+  default_reorder_level?: number
+  prevent_negative_stock?: boolean
+  auto_delivery_notes?: boolean
+  default_payment_terms?: string
+  default_inventory_account_id?: string
+  default_revenue_account_id?: string
+  default_cogs_account_id?: string
+  default_damage_account_id?: string
+  default_cash_account_id?: string
 }
 
 const emptyCompanySettings: CompanySettings = {
-  company_name: "",
+  company_name: "HKC Trading Enterprise",
   base_currency: "ETB",
   exchange_rates: {},
   unrealized_exchange_gain_loss_account_id: "",
@@ -167,6 +182,21 @@ const emptyCompanySettings: CompanySettings = {
   base_storage_rate_per_quintal_day: 1.25,
   storage_increment_per_month: 0.25,
   max_storage_month_cap: 4,
+  tin_number: "0012345678",
+  address: "Bole Subcity, Woreda 03, Addis Ababa, Ethiopia",
+  contact_email: "info@hkctrading.com",
+  contact_phone: "+251 11 662 4580",
+  fiscal_year_start: "July",
+  storage_free_days: 7,
+  default_reorder_level: 50,
+  prevent_negative_stock: true,
+  auto_delivery_notes: true,
+  default_payment_terms: "Net 30 Days",
+  default_inventory_account_id: "",
+  default_revenue_account_id: "",
+  default_cogs_account_id: "",
+  default_damage_account_id: "",
+  default_cash_account_id: "",
 }
 
 export interface PayrollDeduction {

@@ -32,13 +32,45 @@ import AdminSettings from "@/pages/admin/AdminSettings"
 
 import { Toaster } from "sonner"
 
+import { useAuthStore } from "@/lib/authStore"
+
+function RoleHomeRedirect() {
+  const user = useAuthStore((state) => state.user)
+  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const primaryRole = userRoles[0]
+
+  switch (primaryRole) {
+    case "superadmin":
+      return <Navigate to="/admin" replace />
+    case "sales_manager":
+      return <Navigate to="/sales" replace />
+    case "hr_manager":
+      return <Navigate to="/hr" replace />
+    case "inventory_admin":
+      return <Navigate to="/inventory" replace />
+    case "finance_manager":
+      return <Navigate to="/finance" replace />
+    case "hkc_docs_manager":
+      return <Navigate to="/sales/hkc-docs" replace />
+    default:
+      return <Navigate to="/sales" replace />
+  }
+}
+
 export function App() {
   return (
     <>
       <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/login" element={<Login />} />
-      <Route path="/" element={<Navigate to="/sales" replace />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <RoleHomeRedirect />
+            </ProtectedRoute>
+          }
+        />
 
       {/* Sales section - Accessible by sales_manager, hkc_docs_manager, and superadmin */}
       <Route path="/sales" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><SalesDashboard /></ProtectedRoute>} />
@@ -84,6 +116,9 @@ export function App() {
       <Route path="/admin/users" element={<ProtectedRoute allowedRoles={["superadmin"]}><UserManagement /></ProtectedRoute>} />
       <Route path="/admin/partners" element={<ProtectedRoute allowedRoles={["superadmin"]}><PartnersRegistry /></ProtectedRoute>} />
       <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={["superadmin"]}><AdminSettings /></ProtectedRoute>} />
+
+      {/* Catch-all route */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
   )

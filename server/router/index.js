@@ -9,9 +9,9 @@ import { activityLoggerMiddleware } from "../modules/common/activityLogger.js"
 
 export const masterRouter = Router()
 
-// Health check endpoint
-masterRouter.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "hkc-erp-server" })
+// Health check endpoints (open for diagnostics)
+masterRouter.get(["/health", "/api/health"], (_req, res) => {
+  res.json({ ok: true, status: "healthy", service: "hkc-erp-server", timestamp: new Date().toISOString() })
 })
 
 // Auth routes (unprotected for login)

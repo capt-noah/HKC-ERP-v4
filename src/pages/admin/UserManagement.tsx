@@ -88,6 +88,44 @@ function getPasswordStrength(password: string): PasswordStrength {
   return { score: finalScore, label: "Strong", color: "bg-green-600", width: "100%" }
 }
 
+function UserTableSkeleton() {
+  return (
+    <div className="p-4 animate-pulse">
+      <div className="flex items-center justify-between pb-4 border-b border-black/5 px-2">
+        <div className="h-3.5 w-24 bg-black/10 rounded-full" />
+        <div className="h-3.5 w-28 bg-black/10 rounded-full" />
+        <div className="h-3.5 w-32 bg-black/10 rounded-full hidden sm:block" />
+        <div className="h-3.5 w-16 bg-black/10 rounded-full hidden md:block" />
+        <div className="h-3.5 w-20 bg-black/10 rounded-full" />
+      </div>
+      <div className="divide-y divide-black/[0.03]">
+        {[...Array(6)].map((_, idx) => (
+          <div key={idx} className="flex items-center justify-between py-4 px-2 gap-4">
+            <div className="flex items-center gap-3 min-w-[180px]">
+              <div className="size-10 rounded-full bg-black/10 shrink-0" />
+              <div className="space-y-1.5 flex-1">
+                <div className="h-3.5 w-32 bg-black/10 rounded-full" />
+                <div className="h-2.5 w-24 bg-black/5 rounded-full" />
+              </div>
+            </div>
+            <div className="flex gap-1.5 min-w-[140px]">
+              <div className="h-5 w-20 bg-black/10 rounded-full" />
+              <div className="h-5 w-16 bg-black/5 rounded-full hidden lg:block" />
+            </div>
+            <div className="h-3.5 w-28 bg-black/10 rounded-full hidden sm:block min-w-[100px]" />
+            <div className="h-5 w-16 bg-black/10 rounded-full hidden md:block" />
+            <div className="flex items-center justify-end gap-2 shrink-0">
+              <div className="size-7 rounded-lg bg-black/10" />
+              <div className="size-7 rounded-lg bg-black/10" />
+              <div className="size-7 rounded-lg bg-black/10" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function UserManagement() {
   const [users, setUsers] = useState<UserAccount[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -393,10 +431,7 @@ export default function UserManagement() {
         <motion.div variants={fade}>
           <GlassCard>
             {loading ? (
-              <div className="flex flex-col items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 text-green-700 animate-spin" />
-                <p className="text-xs text-gray-500 font-semibold mt-3">Loading system user directory...</p>
-              </div>
+              <UserTableSkeleton />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">

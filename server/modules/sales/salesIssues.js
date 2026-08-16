@@ -143,14 +143,16 @@ export async function listSalesIssues(query = {}) {
     urlHeader.searchParams.set("status", `eq.${query.status}`)
   }
 
-  const responseHeader = await fetch(urlHeader, { headers: headers() })
-  const rowsHeader = await parseResponse(responseHeader)
+  try {
+    const responseHeader = await fetch(urlHeader, { headers: headers() })
+    const rowsHeader = await parseResponse(responseHeader)
 
-  if (!responseHeader.ok) {
-    throw new Error(`Failed to list sales issues from DB: ${responseHeader.status}`)
-  }
+    if (!responseHeader.ok) {
+      console.warn(`[sales_issues fetch warning]: ${responseHeader.status}`, rowsHeader)
+      return { status: 200, body: [] }
+    }
 
-  const issues = Array.isArray(rowsHeader) ? rowsHeader : []
+    const issues = Array.isArray(rowsHeader) ? rowsHeader : []
 
   // Fetch items for each issue
   const urlItems = new URL("sales_issue_items", config.supabaseRestUrl)
@@ -173,7 +175,11 @@ export async function listSalesIssues(query = {}) {
     savedToDb: true,
   }))
 
-  return { status: 200, body: fullIssues }
+    return { status: 200, body: fullIssues }
+  } catch (err) {
+    console.warn("[sales_issues list exception]:", err?.message || err)
+    return { status: 200, body: [] }
+  }
 }
 
 export async function getSalesIssue(id) {
