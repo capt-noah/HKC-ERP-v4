@@ -21,7 +21,7 @@ import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore, type Customer, type Supplier } from "@/lib/erpStore"
+import { useErpStore, getTradeLicenseStatus, type Customer, type Supplier } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
@@ -165,6 +165,9 @@ export default function PartnersRegistry() {
     }
 
     if (editingCustomer) {
+      const isNewFile = custTradePaperUrl !== (editingCustomer.tradePaperUrl || "")
+      const uploadedAt = isNewFile ? new Date().toISOString() : editingCustomer.tradePaperUploadedAt
+
       erp.updateCustomer(editingCustomer.id, {
         name: custName.trim(),
         country: custCountry,
@@ -176,9 +179,11 @@ export default function PartnersRegistry() {
         category: custCategory,
         tradePaperFileName: custTradePaperName,
         tradePaperUrl: custTradePaperUrl,
+        tradePaperUploadedAt: uploadedAt,
       })
       showToast("Customer Updated", "success", `Customer ${custName} successfully updated in registry.`)
     } else {
+      const hasFile = !!custTradePaperUrl
       const newCust: Customer = {
         id: `CUST-${Date.now().toString().slice(-4)}`,
         name: custName.trim(),
@@ -191,6 +196,7 @@ export default function PartnersRegistry() {
         category: custCategory,
         tradePaperFileName: custTradePaperName,
         tradePaperUrl: custTradePaperUrl,
+        tradePaperUploadedAt: hasFile ? new Date().toISOString() : undefined,
       }
       erp.addCustomer(newCust)
       showToast("Customer Added", "success", `New customer ${custName} added to registry.`)
@@ -431,29 +437,43 @@ export default function PartnersRegistry() {
                         <td className="px-4 py-3.5 text-center">
                           <div className="flex flex-col items-center gap-1">
                             {c.tradePaperFileName || c.tradePaperUrl ? (
-                              c.tradePaperUrl ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPreviewUrl(c.tradePaperUrl || "")
-                                    setPreviewName(c.tradePaperFileName || "Trade License")
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors"
-                                  title="View Trade License"
-                                >
-                                  <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName || "Trade License"} ↗
-                                </button>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName}
-                                </span>
-                              )
+                              (() => {
+                                const evaluation = getTradeLicenseStatus(c)
+                                const isExpired = evaluation.status === "expired"
+                                return (
+                                  <div className="flex flex-col items-center gap-1">
+                                    {c.tradePaperUrl ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPreviewUrl(c.tradePaperUrl || "")
+                                          setPreviewName(c.tradePaperFileName || "Trade License")
+                                        }}
+                                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-colors border ${
+                                          isExpired 
+                                            ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" 
+                                            : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                        }`}
+                                        title={isExpired ? "Trade License Expired! Click to view" : "View Trade License"}
+                                      >
+                                        <CheckCircle2 className={`size-3 ${isExpired ? "text-rose-500" : "text-emerald-600"}`} /> {c.tradePaperFileName || "Trade License"} ↗
+                                      </button>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-zinc-50 text-zinc-700 border-zinc-200">
+                                        <CheckCircle2 className="size-3 text-zinc-400" /> {c.tradePaperFileName}
+                                      </span>
+                                    )}
+                                    <span className={`text-[9px] font-black uppercase tracking-wider ${isExpired ? "text-rose-600" : "text-emerald-600"}`}>
+                                      {isExpired ? "Expired" : `Valid (${evaluation.daysRemaining}d remaining)`}
+                                    </span>
+                                  </div>
+                                )
+                              })()
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                                 <AlertCircle className="size-2.5 text-amber-500" /> Trade License Missing
                               </span>
                             )}
-
                           </div>
                         </td>
                         <td className="px-4 py-3.5 text-right">

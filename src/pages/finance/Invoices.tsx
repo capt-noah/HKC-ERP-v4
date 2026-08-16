@@ -372,7 +372,7 @@ export default function Invoices() {
                           Due: {inv.due_date}
                         </span>
                         <span className={`font-mono font-black text-sm ${isSelected ? "text-[#10b981]" : "text-black"}`}>
-                          {inv.currency} {inv.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {inv.currency} {(inv.total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                     </div>

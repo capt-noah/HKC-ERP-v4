@@ -534,28 +534,47 @@
 }
 
 @media print {
-  html,
-  body,
-  #root {
-    width: 210mm;
-    min-height: 297mm;
-    background: white !important;
+  /* 1. Hide background page layout and navigation chrome */
+  .min-h-screen,
+  header,
+  nav,
+  .floating-nav,
+  .subpage-nav,
+  .print\:hidden {
+    display: none !important;
   }
 
-  body {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  .credit-attachment-sheet {
-    width: 210mm;
-    min-height: 297mm;
-    margin: 0;
-    padding: 14mm 12mm;
+  /* 2. Reset modal backdrop & overlays to clean white static layout */
+  .fixed.inset-0 {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: visible !important;
     box-shadow: none !important;
   }
 
-  .credit-attachment-sheet * {
-    break-inside: avoid;
+  /* 3. Render printable sheet full width on white paper */
+  .printable-document,
+  #printable-document-sheet,
+  .credit-attachment-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

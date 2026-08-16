@@ -88,21 +88,21 @@ export function FloatingNav({
         {/* 1. Left Pill: Brand Logo */}
         <div
           className={cn(
-            "flex items-center gap-2.5 px-5 py-2.5 rounded-full border shadow-sm shrink-0",
+            "flex items-center gap-1.5 px-4 py-1.5 rounded-full border shadow-sm shrink-0",
             isDark 
               ? "glass-nav-dark border-white/10 text-white" 
               : "glass-nav border-white/80 text-black"
           )}
         >
           {brandIcon ?? (
-            <div className={cn(
-              "size-6 rounded-full flex items-center justify-center font-black text-xs bg-green-700 text-white"
-            )}>
-              H
-            </div>
+            <img
+              src="/hkc_logo.png"
+              alt="HKC Logo"
+              className="h-8 md:h-9 w-auto object-contain shrink-0"
+            />
           )}
           <span className="font-bold text-sm tracking-tight whitespace-nowrap text-green-700 dark:text-green-400">
-            {brand}
+            {brand === "HKC Trading ERP" ? "HKC Trading" : brand}
           </span>
         </div>
 

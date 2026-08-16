@@ -20,8 +20,8 @@ export const navSections: NavSection[] = [
     path: "/inventory",
     children: [
       { label: "Dashboard", path: "/inventory" },
-      { label: "Inventory Reports", path: "/inventory/reports" },
-      { label: "Stock Register", path: "/inventory/stock" },
+      { label: "Stock", path: "/inventory/stock" },
+      { label: "Bin Card", path: "/inventory/bin-card" },
       { label: "Processing Services", path: "/inventory/processing-services" },
     ],
   },

@@ -148,6 +148,24 @@ export interface CompanySettings {
   payroll_payable_account_id: string
   tax_payable_account_id: string
   cash_account_id?: string
+  processing_rate_per_quintal?: number
+  base_storage_rate_per_quintal_day?: number
+  storage_increment_per_month?: number
+  max_storage_month_cap?: number
+}
+
+const emptyCompanySettings: CompanySettings = {
+  company_name: "",
+  base_currency: "ETB",
+  exchange_rates: {},
+  unrealized_exchange_gain_loss_account_id: "",
+  payroll_expense_account_id: "",
+  payroll_payable_account_id: "",
+  tax_payable_account_id: "",
+  processing_rate_per_quintal: 150,
+  base_storage_rate_per_quintal_day: 1.25,
+  storage_increment_per_month: 0.25,
+  max_storage_month_cap: 4,
 }
 
 export interface PayrollDeduction {
@@ -257,16 +275,6 @@ export function helperGenerateDeprSchedule(
     currentDate.setMonth(currentDate.getMonth() + 1)
   }
   return schedule
-}
-
-const emptyCompanySettings: CompanySettings = {
-  company_name: "",
-  base_currency: "ETB",
-  exchange_rates: {},
-  unrealized_exchange_gain_loss_account_id: "",
-  payroll_expense_account_id: "",
-  payroll_payable_account_id: "",
-  tax_payable_account_id: "",
 }
 
 // Finance starts empty and is hydrated exclusively from the Finance API.
@@ -731,6 +739,15 @@ class FinanceStore {
 
   public getCompanySettings(): CompanySettings {
     return { ...this.companySettings }
+  }
+
+  public updateCompanySettings(partial: Partial<CompanySettings>) {
+    this.companySettings = {
+      ...this.companySettings,
+      ...partial,
+    }
+    this.saveToApi()
+    this.listeners.forEach((l) => l())
   }
 
   public getPayrollRuns(): PayrollRun[] {

@@ -14,7 +14,8 @@ import {
   CreditCard,
   ArrowRight,
   Boxes,
-  FileCheck
+  FileCheck,
+  ExternalLink
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -22,15 +23,37 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type PurchaseOrder } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
-import { ShipmentDocChecklist } from "@/components/ShipmentDocChecklist"
-import {
-  evaluateShipmentDocs,
-  fetchShipmentDocs,
-  fetchShipmentDocRules,
-  type ShipmentDocAttachment,
-  type ShipmentDocRule,
-  DEFAULT_FRONTEND_RULES,
-} from "@/lib/shipmentDocumentEngine"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+
+export interface ShipmentDocAttachment {
+  id: string
+  record_id: string
+  record_type: 'purchase_order' | 'sales_order' | 'processing_service'
+  document_type: string
+  file_name: string
+  file_size: number
+  file_url: string
+  uploaded_at: string
+  uploaded_by: string
+}
+
+const API_BASE = import.meta.env.VITE_API_URL ?? ""
+
+async function fetchShipmentDocs(recordId: string, recordType: string): Promise<ShipmentDocAttachment[]> {
+  try {
+    const url = new URL(`${API_BASE}/api/shipment-documents`, window.location.origin)
+    url.searchParams.set('record_id', recordId)
+    url.searchParams.set('record_type', recordType)
+    const res = await fetch(url.toString())
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data)) return data
+    }
+  } catch (err) {
+    console.warn('fetchShipmentDocs error:', err)
+  }
+  return []
+}
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 
@@ -47,13 +70,10 @@ export default function PurchaseOrders() {
   const [filterTab, setFilterTab] = useState<"All POs" | "Draft" | "In Transit" | "Received">("All POs")
   const [searchQuery, setSearchQuery] = useState("")
 
-  const [shipmentDocRules, setShipmentDocRules] = useState<ShipmentDocRule[]>(DEFAULT_FRONTEND_RULES)
   const [poAttachmentsMap, setPoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
   const [poInspectorTab, setPoInspectorTab] = useState<"Items" | "Import Docs">("Items")
-
-  useEffect(() => {
-    fetchShipmentDocRules("purchase_order").then(setShipmentDocRules)
-  }, [])
+  const [previewUrl, setPreviewUrl] = useState("")
+  const [previewName, setPreviewName] = useState("")
 
   useEffect(() => {
     if (selectedPoId) {
@@ -100,26 +120,6 @@ export default function PurchaseOrders() {
 
   // Action 1: Receive Stock & Post GL Journal Voucher
   const handleReceiveStock = (poId: string) => {
-    const po = purchaseOrders.find((p) => p.id === poId)
-    const docs = poAttachmentsMap[poId] || []
-    const evaluation = evaluateShipmentDocs({
-      record: po,
-      items: po?.items || [],
-      attachments: docs,
-      rules: shipmentDocRules,
-      appliesTo: "purchase_order",
-    })
-
-    if (!evaluation.isComplete) {
-      const missingList = evaluation.missing.map((m) => m.document_type).join(", ")
-      showToast(
-        "Import Clearance Blocked",
-        "warning",
-        `Goods receipt is blocked because mandatory shipment documents are missing: ${missingList}. Attach these files in the Import Docs tab to proceed.`
-      )
-      return
-    }
-
     const res = erp.createPurchaseReceiptForPO(poId)
     if (res.success) {
       showToast(
@@ -435,21 +435,14 @@ export default function PurchaseOrders() {
                 >
                   <FileCheck className="w-3.5 h-3.5" /> Import Docs Checklist
                   {(() => {
-                    const docs = poAttachmentsMap[selectedPo.id] || []
-                    const evalRes = evaluateShipmentDocs({
-                      record: selectedPo,
-                      items: selectedPo.items || [],
-                      attachments: docs,
-                      rules: shipmentDocRules,
-                      appliesTo: "purchase_order",
-                    })
+                    const docCount = (poAttachmentsMap[selectedPo.id] || []).length
                     return (
                       <span
                         className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
-                          evalRes.isComplete ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                          docCount > 0 ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-zinc-500/20 text-zinc-500"
                         }`}
                       >
-                        {evalRes.isComplete ? "Complete" : `${evalRes.missingCount} Missing`}
+                        {docCount} {docCount === 1 ? "File" : "Files"}
                       </span>
                     )
                   })()}
@@ -458,22 +451,51 @@ export default function PurchaseOrders() {
 
               {poInspectorTab === "Import Docs" ? (
                 <div className="mb-6">
-                  <ShipmentDocChecklist
-                    recordId={selectedPo.id}
-                    recordType="purchase_order"
-                    evaluation={evaluateShipmentDocs({
-                      record: selectedPo,
-                      items: selectedPo.items || [],
-                      attachments: poAttachmentsMap[selectedPo.id] || [],
-                      rules: shipmentDocRules,
-                      appliesTo: "purchase_order",
-                    })}
-                    attachments={poAttachmentsMap[selectedPo.id] || []}
-                    onAttachmentsChange={(updated) => {
-                      setPoAttachmentsMap((prev) => ({ ...prev, [selectedPo.id]: updated }))
-                    }}
-                    readOnly={true}
-                  />
+                  <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">Import Documentation</span>
+                        <span className="text-[11px] text-zinc-500 font-medium block">Compliance and custom documents attached to this shipment</span>
+                      </div>
+                    </div>
+                    {(!poAttachmentsMap[selectedPo.id] || poAttachmentsMap[selectedPo.id].length === 0) ? (
+                      <div className="text-center py-6 border-2 border-dashed border-zinc-200 rounded-xl bg-white">
+                        <FileText className="size-6 text-zinc-400 mx-auto mb-1.5" />
+                        <p className="text-zinc-500 font-semibold text-[11px]">No documents attached to this order.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {(poAttachmentsMap[selectedPo.id] || []).map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between p-2.5 rounded-xl border border-zinc-150/40 bg-white shadow-xs text-xs font-semibold"
+                          >
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <FileText className="size-4 text-zinc-400 shrink-0" />
+                              <span className="truncate text-zinc-800 pr-2">
+                                {file.file_name}
+                              </span>
+                              <span className="text-[9px] text-zinc-400 font-mono shrink-0">
+                                {file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString() : ""}
+                              </span>
+                            </div>
+                            {file.file_url && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewUrl(file.file_url)
+                                  setPreviewName(file.file_name)
+                                }}
+                                className="px-2 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                              >
+                                View Doc <ExternalLink className="size-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 /* Items Table */
@@ -757,6 +779,16 @@ export default function PurchaseOrders() {
           </div>
         )}
       </AnimatePresence>
+
+      <DocumentPreviewModal
+        isOpen={!!previewUrl}
+        onClose={() => {
+          setPreviewUrl("")
+          setPreviewName("")
+        }}
+        fileUrl={previewUrl}
+        fileName={previewName}
+      />
     </div>
   )
 }
