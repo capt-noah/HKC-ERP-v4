@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { deleteResource, loadResource, persistResources } from "./apiPersistence"
+import { useAuthStore } from "./authStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 
 export interface AccountItem {
@@ -320,6 +321,10 @@ class FinanceStore {
   }
 
   private async loadFromApi() {
+    if (!useAuthStore.getState().token) {
+      this._isLoading = false
+      return
+    }
     this._isLoading = true
     this._loadError = null
     this.listeners.forEach((l) => l())

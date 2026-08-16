@@ -51,6 +51,17 @@ function documentId(body) {
   return body && typeof body === "object" && body.id ? String(body.id) : crypto.randomUUID()
 }
 
+async function safeSupabaseFetch(url, options, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetch(url, options)
+    } catch (err) {
+      if (attempt === retries) throw err
+      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)))
+    }
+  }
+}
+
 // ── Public Database Client API ──────────────────────────────────────────
 
 export async function listRows({ resource, query = {}, headers = {} }) {
@@ -61,7 +72,7 @@ export async function listRows({ resource, query = {}, headers = {} }) {
     url.searchParams.set("select", resource.storage === "jsonb_document" ? "id,payload" : "*")
   }
 
-  const response = await fetch(url, {
+  const response = await safeSupabaseFetch(url, {
     method: "GET",
     headers: buildHeaders(headers),
   })
@@ -85,7 +96,7 @@ export async function getRow({ resource, id, query = {}, headers = {} }) {
     url.searchParams.set("select", resource.storage === "jsonb_document" ? "id,payload" : "*")
   }
 
-  const response = await fetch(url, {
+  const response = await safeSupabaseFetch(url, {
     method: "GET",
     headers: buildHeaders(headers),
   })
@@ -111,7 +122,7 @@ export async function createRow({ resource, body, headers = {} }) {
       ? { id: documentId(body), payload: body }
       : body
 
-  const response = await fetch(new URL(resource.table, config.supabaseRestUrl), {
+  const response = await safeSupabaseFetch(new URL(resource.table, config.supabaseRestUrl), {
     method: "POST",
     headers: buildHeaders(headers, "resolution=merge-duplicates,return=representation"),
     body: JSON.stringify(payload),
@@ -145,7 +156,7 @@ export async function updateRow({ resource, id, body, headers = {} }) {
   const url = new URL(resource.table, config.supabaseRestUrl)
   url.searchParams.set("id", `eq.${id}`)
 
-  const response = await fetch(url, {
+  const response = await safeSupabaseFetch(url, {
     method: "PATCH",
     headers: buildHeaders(headers, "return=representation"),
     body: JSON.stringify(payload),
@@ -165,7 +176,7 @@ export async function deleteRow({ resource, id, headers = {} }) {
   const url = new URL(resource.table, config.supabaseRestUrl)
   url.searchParams.set("id", `eq.${id}`)
 
-  const response = await fetch(url, {
+  const response = await safeSupabaseFetch(url, {
     method: "DELETE",
     headers: buildHeaders(headers, "return=representation"),
   })
@@ -213,7 +224,7 @@ export async function replaceRows({ resource, body, headers = {} }) {
     try {
       const deleteUrl = new URL(resource.table, config.supabaseRestUrl)
       deleteUrl.searchParams.set("id", "neq._empty_table_flush_")
-      await fetch(deleteUrl, {
+      await safeSupabaseFetch(deleteUrl, {
         method: "DELETE",
         headers: buildHeaders(headers),
       })
@@ -235,7 +246,7 @@ export async function replaceRows({ resource, body, headers = {} }) {
   })
 
   const url = new URL(resource.table, config.supabaseRestUrl)
-  const response = await fetch(url, {
+  const response = await safeSupabaseFetch(url, {
     method: "POST",
     headers: buildHeaders(headers, "resolution=merge-duplicates,return=minimal"),
     body: JSON.stringify(payload),

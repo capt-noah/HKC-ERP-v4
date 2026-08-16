@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { createResource, deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
+import { useAuthStore } from "./authStore"
 import { financeStore } from "./financeStore"
 import { evaluateStockStatus } from "../core/inventory/stockEngine"
 import { validateTransferNote } from "../core/inventory/transferEngine"
@@ -346,6 +347,10 @@ class ErpStore {
   }
 
   private async loadFromApi() {
+    if (!useAuthStore.getState().token) {
+      this.loading = false
+      return
+    }
     this.loading = true
     this._loadError = null
     this.listeners.forEach((l) => l())

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { loadResource, persistResources } from "./apiPersistence"
+import { useAuthStore } from "./authStore"
 import { financeStore } from "./financeStore"
 import { calculatePayrollRecord } from "../core/hr/payrollEngine"
 import { evaluateAttendanceMatrix } from "../core/hr/attendanceEngine"
@@ -311,6 +312,9 @@ class HRStore {
   }
 
   private async loadFromApi() {
+    if (!useAuthStore.getState().token) {
+      return
+    }
     try {
       const [
         departments,
