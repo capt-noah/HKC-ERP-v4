@@ -3,6 +3,7 @@ const jsonb = { storage: "jsonb_document" }
 export const resources = {
   warehouses: { table: "warehouses", module: "inventory", ...jsonb },
   inventory_products: { table: "inventory_products", module: "inventory", ...jsonb },
+  bin_cards: { table: "bin_cards", module: "inventory", ...jsonb },
   stock_movements: { table: "stock_movements", module: "inventory", ...jsonb },
   inventory: { table: "inventory", module: "inventory", ...jsonb },
   inventory_batches: { table: "inventory_batches", module: "inventory", ...jsonb },
@@ -17,6 +18,7 @@ export const resources = {
   suppliers: { table: "suppliers", module: "sales", ...jsonb },
   users: { table: "users", module: "admin", storage: "relational" },
   user_activity_logs: { table: "user_activity_logs", module: "admin", storage: "relational" },
+  hkc_doc_records: { table: "hkc_doc_records", module: "sales", ...jsonb },
 
   chart_of_accounts: { table: "chart_of_accounts", module: "finance", ...jsonb },
   journal_entries: { table: "journal_entries", module: "finance", ...jsonb },

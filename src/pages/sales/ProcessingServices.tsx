@@ -24,6 +24,7 @@ import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { useAuthStore } from "@/lib/authStore"
+import { calculateProcessingServiceFee } from "@/lib/processingFeeCalculator"
 import {
   type ProcessingServiceOrder,
   type ProcessingServiceStage,
@@ -73,7 +74,7 @@ const serviceOrderColumns: TableColumn[] = [
   { key: "goods_description", label: "Raw Commodity", align: "left" },
   { key: "entry_date", label: "Entry Date", align: "left" },
   { key: "status", label: "Stage Status", align: "center" },
-  { key: "agreed_price", label: "Agreed Fee", align: "right" },
+  { key: "agreed_price", label: "Calculated Fee", align: "right" },
   { key: "_actions", label: "Action", align: "center", noSort: true },
 ]
 
@@ -95,7 +96,7 @@ export default function ProcessingServices() {
   const resolvedWarehouseIds = useMemo(() => {
     const allWhs = erp.getWarehouses()
     const set = new Set<string>()
-    userWarehouseIds.forEach(id => {
+    userWarehouseIds.forEach((id: string) => {
       set.add(id)
       const matched = allWhs.find(w => w.id === id || w.code === id)
       if (matched) {
@@ -134,7 +135,6 @@ export default function ProcessingServices() {
   const [createQuantity, setCreateQuantity] = useState<number | "">(500)
   const [createUom, setCreateUom] = useState("Quintal")
   const [createEntryDate, setCreateEntryDate] = useState(new Date().toISOString().split("T")[0])
-  const [createAgreedPrice, setCreateAgreedPrice] = useState<number | "">(75000)
   const [createNotes, setCreateNotes] = useState("")
 
   // Edit Form State
@@ -145,9 +145,9 @@ export default function ProcessingServices() {
   const [editQuantity, setEditQuantity] = useState<number | "">(0)
   const [editUom, setEditUom] = useState("Quintal")
   const [editEntryDate, setEditEntryDate] = useState("")
-  const [editAgreedPrice, setEditAgreedPrice] = useState<number | "">(0)
   const [editNotes, setEditNotes] = useState("")
   const [editStatus, setEditStatus] = useState<ProcessingServiceStage>("Received")
+  const [previewCalcDate, setPreviewCalcDate] = useState<string>(new Date().toISOString().split("T")[0])
   const [isSavingEdit, setIsSavingEdit] = useState(false)
 
   // Combobox refs
@@ -189,7 +189,7 @@ export default function ProcessingServices() {
     setEditQuantity(order.quantity || 0)
     setEditUom(order.uom || "Quintal")
     setEditEntryDate(order.entry_date || new Date().toISOString().split("T")[0])
-    setEditAgreedPrice(order.agreed_price || 0)
+    setPreviewCalcDate(new Date().toISOString().split("T")[0])
     setEditNotes(order.notes || "")
     setEditStatus(order.status || "Received")
   }
@@ -201,13 +201,29 @@ export default function ProcessingServices() {
     e.preventDefault()
     const targetClient = createClientInput.trim() || customers.find((c) => c.id === createCustomerId)?.name || "Client Company"
 
-    if (!createGoodsDesc || !createQuantity || !createAgreedPrice) {
-      showToast("Validation Error", "warning", "Please fill in goods description, quantity, and agreed price.")
+    if (!createGoodsDesc || !createQuantity) {
+      showToast("Validation Error", "warning", "Please fill in goods description and quantity.")
       return
     }
 
     setIsSubmitting(true)
     try {
+      const companySettings = erp.getCompanySettings()
+      const rates = {
+        processingRatePerQuintal: companySettings.processing_rate_per_quintal ?? 150,
+        baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
+        storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
+        maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+      }
+
+      const feeCalc = calculateProcessingServiceFee(
+        Number(createQuantity),
+        createEntryDate,
+        null,
+        false, // Status Received initially
+        rates
+      )
+
       const created = await createProcessingService({
         client_company_name: targetClient,
         customer_id: createCustomerId || null,
@@ -215,7 +231,7 @@ export default function ProcessingServices() {
         quantity: Number(createQuantity),
         uom: createUom,
         entry_date: createEntryDate,
-        agreed_price: Number(createAgreedPrice),
+        agreed_price: feeCalc.totalFee,
         currency: "ETB",
         status: "Received",
         notes: createNotes,
@@ -248,13 +264,34 @@ export default function ProcessingServices() {
     if (!editingOrder) return
     const targetClient = editClientInput.trim() || customers.find((c) => c.id === editCustomerId)?.name || editingOrder.client_company_name
 
-    if (!editGoodsDesc || !editQuantity || editAgreedPrice === "") {
-      showToast("Validation Error", "warning", "Goods description, quantity, and agreed price are required.")
+    if (!editGoodsDesc || !editQuantity) {
+      showToast("Validation Error", "warning", "Goods description and quantity are required.")
       return
     }
 
     setIsSavingEdit(true)
     try {
+      const companySettings = erp.getCompanySettings()
+      const rates = {
+        processingRatePerQuintal: companySettings.processing_rate_per_quintal ?? 150,
+        baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
+        storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
+        maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+      }
+
+      const isProcessedChecked = getStageIndex(editStatus) >= 1
+      const isDeliveredChecked = getStageIndex(editStatus) >= 2
+
+      // Calculate total fee up to previewCalcDate (which is Today when Delivered is selected)
+      const targetEndDate = isDeliveredChecked ? (previewCalcDate || new Date().toISOString().split("T")[0]) : previewCalcDate
+      const feeCalc = calculateProcessingServiceFee(
+        Number(editQuantity),
+        editEntryDate,
+        targetEndDate,
+        isProcessedChecked,
+        rates
+      )
+
       let updated = await updateProcessingService(editingOrder.id, {
         client_company_name: targetClient,
         customer_id: editCustomerId || null,
@@ -262,7 +299,7 @@ export default function ProcessingServices() {
         quantity: Number(editQuantity),
         uom: editUom,
         entry_date: editEntryDate,
-        agreed_price: Number(editAgreedPrice),
+        agreed_price: feeCalc.totalFee,
         notes: editNotes,
       })
 
@@ -434,6 +471,26 @@ export default function ProcessingServices() {
                 ) : (
                   ordersTable.sorted().map((order) => {
                     const colors = STAGE_COLOR_MAP[order.status] || STAGE_COLOR_MAP.Received
+                    const companySettings = erp.getCompanySettings()
+                    const rates = {
+                      processingRatePerQuintal: companySettings.processing_rate_per_quintal ?? 150,
+                      baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
+                      storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
+                      maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+                    }
+
+                    const isProcessed = getStageIndex(order.status) >= 1
+                    const isDelivered = getStageIndex(order.status) >= 2
+
+                    const feeCalc = calculateProcessingServiceFee(
+                      order.quantity,
+                      order.entry_date,
+                      isDelivered ? (order.updated_at || order.created_at) : null,
+                      isProcessed,
+                      rates
+                    )
+
+                    const displayFee = feeCalc.totalFee || order.agreed_price || 0
 
                     return (
                       <tr
@@ -461,7 +518,7 @@ export default function ProcessingServices() {
                           </span>
                         </td>
                         <td style={{ width: `${ordersTable.colWidths.agreed_price}px` }} className="px-3 py-3 text-right font-mono font-black text-zinc-950 truncate">
-                          ETB {order.agreed_price.toLocaleString()}
+                          ETB {displayFee.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                         </td>
                         <td style={{ width: `${ordersTable.colWidths._actions}px` }} className="px-3 py-3 text-center whitespace-nowrap truncate pr-4">
                           <button
@@ -612,18 +669,7 @@ export default function ProcessingServices() {
                           <option value="Tons">Tons</option>
                         </select>
                       </div>
-                      <div>
-                        <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Agreed Fee (ETB)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={editAgreedPrice}
-                          onChange={(e) => setEditAgreedPrice(e.target.value === "" ? "" : Number(e.target.value))}
-                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 font-black outline-none font-mono"
-                          required
-                        />
-                      </div>
-                      <div>
+                      <div className="md:col-span-2">
                         <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Entry Date</label>
                         <input
                           type="date"
@@ -646,6 +692,113 @@ export default function ProcessingServices() {
                     </div>
                   </div>
 
+                  {/* 1.5. ITEMIZED RECEIPT BREAKDOWN SECTION */}
+                  {(() => {
+                    const companySettings = erp.getCompanySettings()
+                    const rates = {
+                      processingRatePerQuintal: companySettings.processing_rate_per_quintal ?? 150,
+                      baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
+                      storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
+                      maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+                    }
+
+                    const isProcessedChecked = getStageIndex(editStatus) >= 1
+                    const calcTargetDate = previewCalcDate || new Date().toISOString().split("T")[0]
+
+                    const feeCalc = calculateProcessingServiceFee(
+                      Number(editQuantity || 0),
+                      editEntryDate,
+                      calcTargetDate,
+                      isProcessedChecked,
+                      rates
+                    )
+
+                    const qty = Number(editQuantity || 0)
+
+                    return (
+                      <div className="p-5 bg-stone-50/90 dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800 rounded-2xl shadow-xs font-mono text-xs space-y-4">
+                        {/* Receipt Header */}
+                        <div className="border-b border-dashed border-stone-300 dark:border-zinc-700 pb-3 flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-black text-stone-900 dark:text-zinc-100 uppercase tracking-widest text-xs">
+                            SERVICE FEE
+                          </span>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-stone-500 dark:text-zinc-400 uppercase">Calculation Date:</span>
+                            <input
+                              type="date"
+                              value={previewCalcDate}
+                              onChange={(e) => setPreviewCalcDate(e.target.value)}
+                              className="px-2.5 py-1 rounded-xl bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 font-mono font-bold text-xs outline-none focus:border-emerald-600 shadow-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setPreviewCalcDate(new Date().toISOString().split("T")[0])}
+                              className="px-2.5 py-1 rounded-xl bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold transition-colors border border-emerald-200 dark:border-emerald-800"
+                            >
+                              Today
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Breakdown Lines */}
+                        <div className="space-y-2 text-[11px]">
+                          {/* Processing Fee Row */}
+                          <div className="flex items-start justify-between py-1">
+                            <div>
+                              <span className="font-bold text-stone-800 dark:text-zinc-200 block">Processing Fee</span>
+                              <span className="text-[10px] text-stone-500 dark:text-zinc-400">
+                                {rates.processingRatePerQuintal} ETB × {qty} Quintals
+                              </span>
+                            </div>
+                            <span className={`font-bold text-right font-mono ${isProcessedChecked ? "text-stone-900 dark:text-zinc-100" : "text-stone-400"}`}>
+                              {isProcessedChecked
+                                ? `ETB ${feeCalc.processingFee.toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+                                : "ETB 0.00 (Pending)"}
+                            </span>
+                          </div>
+
+                          {/* Storage Fee Section */}
+                          <div className="pt-2 border-t border-stone-200/60 dark:border-zinc-800">
+                            <div className="flex items-center justify-between font-bold text-stone-800 dark:text-zinc-200 mb-1.5">
+                              <span>Storage Fee ({feeCalc.daysInStorage} Days Total)</span>
+                              <span>ETB {feeCalc.storageFee.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                            </div>
+
+                            {/* Storage Month-by-Month Rows */}
+                            {feeCalc.storageFeeBreakdown.length === 0 ? (
+                              <div className="flex items-center justify-between text-[10px] text-stone-500 pl-3">
+                                <span>Day 1–30: FREE (0 ETB × {qty} Q × 0 days)</span>
+                                <span>ETB 0.00</span>
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5 pl-2 border-l-2 border-emerald-400/60 my-1">
+                                {feeCalc.storageFeeBreakdown.map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-[10px]">
+                                    <span className="text-stone-600 dark:text-zinc-400">
+                                      {item.monthLabel}: {item.ratePerQuintalDay === 0 ? "0 ETB (FREE)" : `${item.ratePerQuintalDay} ETB`} × {qty} Q × {item.daysInMonth} days
+                                    </span>
+                                    <span className="font-bold text-stone-800 dark:text-zinc-200 font-mono">
+                                      ETB {item.monthTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Receipt Total */}
+                        <div className="border-t-2 border-dashed border-stone-300 dark:border-zinc-700 pt-3 flex items-center justify-between font-bold text-sm">
+                          <span className="text-stone-900 dark:text-zinc-100 tracking-tight">TOTAL STATEMENT FEE</span>
+                          <span className="text-emerald-700 dark:text-emerald-400 font-mono text-base font-black">
+                            ETB {feeCalc.totalFee.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
                   {/* 2. Status Progression Checkboxes */}
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
@@ -662,13 +815,12 @@ export default function ProcessingServices() {
                           <div
                             key={step.stage}
                             onClick={() => {
-                              if (isCurrentSelected) {
-                                // Unselect box: fall back to previous stage (min "Received")
-                                const prevStage = idx > 0 ? STAGE_STEPS[idx - 1].stage : "Received"
-                                setEditStatus(prevStage)
-                              } else {
-                                // Select box
-                                setEditStatus(step.stage)
+                              const targetStage = isCurrentSelected
+                                ? (idx > 0 ? STAGE_STEPS[idx - 1].stage : "Received")
+                                : step.stage
+                              setEditStatus(targetStage)
+                              if (targetStage === "Delivered") {
+                                setPreviewCalcDate(new Date().toISOString().split("T")[0])
                               }
                             }}
                             className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between cursor-pointer hover:shadow-md ${
@@ -922,27 +1074,18 @@ export default function ProcessingServices() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Agreed Service Fee (ETB)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={createAgreedPrice}
-                        onChange={(e) => setCreateAgreedPrice(e.target.value === "" ? "" : Number(e.target.value))}
-                        className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-black outline-none font-mono"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Entry Date</label>
-                      <input
-                        type="date"
-                        value={createEntryDate}
-                        onChange={(e) => setCreateEntryDate(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-mono font-bold outline-none"
-                      />
-                    </div>
+                  <div>
+                    <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Entry Date</label>
+                    <input
+                      type="date"
+                      value={createEntryDate}
+                      onChange={(e) => setCreateEntryDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-mono font-bold outline-none"
+                    />
+                  </div>
+
+                  <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-[11px] font-semibold text-emerald-900 dark:text-emerald-300 leading-relaxed">
+                    💡 <strong>Auto Fee Rule:</strong> Processing fee is calculated at ETB {erp.getCompanySettings().processing_rate_per_quintal ?? 150}/quintal when marked as <strong>Processed</strong>. Storage is FREE for the first 30 days, then 1.25 ETB/quintal/day with +0.25 ETB monthly increments.
                   </div>
 
                   <div>

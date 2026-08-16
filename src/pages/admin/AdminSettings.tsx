@@ -26,6 +26,8 @@ import {
   UserCheck
 } from "lucide-react"
 
+import { useErpStore } from "@/lib/erpStore"
+
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const listContainer = {
   hidden: { opacity: 0 },
@@ -40,6 +42,8 @@ const listContainer = {
 export default function AdminSettings() {
   const subPages = getSectionChildren("/admin")
   const { showToast, confirm } = useFeedback()
+  const erp = useErpStore()
+  const companySettings = erp.getCompanySettings()
   
   // Settings States
   const [systemName, setSystemName] = useState("HKC Trading Enterprise")
@@ -47,6 +51,12 @@ export default function AdminSettings() {
   const [timezone, setTimezone] = useState("UTC-5 (EST)")
   const [activeTab, setActiveTab] = useState("general")
   const [isSaved, setIsSaved] = useState(false)
+
+  // Rate states
+  const [procRate, setProcRate] = useState<number>(companySettings.processing_rate_per_quintal ?? 150)
+  const [baseStorage, setBaseStorage] = useState<number>(companySettings.base_storage_rate_per_quintal_day ?? 1.25)
+  const [storageIncrement, setStorageIncrement] = useState<number>(companySettings.storage_increment_per_month ?? 0.25)
+  const [maxStorageMonth, setMaxStorageMonth] = useState<number>(companySettings.max_storage_month_cap ?? 4)
 
   // Interactive switches
   const [toggles, setToggles] = useState({
@@ -73,11 +83,17 @@ export default function AdminSettings() {
       confirmLabel: "Apply Settings",
       cancelLabel: "Cancel",
       onConfirm: () => {
+        erp.updateCompanySettings({
+          processing_rate_per_quintal: Number(procRate),
+          base_storage_rate_per_quintal_day: Number(baseStorage),
+          storage_increment_per_month: Number(storageIncrement),
+          max_storage_month_cap: Number(maxStorageMonth),
+        })
         setIsSaved(true)
         showToast(
           "Settings Saved Successfully",
           "success",
-          "Global configuration properties have been successfully updated."
+          "Global configuration properties and processing fee rates have been updated."
         )
         setTimeout(() => setIsSaved(false), 3000)
       }
@@ -95,6 +111,16 @@ export default function AdminSettings() {
         setSystemName("HKC Trading Enterprise")
         setPrimaryCurrency("ETB")
         setTimezone("UTC-5 (EST)")
+        setProcRate(150)
+        setBaseStorage(1.25)
+        setStorageIncrement(0.25)
+        setMaxStorageMonth(4)
+        erp.updateCompanySettings({
+          processing_rate_per_quintal: 150,
+          base_storage_rate_per_quintal_day: 1.25,
+          storage_increment_per_month: 0.25,
+          max_storage_month_cap: 4,
+        })
         setToggles({
           maintenanceMode: false,
           twoFactorAuth: true,
@@ -117,6 +143,7 @@ export default function AdminSettings() {
   // Sidebar settings tabs configuration
   const settingsTabs = [
     { id: "general", label: "General System", icon: Settings2, description: "Name, currency, timezone, & metadata" },
+    { id: "rates", label: "Processing & Storage", icon: SlidersHorizontal, description: "Fee rates & tiered storage rules" },
     { id: "security", label: "Security & Auth", icon: ShieldCheck, description: "2FA, session policies, password strength" },
     { id: "api", label: "API & Integrations", icon: KeyRound, description: "Manage webhooks, tokens & rate limits" },
     { id: "backups", label: "Data & Backups", icon: Database, description: "Backup intervals, logs & direct export" },
@@ -312,6 +339,75 @@ export default function AdminSettings() {
                           toggles.maintenanceMode ? "translate-x-5" : "translate-x-0"
                         )} />
                       </button>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              )}
+
+              {activeTab === "rates" && (
+                <motion.div
+                  key="rates"
+                  variants={listContainer}
+                  initial="hidden"
+                  animate="show"
+                  className="flex flex-col gap-5"
+                >
+                  <GlassCard>
+                    <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
+                      <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
+                        <SlidersHorizontal className="size-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-black">Processing Services & Storage Fee Rates</h3>
+                        <p className="text-xs text-gray-400">Configure global processing fee rates and monthly tiered storage fee rules.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                      <div>
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Processing Rate</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={procRate}
+                          onChange={(e) => setProcRate(Number(e.target.value))}
+                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Base Storage Rate</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={baseStorage}
+                          onChange={(e) => setBaseStorage(Number(e.target.value))}
+                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Monthly Increment Rate</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={storageIncrement}
+                          onChange={(e) => setStorageIncrement(Number(e.target.value))}
+                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Max Storage Month Cap</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={maxStorageMonth}
+                          onChange={(e) => setMaxStorageMonth(Number(e.target.value))}
+                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                        />
+                      </div>
                     </div>
                   </GlassCard>
                 </motion.div>

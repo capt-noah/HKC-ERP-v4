@@ -13,7 +13,36 @@ import { financeStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
-import { fetchShipmentDocs, type ShipmentDocAttachment } from "@/lib/shipmentDocumentEngine"
+
+export interface ShipmentDocAttachment {
+  id: string
+  record_id: string
+  record_type: 'purchase_order' | 'sales_order' | 'processing_service'
+  document_type: string
+  file_name: string
+  file_size: number
+  file_url: string
+  uploaded_at: string
+  uploaded_by: string
+}
+
+const API_BASE = import.meta.env.VITE_API_URL ?? ""
+
+async function fetchShipmentDocs(recordId: string, recordType: string): Promise<ShipmentDocAttachment[]> {
+  try {
+    const url = new URL(`${API_BASE}/api/shipment-documents`, window.location.origin)
+    url.searchParams.set('record_id', recordId)
+    url.searchParams.set('record_type', recordType)
+    const res = await fetch(url.toString())
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data)) return data
+    }
+  } catch (err) {
+    console.warn('fetchShipmentDocs error:', err)
+  }
+  return []
+}
 import {
   cancelSalesIssue,
   createSalesIssue,

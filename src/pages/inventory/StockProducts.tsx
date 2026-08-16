@@ -1,13 +1,12 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, Fragment } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
-  Warehouse as WarehouseIcon, 
-  Upload,
-  Edit3,
-  FileText,
   X,
-  Save,
+  ChevronDown,
+  ChevronRight,
+  Edit3,
+  PlusCircle,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -15,7 +14,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import StoreTransfersTab from "@/components/StoreTransfersTab"
-import { useErpStore, type Product } from "@/lib/erpStore"
+import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -25,18 +24,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
 
 const packagingUnits = ["Box", "Bottle", "Vial"]
+const TON_TO_QUINTAL = 10
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
-
-interface RegulatoryDoc {
-  id: string
-  name: string
-  type: string
-  linkedBatch: string
-  expiryDate: string
-  status: "Valid" | "Expiring Soon" | "Expired"
-}
 
 interface StockEditForm {
   name: string
@@ -55,39 +46,26 @@ interface StockEditForm {
   approvalStatus: Product["approvalStatus"]
 }
 
-const docColumns: TableColumn[] = [
-  { key: "id", label: "Document ID", align: "left" },
-  { key: "name", label: "Certificate / License Name", align: "left" },
-  { key: "type", label: "Type", align: "left" },
-  { key: "linkedBatch", label: "Linked Batch", align: "left" },
-  { key: "expiryDate", label: "Expiry Date", align: "left" },
-  { key: "status", label: "Validity Status", align: "center" },
-  { key: "_actions", label: "Action", align: "center", noSort: true },
-]
-
 function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function stockValueFor(product: Product) {
-  const quantity = Number(product.quantity || 0)
-  const unitCost = Number(product.unitCost || 0)
-  return Math.round(quantity * unitCost * 100) / 100
+function displayDate(value?: string) {
+  if (!value) return "-"
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toISOString().slice(0, 10)
 }
 
-function ProductTableSkeletonRows() {
+function ProductTableSkeletonRows({ colSpan }: { colSpan: number }) {
   return (
     <>
       {Array.from({ length: 8 }).map((_, index) => (
         <tr key={index}>
           <td className="py-4 px-6"><div className="space-y-2"><Skeleton className="h-3 w-44 bg-zinc-200/80" /><Skeleton className="h-3 w-24 bg-zinc-200/80" /></div></td>
-          <td className="py-4 px-4"><Skeleton className="h-5 w-28 rounded-full bg-zinc-200/80" /></td>
-          <td className="py-4 px-4"><Skeleton className="h-3 w-24 bg-zinc-200/80" /></td>
-          <td className="py-4 px-4"><Skeleton className="ml-auto h-3 w-20 bg-zinc-200/80" /></td>
-          <td className="py-4 px-4"><div className="space-y-2"><Skeleton className="ml-auto h-3 w-28 bg-zinc-200/80" /><Skeleton className="ml-auto h-2.5 w-20 bg-zinc-200/80" /></div></td>
-          <td className="py-4 px-4"><div className="space-y-2"><Skeleton className="h-3 w-28 bg-zinc-200/80" /><Skeleton className="h-2.5 w-20 bg-zinc-200/80" /></div></td>
-          <td className="py-4 px-4"><Skeleton className="mx-auto h-5 w-20 rounded-full bg-zinc-200/80" /></td>
-          <td className="py-4 px-6"><div className="flex justify-center gap-1"><Skeleton className="size-7 rounded-lg bg-zinc-200/80" /><Skeleton className="size-7 rounded-lg bg-zinc-200/80" /><Skeleton className="size-7 rounded-lg bg-zinc-200/80" /></div></td>
+          {Array.from({ length: colSpan - 1 }).map((_, cIdx) => (
+            <td key={cIdx} className="py-4 px-4"><Skeleton className="h-3 w-20 bg-zinc-200/80" /></td>
+          ))}
         </tr>
       ))}
     </>
@@ -104,7 +82,7 @@ export default function StockProducts() {
   const resolvedWarehouseIds = useMemo(() => {
     const allWhs = erp.getWarehouses()
     const set = new Set<string>()
-    userWarehouseIds.forEach(id => {
+    userWarehouseIds.forEach((id: string) => {
       set.add(id)
       const matched = allWhs.find(w => w.id === id || w.code === id)
       if (matched) {
@@ -126,23 +104,18 @@ export default function StockProducts() {
     : allProducts
 
   const isLoading = erp.isLoading()
-
   const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
   const warehouseRecords = isInventoryAdminOnly
     ? allWarehouses.filter(w => resolvedWarehouseIds.includes(w.id) || resolvedWarehouseIds.includes(w.code))
     : allWarehouses
-
   const isWH1 = (w: string) => w === "WH1" || w === "WH1-AGRI-EXP"
-  const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer" | "Regulatory Docs">("Register")
-  const [docs] = useState<RegulatoryDoc[]>([])
 
-  // Filters for Products tab
+  const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer">("Register")
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedWarehouse, setSelectedWarehouse] = useState("ALL")
 
-  // Filters for Regulatory Docs tab
-  const [docSearch, setDocSearch] = useState("")
-  const [docStatusFilter, setDocStatusFilter] = useState("ALL")
+  // Expanded rows for WH1 items
+  const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
 
   // Add Stock Item Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
@@ -158,11 +131,53 @@ export default function StockProducts() {
   const [addEntryDate, setAddEntryDate] = useState("")
   const [addLeaveDate, setAddLeaveDate] = useState("")
   const [addQuantity, setAddQuantity] = useState("")
+  const [addNotes, setAddNotes] = useState("")
   const [isSavingAdd, setIsSavingAdd] = useState(false)
 
-  const addTotalQuantity = isWH1(addWarehouse)
-    ? Number(addQuantity || 0)
+  // Autocomplete state for WH1 existing items lookup
+  const [showItemSuggestions, setShowItemSuggestions] = useState(false)
+  const [selectedExistingProduct, setSelectedExistingProduct] = useState<Product | null>(null)
+
+  // Direct Slim Add Entry Modal
+  const [slimAddEntryProduct, setSlimAddEntryProduct] = useState<Product | null>(null)
+
+  // Edit WH1 sub-entry modal state
+  const [editingSubEntry, setEditingSubEntry] = useState<{ product: Product; entry: WH1Entry } | null>(null)
+  const [editSubEntryQty, setEditSubEntryQty] = useState("")
+  const [editSubEntryPrice, setEditSubEntryPrice] = useState("")
+  const [editSubEntryDate, setEditSubEntryDate] = useState("")
+  const [editSubEntryLeave, setEditSubEntryLeave] = useState("")
+  const [editSubEntryNotes, setEditSubEntryNotes] = useState("")
+  const [isSavingSubEdit, setIsSavingSubEdit] = useState(false)
+
+  // Edit/Delete Product state
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
+  const [editForm, setEditForm] = useState<StockEditForm>({
+    name: "",
+    sku: "",
+    category: "",
+    warehouse: "",
+    batch: "",
+    expiry: "",
+    entryDate: "",
+    leaveDate: "",
+    unit: "",
+    unitCost: "",
+    sellingPrice: "",
+    price: "",
+    reorderLevel: "",
+    approvalStatus: "Approved",
+  })
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  const isWH1Form = isWH1(addWarehouse)
+
+  // Quantities & Stock values
+  const addTotalQuantity = isWH1Form
+    ? (addPackagingUnit === "Ton" ? Number(addQuantity || 0) * TON_TO_QUINTAL : Number(addQuantity || 0))
     : Number(addQtyPerPack || 0) * Number(addNumCartons || 0)
+
   const addTotalStockValue = addTotalQuantity * Number(addUnitPrice || 0)
 
   const daysBetween = (start: string, end: string) => {
@@ -175,25 +190,25 @@ export default function StockProducts() {
 
   const addShelfLifeDays = daysBetween(addMfgDate, addExpDate)
   const addShelfLifeMonths = addShelfLifeDays === null ? 0 : Math.max(0, Math.round((addShelfLifeDays / 30.4375) * 10) / 10)
-  const addDateInvalid = isWH1(addWarehouse)
+
+  const addDateInvalid = isWH1Form
     ? Boolean(addEntryDate && addLeaveDate && daysBetween(addEntryDate, addLeaveDate) !== null && (daysBetween(addEntryDate, addLeaveDate) ?? 0) <= 0)
     : Boolean(addShelfLifeDays !== null && addShelfLifeDays <= 0)
+
   const addNormalizedBatch = addBatchNumber.trim().toLowerCase()
-  const addDuplicateBatch = Boolean(addNormalizedBatch) && products.some((product) => {
+  const addDuplicateBatch = !isWH1Form && Boolean(addNormalizedBatch) && products.some((product) => {
     const batches = [product.batch, ...product.batches.map((batch) => batch.batchNo)]
     return batches.some((batch) => String(batch || "").trim().toLowerCase() === addNormalizedBatch)
   })
 
-  const canSaveAdd = isWH1(addWarehouse)
+  const canSaveAdd = isWH1Form
     ? Boolean(
         addDescription &&
         addPackagingUnit &&
         addWarehouse &&
-        addBatchNumber &&
         addEntryDate &&
         Number(addQuantity) > 0 &&
-        !addDateInvalid &&
-        !addDuplicateBatch
+        !addDateInvalid
       )
     : Boolean(
         addDescription &&
@@ -222,58 +237,186 @@ export default function StockProducts() {
     setAddEntryDate("")
     setAddLeaveDate("")
     setAddQuantity("")
+    setAddNotes("")
+    setSelectedExistingProduct(null)
   }
 
-  const handleSaveNewStockItem = async (addAnother = false) => {
-    if (!canSaveAdd) {
-      showToast("Cannot save item", "warning", "Complete the required stock fields and resolve validation warnings first.")
-      return
+  // Filtered warehouses mapping
+  const warehouseOptions = useMemo(() => [
+    { value: "ALL", label: "All Warehouses" },
+    ...warehouseRecords.map((warehouse) => ({
+      value: warehouse.code || warehouse.id,
+      label: warehouse.name || warehouse.code || warehouse.id,
+    })),
+  ], [warehouseRecords])
+
+  const warehouseKeyMap = useMemo(() => new Map(warehouseRecords.map((warehouse) => [warehouse.code || warehouse.id, new Set([warehouse.id, warehouse.code, warehouse.name].filter(Boolean))])), [warehouseRecords])
+
+  // Filters for Table
+  const filteredProducts = useMemo(() => {
+    return products.filter((prod) => {
+      const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            prod.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            prod.batch.toLowerCase().includes(searchQuery.toLowerCase())
+      const selectedWarehouseKeys = warehouseKeyMap.get(selectedWarehouse) || new Set([selectedWarehouse])
+      const matchesWarehouse =
+        selectedWarehouse === "ALL" ||
+        selectedWarehouseKeys.has(prod.warehouse) ||
+        prod.stockBreakdown.some((breakdown) => selectedWarehouseKeys.has(breakdown.warehouse))
+      return matchesSearch && matchesWarehouse
+    })
+  }, [products, searchQuery, selectedWarehouse, warehouseKeyMap])
+
+
+
+  // Suggested matching existing items list for WH1 auto-complete lookup
+  const wh1ItemSuggestions = useMemo(() => {
+    if (!addDescription || addDescription.length < 2) return []
+    return products.filter(p => isWH1(p.warehouse) && p.name.toLowerCase().includes(addDescription.toLowerCase()))
+  }, [products, addDescription])
+
+  // Table Column Definitions
+  const currentProductColumns = useMemo(() => {
+    const cols: TableColumn[] = [
+      { key: "sku", label: "ID", align: "left" },
+      { key: "name", label: "Item", align: "left" },
+    ]
+
+    if (isWH1(selectedWarehouse)) {
+      cols.push(
+        { key: "unit", label: "UOM", align: "left" },
+        { key: "entryDate", label: "Entry Date", align: "left" },
+        { key: "leaveDate", label: "Leave Date", align: "left" },
+        { key: "quantity", label: "Total Quantity", align: "right" },
+        { key: "totalStockValue", label: "Stock Value", align: "right" }
+      )
+    } else {
+      cols.push(
+        { key: "batch", label: "Batch", align: "left" },
+        { key: "manufacturingDate", label: "MFG", align: "left" },
+        { key: "expiryDate", label: "EXP", align: "left" },
+        { key: "unit", label: "Packaging Unit", align: "left" },
+        { key: "numberOfCartons", label: "Cartons", align: "right" },
+        { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
+        { key: "quantity", label: "Total Quantity", align: "right" },
+        { key: "unitCost", label: "Unit Price", align: "right" },
+        { key: "totalStockValue", label: "Stock Value", align: "right" }
+      )
     }
 
-    const now = new Date().toISOString()
-    const selectedWarehouseRecord = warehouseRecords.find((item) => (item.code || item.id) === addWarehouse || item.id === addWarehouse)
-    const productId = `P-${Date.now()}`
-    const product: Product = {
-      id: productId,
-      name: addDescription,
-      sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${addBatchNumber}`,
-      category: "",
-      itemType: "",
-      description: addDescription,
-      warehouse: addWarehouse,
-      warehouseName: selectedWarehouseRecord?.name,
-      quantity: addTotalQuantity,
-      quantityPerPack: isWH1(addWarehouse) ? undefined : Number(addQtyPerPack),
-      numberOfCartons: isWH1(addWarehouse) ? undefined : Number(addNumCartons),
-      totalQuantity: addTotalQuantity,
-      quantitySold: 0,
-      openingBalance: addTotalQuantity,
-      unit: addPackagingUnit,
-      unitCost: Number(addUnitPrice || 0),
-      sellingPrice: Number(addUnitPrice || 0),
-      totalStockValue: addTotalStockValue,
-      batch: addBatchNumber,
-      manufacturingDate: isWH1(addWarehouse) ? undefined : addMfgDate,
-      expiry: isWH1(addWarehouse) ? "" : addExpDate,
-      shelfLifeMonths: isWH1(addWarehouse) ? undefined : addShelfLifeMonths,
-      entryDate: isWH1(addWarehouse) ? addEntryDate : undefined,
-      leaveDate: (isWH1(addWarehouse) && addLeaveDate) ? addLeaveDate : undefined,
-      status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
-      stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
-      batches: [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: isWH1(addWarehouse) ? "" : addExpDate, status: "Released" }],
-      origin: "",
-      supplierName: "",
-      itemRegistrationStatus: "Active",
-      approvalStatus: "Approved",
-      createdDate: now,
-      createdAt: now,
-      updatedAt: now,
+    cols.push({ key: "_actions", label: "Action", align: "center", noSort: true })
+    return cols
+  }, [selectedWarehouse])
+
+  const productsTable = useResizableTable(currentProductColumns, filteredProducts, {
+    sku: 110,
+    name: 200,
+    batch: 100,
+    manufacturingDate: 100,
+    expiryDate: 100,
+    unit: 120,
+    numberOfCartons: 80,
+    quantityPerPack: 90,
+    quantity: 110,
+    unitCost: 110,
+    totalStockValue: 120,
+    entryDate: 110,
+    leaveDate: 110,
+    _actions: 100,
+  })
+
+  // Chevron expand / collapse toggle
+  const toggleRowExpand = (productId: string) => {
+    const next = new Set(expandedProductIds)
+    if (next.has(productId)) {
+      next.delete(productId)
+    } else {
+      next.add(productId)
+    }
+    setExpandedProductIds(next)
+  }
+
+  // Handle Save product form
+  const handleSaveNewStockItem = async (addAnother = false) => {
+    if (!canSaveAdd) {
+      showToast("Cannot save item", "warning", "Complete required stock fields and resolve warnings.")
+      return
     }
 
     setIsSavingAdd(true)
     try {
-      await erp.addProduct(product)
-      showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
+      const now = new Date().toISOString()
+      const selectedWarehouseRecord = warehouseRecords.find((item) => (item.code || item.id) === addWarehouse || item.id === addWarehouse)
+
+      const targetUOM = isWH1Form ? "Quintal" : addPackagingUnit
+
+      if (selectedExistingProduct) {
+        // Option A: Add sub-entry to existing item
+        const newEntryPayload: Omit<WH1Entry, "entryId"> = {
+          entryDate: addEntryDate,
+          leaveDate: addLeaveDate || undefined,
+          quantityReceived: addTotalQuantity,
+          quantityRemaining: addTotalQuantity,
+          unitPrice: Number(addUnitPrice || 0),
+          notes: addNotes.trim() || undefined,
+        }
+        await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
+        showToast("Stock entry added", "success", `Entry added to existing item ${selectedExistingProduct.name}.`)
+      } else {
+        // Option B: Add new item entirely
+        const productId = `P-${Date.now()}`
+        const initialWH1Entries: WH1Entry[] = isWH1Form ? [{
+          entryId: `WH1E-${Date.now()}`,
+          entryDate: addEntryDate,
+          leaveDate: addLeaveDate || undefined,
+          quantityReceived: addTotalQuantity,
+          quantityRemaining: addTotalQuantity,
+          unitPrice: Number(addUnitPrice || 0),
+          notes: addNotes.trim() || undefined,
+        }] : []
+
+        const product: Product = {
+          id: productId,
+          name: addDescription,
+          sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? "WH1" : addBatchNumber}`,
+          category: "",
+          itemType: "",
+          description: addDescription,
+          warehouse: addWarehouse,
+          warehouseName: selectedWarehouseRecord?.name,
+          quantity: addTotalQuantity,
+          quantityPerPack: isWH1Form ? undefined : Number(addQtyPerPack),
+          numberOfCartons: isWH1Form ? undefined : Number(addNumCartons),
+          totalQuantity: addTotalQuantity,
+          quantitySold: 0,
+          openingBalance: addTotalQuantity,
+          unit: targetUOM,
+          unitCost: Number(addUnitPrice || 0),
+          sellingPrice: Number(addUnitPrice || 0),
+          totalStockValue: addTotalStockValue,
+          batch: isWH1Form ? "" : addBatchNumber,
+          manufacturingDate: isWH1Form ? undefined : addMfgDate,
+          expiry: isWH1Form ? "" : addExpDate,
+          shelfLifeMonths: isWH1Form ? undefined : addShelfLifeMonths,
+          entryDate: isWH1Form ? addEntryDate : undefined,
+          leaveDate: (isWH1Form && addLeaveDate) ? addLeaveDate : undefined,
+          status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
+          stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
+          batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, status: "Released" }],
+          wh1Entries: isWH1Form ? initialWH1Entries : undefined,
+          origin: "",
+          supplierName: "",
+          itemRegistrationStatus: "Active",
+          approvalStatus: "Approved",
+          createdDate: now,
+          createdAt: now,
+          updatedAt: now,
+        }
+
+        await erp.addProduct(product)
+        showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
+      }
+
       if (addAnother) {
         resetAddForm()
       } else {
@@ -287,107 +430,82 @@ export default function StockProducts() {
     }
   }
 
-  // Edit/Delete Product state
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
-  const [editForm, setEditForm] = useState<StockEditForm>({
-    name: "",
-    sku: "",
-    category: "",
-    warehouse: "",
-    batch: "",
-    expiry: "",
-    entryDate: "",
-    leaveDate: "",
-    unit: "",
-    unitCost: "",
-    sellingPrice: "",
-    price: "",
-    reorderLevel: "",
-    approvalStatus: "Approved",
-  })
-  const [isSavingEdit, setIsSavingEdit] = useState(false)
-
-  // Warehouse filter uses normalized warehouse IDs so saved WH1/WH2/WH3 records match.
-  const warehouseOptions = [
-    { value: "ALL", label: "All Warehouses" },
-    ...warehouseRecords.map((warehouse) => ({
-      value: warehouse.code || warehouse.id,
-      label: warehouse.name || warehouse.code || warehouse.id,
-    })),
-  ]
-  const warehouseKeyMap = new Map(warehouseRecords.map((warehouse) => [warehouse.code || warehouse.id, new Set([warehouse.id, warehouse.code, warehouse.name].filter(Boolean))]))
-
-  // Filtered lists
-  const filteredProducts = products.filter((prod) => {
-    const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          prod.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          prod.batch.toLowerCase().includes(searchQuery.toLowerCase())
-    const selectedWarehouseKeys = warehouseKeyMap.get(selectedWarehouse) || new Set([selectedWarehouse])
-    const matchesWarehouse =
-      selectedWarehouse === "ALL" ||
-      selectedWarehouseKeys.has(prod.warehouse) ||
-      prod.stockBreakdown.some((breakdown) => selectedWarehouseKeys.has(breakdown.warehouse))
-    return matchesSearch && matchesWarehouse
-  })
-
-  const currentProductColumns = useMemo(() => {
-    const cols: TableColumn[] = [
-      { key: "name", label: "Product & SKU", align: "left" },
-      { key: "warehouse", label: "Primary Warehouse", align: "left" },
-      { key: "quantity", label: "Available Qty", align: "right" },
-      { key: "totalStockValue", label: "Stock Value", align: "right" },
-      { key: "batch", label: "Batch", align: "left" },
-    ]
-
-    if (isWH1(selectedWarehouse)) {
-      cols.push(
-        { key: "entryDate", label: "Entry Date", align: "left" },
-        { key: "leaveDate", label: "Leave Date", align: "left" }
-      )
-    } else {
-      cols.push(
-        { key: "expiry", label: "Expiry Date", align: "left" }
-      )
+  // Handle saving direct slim sub-entry modal
+  const handleSaveSlimEntry = async () => {
+    if (!slimAddEntryProduct || !addEntryDate || !addQuantity || Number(addQuantity) <= 0) {
+      showToast("Validation failed", "warning", "Provide a valid quantity and entry date.")
+      return
     }
+    setIsSavingAdd(true)
+    try {
+      const finalQty = addPackagingUnit === "Ton" ? Number(addQuantity) * TON_TO_QUINTAL : Number(addQuantity)
+      const newEntryPayload: Omit<WH1Entry, "entryId"> = {
+        entryDate: addEntryDate,
+        leaveDate: addLeaveDate || undefined,
+        quantityReceived: finalQty,
+        quantityRemaining: finalQty,
+        unitPrice: Number(addUnitPrice || 0),
+        notes: addNotes.trim() || undefined,
+      }
+      await erp.addWH1Entry(slimAddEntryProduct.id, newEntryPayload)
+      showToast("Stock entry added", "success", `New entry added for ${slimAddEntryProduct.name}.`)
+      setSlimAddEntryProduct(null)
+      resetAddForm()
+    } catch (error) {
+      showToast("Save failed", "warning", error instanceof Error ? error.message : "Failed to add entry.")
+    } finally {
+      setIsSavingAdd(false)
+    }
+  }
 
-    cols.push(
-      { key: "_actions", label: "Action", align: "center", noSort: true }
-    )
-    return cols
-  }, [selectedWarehouse])
+  // Handle Edit/Delete Sub Entry
+  const openEditSubEntry = (product: Product, entry: WH1Entry) => {
+    setEditingSubEntry({ product, entry })
+    setEditSubEntryQty(String(entry.quantityReceived))
+    setEditSubEntryPrice(String(entry.unitPrice))
+    setEditSubEntryDate(entry.entryDate)
+    setEditSubEntryLeave(entry.leaveDate || "")
+    setEditSubEntryNotes(entry.notes || "")
+  }
 
-  const productsTable = useResizableTable(currentProductColumns, filteredProducts, {
-    name: 200,
-    warehouse: 140,
-    quantity: 110,
-    totalStockValue: 120,
-    batch: 110,
-    entryDate: 110,
-    leaveDate: 110,
-    expiry: 110,
-    _actions: 80,
-  })
-  const filteredDocs = docs.filter((d) => {
-    const matchesSearch =
-      d.name.toLowerCase().includes(docSearch.toLowerCase()) ||
-      d.id.toLowerCase().includes(docSearch.toLowerCase()) ||
-      d.linkedBatch.toLowerCase().includes(docSearch.toLowerCase())
-    const matchesStatus = docStatusFilter === "ALL" || d.status === docStatusFilter
-    return matchesSearch && matchesStatus
-  })
+  const handleSaveSubEntryEdit = async () => {
+    if (!editingSubEntry || !editSubEntryQty || !editSubEntryDate) return
+    setIsSavingSubEdit(true)
+    try {
+      const nextQty = Number(editSubEntryQty)
+      const originalRemaining = editingSubEntry.entry.quantityRemaining
+      const difference = editingSubEntry.entry.quantityReceived - nextQty
+      const nextRemaining = Math.max(0, originalRemaining - difference)
 
-  const docsTable = useResizableTable(docColumns, filteredDocs, {
-    id: 120,
-    name: 280,
-    type: 140,
-    linkedBatch: 140,
-    expiryDate: 140,
-    status: 140,
-    _actions: 90,
-  })
+      await erp.updateWH1Entry(editingSubEntry.product.id, editingSubEntry.entry.entryId, {
+        entryDate: editSubEntryDate,
+        leaveDate: editSubEntryLeave || undefined,
+        quantityReceived: nextQty,
+        quantityRemaining: nextRemaining,
+        unitPrice: Number(editSubEntryPrice || 0),
+        notes: editSubEntryNotes.trim() || undefined,
+      })
+      showToast("Entry updated", "success", "Sub-entry values saved.")
+      setEditingSubEntry(null)
+    } catch (e) {
+      showToast("Update failed", "warning", e instanceof Error ? e.message : "Failed to save edit.")
+    } finally {
+      setIsSavingSubEdit(false)
+    }
+  }
 
+  const handleDeleteSubEntry = async (product: Product, entryId: string) => {
+    if (confirm("Are you sure you want to delete this sub-entry? This will decrease the overall product stock.")) {
+      try {
+        await erp.deleteWH1Entry(product.id, entryId)
+        showToast("Entry deleted", "info", "Sub-entry was removed from inventory.")
+      } catch (e) {
+        showToast("Delete failed", "warning", e instanceof Error ? e.message : "Failed to delete entry.")
+      }
+    }
+  }
 
+  // Normal product edit dialog
   const openEditProduct = (product: Product) => {
     setEditingProduct(product)
     setEditForm({
@@ -395,7 +513,7 @@ export default function StockProducts() {
       sku: product.sku,
       category: product.category || "",
       warehouse: product.warehouse,
-      batch: product.batch,
+      batch: product.batch || "",
       expiry: product.expiry || "",
       entryDate: product.entryDate || "",
       leaveDate: product.leaveDate || "",
@@ -429,8 +547,8 @@ export default function StockProducts() {
     const reorderLevel = editForm.reorderLevel === "" ? undefined : Number(editForm.reorderLevel)
 
     if (isWH1(warehouse)) {
-      if (!name || !sku || !batch || !warehouse || !entryDate || !unit) {
-        showToast("Cannot save stock details", "warning", "Complete item name, SKU, batch, warehouse, entry date, and UOM.")
+      if (!name || !sku || !warehouse || !entryDate || !unit) {
+        showToast("Cannot save stock details", "warning", "Complete item name, ID (SKU), warehouse, entry date, and UOM.")
         return
       }
       const datesInvalid = Boolean(
@@ -490,8 +608,7 @@ export default function StockProducts() {
 
   return (
     <div className="min-h-screen page-gradient">
-      {/* Global Navigation Header */}
-      <FloatingNav brand="HKC Trading ERP" sections={navSections} />
+      <FloatingNav brand="HKC Trading" sections={navSections} />
 
       <motion.div 
         variants={stagger} 
@@ -502,30 +619,26 @@ export default function StockProducts() {
         {/* Header Section */}
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">Stock Register</h1>
+            <h1 className="text-3xl font-black text-black tracking-tight">Stock</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
-              Manage product inventory, warehouse movement entries, stock adjustments, and compliance certificates from one register.
+              Manage product inventory, warehouse records, and stock entries across standard and agricultural warehouses.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/inventory")} />
           </div>
         </motion.div>
-
         {/* Tab Selection Row */}
         <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200/60 mb-6 overflow-x-auto no-scrollbar pb-1">
           {[
             { id: "Register", label: "Stock Register" },
             { id: "Store Transfer", label: "Store Transfer" },
-            { id: "Regulatory Docs", label: "Regulatory Docs" }
           ].map((tab) => {
             const isActive = activeTab === tab.id
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id as any)
-                }}
+                onClick={() => setActiveTab(tab.id as any)}
                 className="px-4 py-2.5 text-xs font-black relative tracking-tight transition-colors uppercase shrink-0"
               >
                 <span className={isActive ? "text-zinc-950 font-bold" : "text-zinc-400 hover:text-zinc-700"}>
@@ -544,7 +657,6 @@ export default function StockProducts() {
 
         {/* Tab Contents */}
         <AnimatePresence mode="wait">
-          {/* TAB 1: ACTIVE PRODUCTS TABLE */}
           {activeTab === "Register" && (
             <motion.div
               key="products-tab"
@@ -556,11 +668,11 @@ export default function StockProducts() {
               <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
                 <div className="px-6 pt-6">
                   <FinanceTableToolbar
-                    title="Stock Register"
-                    subtitle={`Total: ${productsTable.sorted().length} inventory SKUs across warehouses`}
+                    title="Stock List"
+                    subtitle={`Total: ${productsTable.sorted().length} products matches filters`}
                     searchValue={searchQuery}
                     onSearchChange={setSearchQuery}
-                    searchPlaceholder="Search product, SKU, batch..."
+                    searchPlaceholder="Search product name, SKU..."
                     filters={[
                       {
                         value: selectedWarehouse,
@@ -582,13 +694,13 @@ export default function StockProducts() {
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse table-fixed">
-                    <thead>
+                    <thead className="relative z-20">
                       <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                         {currentProductColumns.map((col: TableColumn) => (
                           <ResizableTh
                             key={col.key}
                             col={col}
-                            width={productsTable.colWidths[col.key]}
+                            width={productsTable.colWidths[col.key] || 110}
                             sortKey={productsTable.sortKey}
                             sortDir={productsTable.sortDir}
                             openMenuCol={productsTable.openMenuCol}
@@ -603,214 +715,203 @@ export default function StockProducts() {
                     </thead>
                     <tbody className="divide-y divide-zinc-150/40">
                       {isLoading ? (
-                        <ProductTableSkeletonRows />
+                        <ProductTableSkeletonRows colSpan={currentProductColumns.length} />
                       ) : productsTable.sorted().length === 0 ? (
                         <tr>
-                          <td colSpan={currentProductColumns.length} className="text-center py-16 text-zinc-400 text-xs font-medium">
-                            No products match your active search filters.
+                          <td colSpan={currentProductColumns.length} className="text-center py-16 text-zinc-400 text-xs font-semibold">
+                            No stock records found matching filters.
                           </td>
                         </tr>
                       ) : (
                         productsTable.sorted().map((prod) => {
+                          const isWH1Item = isWH1(prod.warehouse)
+                          const isExpanded = expandedProductIds.has(prod.id)
+
+                          // Render Parent Row for WH1 items
+                          if (isWH1Item && isWH1(selectedWarehouse)) {
+                            const entries = prod.wh1Entries || []
+                            const totalReceived = entries.reduce((sum, e) => sum + e.quantityReceived, 0)
+                            const entryDates = entries.map(e => new Date(e.entryDate).getTime()).filter(t => !Number.isNaN(t))
+                            const earliestDate = entryDates.length ? new Date(Math.min(...entryDates)).toISOString().slice(0, 10) : prod.entryDate || "-"
+                            const latestDate = entryDates.length ? new Date(Math.max(...entryDates)).toISOString().slice(0, 10) : prod.entryDate || "-"
+
+                            const leaveDates = entries.map(e => e.leaveDate ? new Date(e.leaveDate).getTime() : 0).filter(t => t > 0)
+                            const latestLeave = leaveDates.length ? new Date(Math.max(...leaveDates)).toISOString().slice(0, 10) : prod.leaveDate || "-"
+
+                            return (
+                              <Fragment key={prod.id}>
+                                <tr className="hover:bg-white/45 cursor-pointer transition-colors font-semibold text-xs border-b border-zinc-100">
+                                  {/* ID / SKU */}
+                                  <td className="py-4 px-6 overflow-hidden">
+                                    <div className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 font-bold uppercase">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); toggleRowExpand(prod.id) }}
+                                        className="p-1 hover:bg-zinc-100 rounded-md"
+                                      >
+                                        {isExpanded ? <ChevronDown className="size-3 text-zinc-800" /> : <ChevronRight className="size-3 text-zinc-400" />}
+                                      </button>
+                                      <span className="truncate">{prod.sku}</span>
+                                    </div>
+                                  </td>
+
+                                  {/* Item */}
+                                  <td className="py-4 px-4 overflow-hidden font-black text-zinc-950">
+                                    <div className="flex items-center gap-2">
+                                      <span className="truncate">{prod.name}</span>
+                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[9px] font-black text-emerald-800 border border-emerald-100">
+                                        {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  {/* UOM */}
+                                  <td className="py-4 px-4 font-bold text-zinc-500 uppercase">{prod.unit}</td>
+
+                                  {/* Entry date */}
+                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">
+                                    {earliestDate === latestDate ? earliestDate : `${earliestDate} to ${latestDate}`}
+                                  </td>
+
+                                  {/* Leave date */}
+                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">{latestLeave}</td>
+
+                                  {/* Total quantity */}
+                                  <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                    <div>{prod.quantity.toLocaleString()}</div>
+                                    <div className="text-[9px] text-zinc-400 font-bold">of {totalReceived.toLocaleString()} received</div>
+                                  </td>
+
+                                  {/* Stock Value */}
+                                  <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                    <div>ETB {money(prod.totalStockValue || 0)}</div>
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="py-4 px-6 text-center whitespace-nowrap">
+                                    <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                      <button
+                                        onClick={() => setSlimAddEntryProduct(prod)}
+                                        className="px-2.5 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-800 transition-all active:scale-95 shadow-xs"
+                                      >
+                                        <PlusCircle className="size-3" /> Add
+                                      </button>
+                                      <button
+                                        onClick={() => openEditProduct(prod)}
+                                        className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-50 transition-all active:scale-95 shadow-xs"
+                                      >
+                                        <Edit3 className="size-3 text-zinc-500" /> Edit
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {isExpanded && (
+                                  <tr className="bg-zinc-50/60">
+                                    <td colSpan={currentProductColumns.length} className="px-6 py-3">
+                                      <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden shadow-xs">
+                                        {entries.length === 0 ? (
+                                          <div className="text-zinc-400 text-xs py-3 px-4 text-center font-medium">No active sub-entries.</div>
+                                        ) : (
+                                          <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse text-xs font-semibold">
+                                              <thead>
+                                                <tr className="bg-zinc-50/90 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-500 tracking-wider">
+                                                  <th className="py-2.5 px-4">Entry ID</th>
+                                                  <th className="py-2.5 px-4">Entry Date</th>
+                                                  <th className="py-2.5 px-4">Leave Date</th>
+                                                  <th className="py-2.5 px-4 text-right">Qty Received</th>
+                                                  <th className="py-2.5 px-4 text-right">Qty Remaining</th>
+                                                  <th className="py-2.5 px-4 text-right">Unit Price</th>
+                                                  <th className="py-2.5 px-4 text-center">Actions</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-zinc-150">
+                                                {entries.map((entry) => (
+                                                  <tr key={entry.entryId} className="hover:bg-zinc-50 transition-colors">
+                                                    <td className="py-2.5 px-4 font-mono text-[11px] text-zinc-600 font-bold">{entry.entryId}</td>
+                                                    <td className="py-2.5 px-4 font-mono text-zinc-800">{entry.entryDate || prod.entryDate || "—"}</td>
+                                                    <td className="py-2.5 px-4 font-mono text-zinc-500">{entry.leaveDate || "—"}</td>
+                                                    <td className="py-2.5 px-4 text-right font-mono text-zinc-700">{entry.quantityReceived.toLocaleString()}</td>
+                                                    <td className="py-2.5 px-4 text-right font-mono text-zinc-950 font-black">{entry.quantityRemaining.toLocaleString()}</td>
+                                                    <td className="py-2.5 px-4 text-right font-mono text-emerald-700 font-bold">ETB {money(entry.unitPrice)}</td>
+                                                    <td className="py-2.5 px-4 text-center">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => openEditSubEntry(prod, entry)}
+                                                        className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs"
+                                                        title="Edit sub-entry details"
+                                                      >
+                                                        <Edit3 className="size-3 text-zinc-500" /> Edit
+                                                      </button>
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            )
+                          }
+
+                          // Standard Warehouse rendering (flat row)
                           return (
-                            <motion.tr
+                            <tr
                               key={prod.id}
                               onClick={() => openEditProduct(prod)}
-                              className="hover:bg-white/45 cursor-pointer transition-colors"
-                              whileHover={{ scale: 1.001 }}
+                              className="hover:bg-white/45 cursor-pointer transition-colors text-xs border-b border-zinc-100"
                             >
-                              <td className="py-4 px-6 overflow-hidden">
-                                <div className="flex flex-col">
-                                  <span className="font-black text-zinc-950 text-xs tracking-tight leading-tight mb-0.5 truncate">
-                                    {prod.name}
-                                  </span>
-                                  <span className="font-mono text-[10px] text-zinc-400 font-bold uppercase">
-                                    {prod.sku}
-                                  </span>
-                                </div>
+                              {/* SKU */}
+                              <td className="py-4 px-6 font-mono text-[10px] text-zinc-400 font-bold uppercase truncate">
+                                {prod.sku}
                               </td>
 
-                              <td className="py-4 px-4 overflow-hidden">
-                                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
-                                  <WarehouseIcon className="size-3.5 text-zinc-400 shrink-0" />
-                                  <span className="truncate">{prod.warehouse}</span>
-                                </div>
+                              {/* Item name */}
+                              <td className="py-4 px-4 font-black text-zinc-950 leading-tight">
+                                {prod.name}
                               </td>
 
-                              <td className="py-4 px-4 text-right font-mono font-black text-zinc-900 text-xs">
-                                {prod.quantity.toLocaleString()}{" "}
-                                <span className="text-[10px] text-zinc-400 uppercase font-bold">{prod.unit}</span>
-                              </td>
-
-                              <td className="py-4 px-4 text-right font-mono text-xs">
-                                <div className="font-black text-zinc-950">ETB {money(stockValueFor(prod))}</div>
-                                <div className="mt-1 text-[9px] font-bold uppercase text-zinc-400">
-                                  {money(Number(prod.unitCost || 0))} / {prod.unit}
-                                </div>
-                              </td>
-
-                              <td className="py-4 px-4 overflow-hidden">
-                                <span className="font-mono text-[11px] font-black text-zinc-800 leading-none">
-                                  {prod.batch}
-                                </span>
-                              </td>
-
-                              {isWH1(selectedWarehouse) ? (
+                              {/* Standard flat table columns */}
+                              {!isWH1(selectedWarehouse) && (
                                 <>
-                                  <td className="py-4 px-4 overflow-hidden">
-                                    <span className="text-[11px] font-semibold text-zinc-700">
-                                      {prod.entryDate || "N/A"}
-                                    </span>
-                                  </td>
-                                  <td className="py-4 px-4 overflow-hidden">
-                                    <span className="text-[11px] font-semibold text-zinc-700">
-                                      {prod.leaveDate || "N/A"}
-                                    </span>
-                                  </td>
+                                  <td className="py-4 px-4 font-mono font-bold text-zinc-700 truncate">{prod.batch || "—"}</td>
+                                  <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.manufacturingDate)}</td>
+                                  <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.expiry)}</td>
+                                  <td className="py-4 px-4 text-zinc-600">{prod.unit}</td>
+                                  <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.numberOfCartons?.toLocaleString() || "—"}</td>
+                                  <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.quantityPerPack?.toLocaleString() || "—"}</td>
                                 </>
-                              ) : (
-                                <td className="py-4 px-4 overflow-hidden">
-                                  <span className="text-[11px] font-semibold text-zinc-700">
-                                    {isWH1(prod.warehouse) ? "N/A" : (prod.expiry || "N/A")}
-                                  </span>
+                              )}
+
+                              {/* Quantity */}
+                              <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                {prod.quantity.toLocaleString()} <span className="text-[10px] text-zinc-400 uppercase font-bold">{prod.unit}</span>
+                              </td>
+
+                              {/* Unit Price (Standard) */}
+                              {!isWH1(selectedWarehouse) && (
+                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
+                                  ETB {money(prod.sellingPrice || prod.unitCost || 0)}
                                 </td>
                               )}
 
-                              <td className="py-4 px-6 text-center">
+                              {/* Total stock value */}
+                              <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                ETB {money(prod.totalStockValue || 0)}
+                              </td>
+
+                              {/* Action */}
+                              <td className="py-4 px-6 text-center" onClick={(e) => e.stopPropagation()}>
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    openEditProduct(prod)
-                                  }}
-                                  className="px-3.5 py-1.5 rounded-full bg-zinc-100 text-zinc-700 hover:bg-zinc-200 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1"
-                                  title="Edit stock details"
+                                  onClick={() => openEditProduct(prod)}
+                                  className="px-3.5 py-1.5 rounded-full bg-zinc-100 text-zinc-700 hover:bg-zinc-200 font-extrabold text-[11px] border border-zinc-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1"
                                 >
                                   <Edit3 className="size-3 text-zinc-500" /> Edit
-                                </button>
-                              </td>
-                            </motion.tr>
-                          )
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </GlassCard>
-            </motion.div>
-          )}
-
-          {/* TAB 2: STORE TRANSFER */}
-          {activeTab === "Store Transfer" && (
-            <motion.div
-              key="store-transfers-tab"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-            >
-              <StoreTransfersTab />
-            </motion.div>
-          )}
-
-          {/* TAB 4: REGULATORY DOCUMENTS */}
-          {activeTab === "Regulatory Docs" && (
-            <motion.div
-              key="docs-tab"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-            >
-              <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
-                <div className="px-6 pt-6">
-                  <FinanceTableToolbar
-                    title="Regulatory Compliance Certificates & Licenses"
-                    subtitle={`Total: ${docsTable.sorted().length} validated Certificates of Analysis and licenses`}
-                    searchValue={docSearch}
-                    onSearchChange={setDocSearch}
-                    searchPlaceholder="Search document, batch, type..."
-                    filters={[
-                      {
-                        value: docStatusFilter,
-                        onChange: setDocStatusFilter,
-                        ariaLabel: "Filter Status",
-                        options: [
-                          { value: "ALL", label: "All Statuses" },
-                          { value: "Valid", label: "Status: Valid" },
-                          { value: "Expiring Soon", label: "Status: Expiring Soon" },
-                          { value: "Expired", label: "Status: Expired" },
-                        ],
-                      },
-                    ]}
-                    actions={[
-                      {
-                        label: "Upload CoA",
-                        onClick: () => {
-                          showToast("Upload Certificate", "info", "CoA document upload flow initiated.")
-                        },
-                        icon: <Upload className="size-4" />,
-                        variant: "primary",
-                      },
-                    ]}
-                  />
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse table-fixed">
-                    <thead>
-                      <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
-                        {docColumns.map((col) => (
-                          <ResizableTh
-                            key={col.key}
-                            col={col}
-                            width={docsTable.colWidths[col.key]}
-                            sortKey={docsTable.sortKey}
-                            sortDir={docsTable.sortDir}
-                            openMenuCol={docsTable.openMenuCol}
-                            onResizeStart={docsTable.handleResizeStart}
-                            onToggleMenu={docsTable.toggleMenu}
-                            onSortAsc={docsTable.setSortAsc}
-                            onSortDesc={docsTable.setSortDesc}
-                            onClearSort={docsTable.clearSort}
-                          />
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-150/40">
-                      {docsTable.sorted().length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="py-16 text-center text-xs text-zinc-400 font-medium">
-                            No regulatory documents match your search filters.
-                          </td>
-                        </tr>
-                      ) : (
-                        docsTable.sorted().map((doc) => {
-                          const isExpiring = doc.status === "Expiring Soon"
-                          const isExpired = doc.status === "Expired"
-
-                          return (
-                            <tr key={doc.id} className="hover:bg-white/45 transition-colors">
-                              <td className="py-4 px-6 font-mono text-xs font-black text-zinc-900">{doc.id}</td>
-                              <td className="py-4 px-4 font-black text-zinc-950 text-xs">{doc.name}</td>
-                              <td className="py-4 px-4 font-bold text-xs text-zinc-600">{doc.type}</td>
-                              <td className="py-4 px-4 font-mono text-xs text-zinc-800 font-bold">{doc.linkedBatch}</td>
-                              <td className="py-4 px-4 font-mono text-xs text-zinc-700">{doc.expiryDate}</td>
-                              <td className="py-4 px-4 text-center">
-                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border tracking-wider ${
-                                  isExpired ? "bg-rose-50 text-rose-800 border-rose-200" :
-                                  isExpiring ? "bg-amber-50 text-amber-800 border-amber-200 animate-pulse" :
-                                  "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                }`}>
-                                  {doc.status}
-                                </span>
-                              </td>
-                              <td className="py-4 px-6 text-center">
-                                <button
-                                  onClick={() => showToast("Downloading Document", "info", `Fetching PDF for ${doc.id}`)}
-                                  className="p-1.5 rounded-lg border border-zinc-200/60 hover:bg-zinc-100 text-zinc-600 transition-colors"
-                                  title="Download Document"
-                                >
-                                  <FileText className="size-3.5" />
                                 </button>
                               </td>
                             </tr>
@@ -823,11 +924,22 @@ export default function StockProducts() {
               </GlassCard>
             </motion.div>
           )}
+
+          {activeTab === "Store Transfer" && (
+            <motion.div
+              key="store-transfers-tab"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+            >
+              <StoreTransfersTab />
+            </motion.div>
+          )}
         </AnimatePresence>
       </motion.div>
 
-
-
+      {/* MODAL: EDIT PRODUCT DETAILS */}
       <AnimatePresence>
         {editingProduct && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
@@ -842,60 +954,65 @@ export default function StockProducts() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
-              className="relative w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl"
+              className="relative w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl z-[121]"
             >
               <EditModalHeader
                 title={`Edit Stock Details: ${editingProduct.name}`}
-                subtitle={`SKU: ${editingProduct.sku} • Pricing and batch details changes made here are reflected system-wide.`}
+                subtitle={`SKU: ${editingProduct.sku}`}
                 onClose={() => setEditingProduct(null)}
                 onRequestDelete={() => setDeletingProduct(editingProduct)}
                 deleteLabel="Delete Stock Product"
               />
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2 mt-4 text-xs font-semibold">
                 <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Item Name</span>
-                  <input value={editForm.name} onChange={(e) => updateEditForm({ name: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                  <span className="block text-[11px] font-black uppercase text-zinc-500">Item Name</span>
+                  <input value={editForm.name} onChange={(e) => updateEditForm({ name: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
                 </label>
                 <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">SKU</span>
-                  <input value={editForm.sku} onChange={(e) => updateEditForm({ sku: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                  <span className="block text-[11px] font-black uppercase text-zinc-500">SKU</span>
+                  <input value={editForm.sku} onChange={(e) => updateEditForm({ sku: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                 </label>
                 <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Warehouse</span>
-                  <select value={editForm.warehouse} onChange={(e) => updateEditForm({ warehouse: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold">
-                    {warehouseOptions.filter((warehouse) => warehouse.value !== "ALL").map((warehouse) => (
-                      <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
+                  <span className="block text-[11px] font-black uppercase text-zinc-500">Warehouse</span>
+                  <select value={editForm.warehouse} onChange={(e) => updateEditForm({ warehouse: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs">
+                    {warehouseOptions.filter(w => w.value !== "ALL").map((w) => (
+                      <option key={w.value} value={w.value}>{w.label}</option>
                     ))}
                   </select>
                 </label>
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Batch Number</span>
-                  <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
-                </label>
+
+                {!isWH1(editForm.warehouse) && (
+                  <label className="space-y-1">
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
+                    <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                  </label>
+                )}
+
                 {isWH1(editForm.warehouse) ? (
                   <>
                     <label className="space-y-1">
-                      <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Entry Date</span>
-                      <input type="date" value={editForm.entryDate} onChange={(e) => updateEditForm({ entryDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Entry Date</span>
+                      <input type="date" value={editForm.entryDate} onChange={(e) => updateEditForm({ entryDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
                     </label>
                     <label className="space-y-1">
-                      <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Leave Date <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
-                      <input type="date" value={editForm.leaveDate} onChange={(e) => updateEditForm({ leaveDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Leave Date <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
+                      <input type="date" value={editForm.leaveDate} onChange={(e) => updateEditForm({ leaveDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
                     </label>
                   </>
                 ) : (
                   <label className="space-y-1">
-                    <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Expiry Date</span>
-                    <input type="date" value={editForm.expiry} onChange={(e) => updateEditForm({ expiry: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">Expiry Date</span>
+                    <input type="date" value={editForm.expiry} onChange={(e) => updateEditForm({ expiry: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
                   </label>
                 )}
+
                 <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">{isWH1(editForm.warehouse) ? "UOM" : "Unit"}</span>
+                  <span className="block text-[11px] font-black uppercase text-zinc-500">{isWH1(editForm.warehouse) ? "UOM" : "Unit"}</span>
                   <select 
                     value={editForm.unit} 
                     onChange={(e) => updateEditForm({ unit: e.target.value })} 
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer"
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     {isWH1(editForm.warehouse) ? (
                       <>
@@ -911,26 +1028,23 @@ export default function StockProducts() {
                     )}
                   </select>
                 </label>
-                {isWH1(editForm.warehouse) ? (
-                  <label className="space-y-1">
-                    <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Price (ETB) <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
-                    <input type="number" min="0" step="0.01" value={editForm.price} onChange={(e) => updateEditForm({ price: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
-                  </label>
-                ) : (
+
+                {!isWH1(editForm.warehouse) && (
                   <>
                     <label className="space-y-1">
-                      <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Cost Price</span>
-                      <input type="number" min="0" value={editForm.unitCost} onChange={(e) => updateEditForm({ unitCost: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Cost Price</span>
+                      <input type="number" min="0" value={editForm.unitCost} onChange={(e) => updateEditForm({ unitCost: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
                     </label>
                     <label className="space-y-1">
-                      <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Selling Price</span>
-                      <input type="number" min="0" value={editForm.sellingPrice} onChange={(e) => updateEditForm({ sellingPrice: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Selling Price</span>
+                      <input type="number" min="0" value={editForm.sellingPrice} onChange={(e) => updateEditForm({ sellingPrice: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
                     </label>
                   </>
                 )}
+
                 <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Compliance Status</span>
-                  <select value={editForm.approvalStatus || "Approved"} onChange={(e) => updateEditForm({ approvalStatus: e.target.value as Product["approvalStatus"] })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold">
+                  <span className="block text-[11px] font-black uppercase text-zinc-500">Compliance Status</span>
+                  <select value={editForm.approvalStatus || "Approved"} onChange={(e) => updateEditForm({ approvalStatus: e.target.value as Product["approvalStatus"] })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs">
                     <option value="Approved">Approved</option>
                     <option value="Submitted">Submitted</option>
                     <option value="Not Submitted">Not Submitted</option>
@@ -949,57 +1063,104 @@ export default function StockProducts() {
         )}
       </AnimatePresence>
 
-      {/* MODAL: ADD NEW STOCK ITEM */}
+      {/* MODAL: ADD NEW STOCK ITEM / ENTRY */}
       <AnimatePresence>
         {isAddModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              transition={{ duration: 0.2 }}
-              className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200 dark:border-zinc-800"
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200"
             >
-              <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200">
                 <div>
-                  <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-100">Add Stock Item</h3>
+                  <h3 className="text-xl font-black text-zinc-900">
+                    {selectedExistingProduct ? `Add Entry to Existing Item: ${selectedExistingProduct.name}` : "Add Stock Item"}
+                  </h3>
                   <p className="text-xs text-zinc-500">Register new product inventory into warehouse stock.</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400 dark:hover:bg-zinc-800"
+                  onClick={() => { setIsAddModalOpen(false); resetAddForm() }}
+                  className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400"
                 >
                   <X className="size-5" />
                 </button>
               </div>
 
               <div className="space-y-4 text-xs">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-1 md:col-span-2">
-                    <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+                <div className="grid gap-4 md:grid-cols-2 font-semibold">
+                  <div className="space-y-1 md:col-span-2 relative">
+                    <span className="text-[11px] font-black uppercase text-zinc-700">
                       Item Name / Description of Goods <span className="text-rose-600">*</span>
                     </span>
                     <input
                       type="text"
-                      placeholder="e.g. Paracetamol 500mg Tablets"
+                      placeholder="e.g. Sesame Seed (White)"
                       value={addDescription}
-                      onChange={(e) => setAddDescription(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-semibold outline-none focus:border-emerald-500"
+                      disabled={!!selectedExistingProduct}
+                      onChange={(e) => {
+                        setAddDescription(e.target.value)
+                        setShowItemSuggestions(true)
+                      }}
+                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500"
                     />
+
+                    {/* Auto-complete Suggestions Dropdown */}
+                    {showItemSuggestions && isWH1Form && wh1ItemSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-zinc-150 bg-white p-2 shadow-xl">
+                        {wh1ItemSuggestions.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedExistingProduct(p)
+                              setAddDescription(p.name)
+                              setAddPackagingUnit(p.unit)
+                              setShowItemSuggestions(false)
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-50 flex items-center justify-between text-xs font-bold"
+                          >
+                            <span className="text-zinc-900">{p.name}</span>
+                            <span className="text-[10px] text-zinc-400">{p.quantity} Q left</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-black uppercase text-zinc-700">Primary Warehouse <span className="text-rose-600">*</span></span>
+                    <select
+                      value={addWarehouse}
+                      disabled={!!selectedExistingProduct}
+                      onChange={(e) => {
+                        setAddWarehouse(e.target.value)
+                        setAddPackagingUnit("")
+                        setAddQuantity("")
+                      }}
+                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      <option value="">Select warehouse</option>
+                      {warehouseRecords.map((item) => (
+                        <option key={item.id} value={item.code || item.id}>{item.name}</option>
+                      ))}
+                    </select>
                   </label>
 
                   <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                      {isWH1(addWarehouse) ? "UOM" : "Packaging Unit"} <span className="text-rose-600">*</span>
+                    <span className="text-[11px] font-black uppercase text-zinc-700">
+                      {isWH1Form ? "UOM" : "Packaging Unit"} <span className="text-rose-600">*</span>
                     </span>
                     <select
                       value={addPackagingUnit}
+                      disabled={!!selectedExistingProduct}
                       onChange={(e) => setAddPackagingUnit(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500 cursor-pointer"
+                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
                     >
-                      <option value="">{isWH1(addWarehouse) ? "Select UOM" : "Select packaging unit"}</option>
-                      {isWH1(addWarehouse) ? (
+                      <option value="">{isWH1Form ? "Select UOM" : "Select packaging unit"}</option>
+                      {isWH1Form ? (
                         <>
                           <option value="Quintal">Quintal</option>
                           <option value="Ton">Ton</option>
@@ -1012,199 +1173,249 @@ export default function StockProducts() {
                     </select>
                   </label>
 
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                      Primary Warehouse <span className="text-rose-600">*</span>
-                    </span>
-                    <select
-                      value={addWarehouse}
-                      onChange={(e) => {
-                        setAddWarehouse(e.target.value)
-                        setAddPackagingUnit("")
-                        setAddQuantity("")
-                      }}
-                      className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-semibold outline-none focus:border-emerald-500"
-                    >
-                      <option value="">Select warehouse</option>
-                      {warehouseRecords.map((item) => {
-                        const value = item.code || item.id
-                        return <option key={item.id} value={value}>{item.name || value}</option>
-                      })}
-                    </select>
-                  </label>
+                  {!isWH1Form && (
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-black uppercase text-zinc-700">Batch Number <span className="text-rose-600">*</span></span>
+                      <input
+                        type="text"
+                        placeholder="BATCH-001"
+                        value={addBatchNumber}
+                        onChange={(e) => setAddBatchNumber(e.target.value)}
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                      />
+                    </label>
+                  )}
 
                   <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                      Batch Number <span className="text-rose-600">*</span>
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="e.g. BATCH-2026-09"
-                      value={addBatchNumber}
-                      onChange={(e) => setAddBatchNumber(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-semibold outline-none focus:border-emerald-500 font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                      {isWH1(addWarehouse) ? "Price (ETB)" : "Unit Price (ETB)"} <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span>
-                    </span>
+                    <span className="text-[11px] font-black uppercase text-zinc-700">Price per unit (ETB)</span>
                     <input
                       type="number"
-                      min="0"
-                      step="0.01"
                       placeholder="0.00"
                       value={addUnitPrice}
                       onChange={(e) => setAddUnitPrice(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-black outline-none focus:border-emerald-500 font-mono"
+                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
                     />
                   </label>
 
-                  {isWH1(addWarehouse) ? (
+                  {isWH1Form ? (
                     <>
                       <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Entry Date <span className="text-rose-600">*</span>
-                        </span>
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Entry Date <span className="text-rose-600">*</span></span>
                         <input
                           type="date"
                           value={addEntryDate}
                           onChange={(e) => setAddEntryDate(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-mono font-bold outline-none focus:border-emerald-500"
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
                         />
                       </label>
-
                       <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Leave Date <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span>
-                        </span>
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Leave Date <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
                         <input
                           type="date"
                           value={addLeaveDate}
                           onChange={(e) => setAddLeaveDate(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-mono font-bold outline-none focus:border-emerald-500"
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
                         />
                       </label>
-
-                      <label className="space-y-1 md:col-span-2">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Quantity <span className="text-rose-600">*</span>
-                        </span>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Quantity <span className="text-rose-600">*</span></span>
                         <input
                           type="number"
-                          min="0"
-                          placeholder="e.g. 500"
+                          placeholder="e.g. 50"
                           value={addQuantity}
                           onChange={(e) => setAddQuantity(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Notes <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
+                        <input
+                          type="text"
+                          placeholder="e.g. Received from exporter"
+                          value={addNotes}
+                          onChange={(e) => setAddNotes(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
                         />
                       </label>
                     </>
                   ) : (
                     <>
                       <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Manufacturing Date <span className="text-rose-600">*</span>
-                        </span>
-                        <input
-                          type="date"
-                          value={addMfgDate}
-                          onChange={(e) => setAddMfgDate(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-mono font-bold outline-none focus:border-emerald-500"
-                        />
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Manufacturing Date <span className="text-rose-600">*</span></span>
+                        <input type="date" value={addMfgDate} onChange={(e) => setAddMfgDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
-
                       <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Expiry Date <span className="text-rose-600">*</span>
-                        </span>
-                        <input
-                          type="date"
-                          value={addExpDate}
-                          onChange={(e) => setAddExpDate(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-mono font-bold outline-none focus:border-emerald-500"
-                        />
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Expiry Date <span className="text-rose-600">*</span></span>
+                        <input type="date" value={addExpDate} onChange={(e) => setAddExpDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
-
                       <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Quantity Per Pack <span className="text-rose-600">*</span>
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="e.g. 100"
-                          value={addQtyPerPack}
-                          onChange={(e) => setAddQtyPerPack(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
-                        />
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Quantity Per Pack <span className="text-rose-600">*</span></span>
+                        <input type="number" placeholder="100" value={addQtyPerPack} onChange={(e) => setAddQtyPerPack(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
-
                       <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Number of Cartons <span className="text-rose-600">*</span>
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="e.g. 50"
-                          value={addNumCartons}
-                          onChange={(e) => setAddNumCartons(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-xs font-bold outline-none focus:border-emerald-500 font-mono"
-                        />
-                      </label>
-
-                      <label className="space-y-1 md:col-span-2">
-                        <span className="text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                          Total Calculated Quantity
-                        </span>
-                        <input
-                          readOnly
-                          value={addTotalQuantity.toLocaleString()}
-                          className="h-11 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-3 text-right font-mono text-sm font-black text-zinc-900 dark:text-zinc-100 outline-none"
-                        />
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Number of Cartons <span className="text-rose-600">*</span></span>
+                        <input type="number" placeholder="50" value={addNumCartons} onChange={(e) => setAddNumCartons(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
                     </>
                   )}
                 </div>
 
-                {addDateInvalid && (
-                  <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/30 px-4 py-2.5 text-xs font-bold text-rose-700 dark:text-rose-300">
-                    {isWH1(addWarehouse)
-                      ? "Leave date must be after the entry date."
-                      : "Expiry date must be after the manufacturing date."}
-                  </p>
-                )}
-                {addDuplicateBatch && (
-                  <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 px-4 py-2.5 text-xs font-bold text-amber-800 dark:text-amber-300">
-                    Batch number already exists in inventory.
+                {isWH1Form && addPackagingUnit === "Ton" && (
+                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 p-3 text-[11px] font-bold">
+                    Note: 1 Ton = 10 Quintals. Entering {addQuantity || 0} Tons will save as {(Number(addQuantity || 0) * TON_TO_QUINTAL).toLocaleString()} Quintals in the database.
                   </p>
                 )}
 
-                <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddModalOpen(false)}
-                    className="h-10 rounded-full border border-zinc-200 dark:border-zinc-700 px-4 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canSaveAdd || isSavingAdd}
-                    onClick={() => void handleSaveNewStockItem(true)}
-                    className="h-10 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 px-4 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    Save and Add Another
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canSaveAdd || isSavingAdd}
-                    onClick={() => void handleSaveNewStockItem(false)}
-                    className="inline-flex h-10 items-center gap-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 px-5 text-xs shadow-md disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <Save className="size-4" /> Save Item
+                {addDateInvalid && (
+                  <p className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 p-3 font-bold">
+                    {isWH1Form ? "Leave date must be after entry date." : "Expiry date must be after manufacturing date."}
+                  </p>
+                )}
+
+                {addDuplicateBatch && (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 p-3 font-bold">
+                    Batch number already exists.
+                  </p>
+                )}
+
+                <div className="flex justify-between items-center border-t border-zinc-200 pt-4 mt-6">
+                  {selectedExistingProduct && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedExistingProduct(null)}
+                      className="text-xs font-black text-emerald-700 hover:underline"
+                    >
+                      ← Create new item instead
+                    </button>
+                  )}
+                  <div className="flex gap-2 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => { setIsAddModalOpen(false); resetAddForm() }}
+                      className="h-10 rounded-full border border-zinc-200 px-4 font-bold text-zinc-600 hover:bg-zinc-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canSaveAdd || isSavingAdd}
+                      onClick={() => void handleSaveNewStockItem(true)}
+                      className="h-10 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 px-4 font-bold disabled:opacity-40"
+                    >
+                      Save & Add Another
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canSaveAdd || isSavingAdd}
+                      onClick={() => void handleSaveNewStockItem(false)}
+                      className="h-10 rounded-full bg-zinc-950 text-white font-bold px-5 disabled:opacity-40"
+                    >
+                      {isSavingAdd ? "Saving..." : "Save Item"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SLIM ADD ENTRY MODAL */}
+      <AnimatePresence>
+        {slimAddEntryProduct && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-3xl w-full shadow-2xl border border-zinc-200"
+            >
+              <div className="flex items-center justify-between pb-3 mb-4 border-b border-zinc-150">
+                <div>
+                  <h3 className="font-black text-zinc-900 text-base">Add New Entry to {slimAddEntryProduct.name}</h3>
+                  <p className="text-xs text-zinc-500">Record a new daily batch receipt into stock.</p>
+                </div>
+                <button onClick={() => setSlimAddEntryProduct(null)} className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400"><X className="size-5" /></button>
+              </div>
+
+              <div className="space-y-4 text-xs font-semibold">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">UOM</span>
+                    <select
+                      value={addPackagingUnit}
+                      onChange={(e) => setAddPackagingUnit(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                    >
+                      <option value="Quintal">Quintal</option>
+                      <option value="Ton">Ton</option>
+                    </select>
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity</span>
+                    <input
+                      type="number"
+                      placeholder="Quantity"
+                      value={addQuantity}
+                      onChange={(e) => setAddQuantity(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Unit Price (ETB)</span>
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={addUnitPrice}
+                      onChange={(e) => setAddUnitPrice(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Entry Date</span>
+                    <input
+                      type="date"
+                      value={addEntryDate}
+                      onChange={(e) => setAddEntryDate(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Leave Date (Optional)</span>
+                    <input
+                      type="date"
+                      value={addLeaveDate}
+                      onChange={(e) => setAddLeaveDate(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Notes (Optional)</span>
+                    <input
+                      type="text"
+                      placeholder="Notes"
+                      value={addNotes}
+                      onChange={(e) => setAddNotes(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                    />
+                  </label>
+                </div>
+
+                {addPackagingUnit === "Ton" && (
+                  <p className="text-[10px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-100 p-2 rounded-lg">
+                    Converts automatically: {addQuantity || 0} Tons = {(Number(addQuantity || 0) * TON_TO_QUINTAL).toLocaleString()} Quintals.
+                  </p>
+                )}
+
+                <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
+                  <button onClick={() => setSlimAddEntryProduct(null)} className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold">Cancel</button>
+                  <button disabled={isSavingAdd} onClick={handleSaveSlimEntry} className="h-9 rounded-xl bg-zinc-950 text-white px-5 text-xs font-bold shadow-md">
+                    {isSavingAdd ? "Saving..." : "Add Entry"}
                   </button>
                 </div>
               </div>
@@ -1213,13 +1424,98 @@ export default function StockProducts() {
         )}
       </AnimatePresence>
 
-      {/* REUSABLE DELETE CONFIRMATION MODAL — rendered above edit modal */}
+      {/* EDIT WH1 SUB ENTRY MODAL */}
+      <AnimatePresence>
+        {editingSubEntry && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-3xl w-full shadow-2xl border border-zinc-200"
+            >
+              <EditModalHeader
+                title={`Edit Entry: ${editingSubEntry.entry.entryId}`}
+                subtitle={`Product: ${editingSubEntry.product.name}`}
+                onClose={() => setEditingSubEntry(null)}
+                onRequestDelete={() => {
+                  handleDeleteSubEntry(editingSubEntry.product, editingSubEntry.entry.entryId)
+                  setEditingSubEntry(null)
+                }}
+                deleteLabel="Delete This Entry"
+              />
+
+              <div className="space-y-4 text-xs font-semibold">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity (Received)</span>
+                    <input
+                      type="number"
+                      value={editSubEntryQty}
+                      onChange={(e) => setEditSubEntryQty(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Unit Price (ETB)</span>
+                    <input
+                      type="number"
+                      value={editSubEntryPrice}
+                      onChange={(e) => setEditSubEntryPrice(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Entry Date</span>
+                    <input
+                      type="date"
+                      value={editSubEntryDate}
+                      onChange={(e) => setEditSubEntryDate(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Leave Date (Optional)</span>
+                    <input
+                      type="date"
+                      value={editSubEntryLeave}
+                      onChange={(e) => setEditSubEntryLeave(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block md:col-span-2">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Notes (Optional)</span>
+                    <input
+                      type="text"
+                      value={editSubEntryNotes}
+                      onChange={(e) => setEditSubEntryNotes(e.target.value)}
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
+                  <button onClick={() => setEditingSubEntry(null)} className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold">Cancel</button>
+                  <button disabled={isSavingSubEdit} onClick={handleSaveSubEntryEdit} className="h-9 rounded-xl bg-zinc-950 text-white px-5 text-xs font-bold shadow-md">
+                    {isSavingSubEdit ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <RecordDeleteModal
         isOpen={!!deletingProduct}
-        title="Delete Stock Product?"
+        title="Delete Grouped WH1 Item?"
         recordId={deletingProduct?.sku}
         recordName={deletingProduct?.name}
-        description="This will permanently delete this product from system inventory registry."
+        description="This will permanently delete this product and ALL its sub-entries from system inventory registry. This action is irreversible."
         onClose={() => setDeletingProduct(null)}
         onConfirmDelete={() => {
           if (!deletingProduct) return

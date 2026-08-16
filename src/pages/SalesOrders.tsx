@@ -17,20 +17,89 @@ import {
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
+import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { type TableColumn } from "@/components/ResizableTable"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DataTable } from "@/components/DataTable"
-import {
-  fetchShipmentDocs,
-  uploadShipmentDoc,
-  resolveSalesOrderDocs,
-  type ShipmentDocAttachment,
-} from "@/lib/shipmentDocumentEngine"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+
+export interface ShipmentDocAttachment {
+  id: string
+  record_id: string
+  record_type: 'purchase_order' | 'sales_order' | 'processing_service'
+  document_type: string
+  file_name: string
+  file_size: number
+  file_url: string
+  uploaded_at: string
+  uploaded_by: string
+}
+
+const API_BASE = import.meta.env.VITE_API_URL ?? ""
+
+async function fetchShipmentDocs(recordId: string, recordType: string): Promise<ShipmentDocAttachment[]> {
+  try {
+    const url = new URL(`${API_BASE}/api/shipment-documents`, window.location.origin)
+    url.searchParams.set('record_id', recordId)
+    url.searchParams.set('record_type', recordType)
+    const res = await fetch(url.toString())
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data)) return data
+    }
+  } catch (err) {
+    console.warn('fetchShipmentDocs error:', err)
+  }
+  return []
+}
+
+async function uploadShipmentDoc(doc: Partial<ShipmentDocAttachment>): Promise<ShipmentDocAttachment> {
+  const res = await fetch(`${API_BASE}/api/shipment-documents`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(doc),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to upload shipment document.')
+  }
+  return res.json()
+}
+
+function resolveSalesOrderDocs(
+  soId: string,
+  customerName: string,
+  tradePaperUrl: string | undefined,
+  tradePaperFileName: string | undefined,
+  attachments: ShipmentDocAttachment[]
+) {
+  const docsList = [...attachments]
+  let tradeLicense = attachments.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+  const paymentAdvice = attachments.find((d) => d.document_type === "Payment Advice")
+
+  if (!tradeLicense && tradePaperUrl) {
+    tradeLicense = {
+      id: `CUST-TL-${soId}`,
+      record_id: soId,
+      record_type: "sales_order",
+      document_type: "Trade License",
+      file_name: tradePaperFileName || "Trade License.pdf",
+      file_size: 102400,
+      file_url: tradePaperUrl,
+      uploaded_at: new Date().toISOString(),
+      uploaded_by: customerName,
+    }
+    docsList.push(tradeLicense)
+  }
+
+  return {
+    docsList,
+    tradeLicense,
+    paymentAdvice,
+  }
+}
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -292,6 +361,15 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     e.preventDefault()
     if (!editingOrder) return
 
+    const matchedCust = customers.find((c) => c.id === editingOrder.customerId || c.name === editingOrder.customer)
+    if (matchedCust) {
+      const evaluation = getTradeLicenseStatus(matchedCust)
+      if (evaluation.status !== "valid" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
+        showToast("Validation Error", "warning", "An active (unexpired) Trade License must be uploaded for this customer.")
+        return
+      }
+    }
+
     const sanitizedItems: SalesOrderItem[] = editingOrderItems.map((i) => {
       const q = Math.max(1, Number(i.qty) || 1)
       const p = Math.max(0, Number(i.unitPrice) || 0)
@@ -309,11 +387,14 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     erp.updateSalesOrder(updatedSo)
 
     // Sync attachments to customer registry profile
-    const matchedCust = customers.find((c) => c.id === editingOrder.customerId || c.name === editingOrder.customer)
     if (matchedCust) {
+      const isNewFile = stagedTradePaperUrl !== (matchedCust.tradePaperUrl || "")
+      const uploadedAt = isNewFile ? new Date().toISOString() : matchedCust.tradePaperUploadedAt
+
       erp.updateCustomer(matchedCust.id, {
         tradePaperFileName: stagedTradePaperName || matchedCust.tradePaperFileName,
         tradePaperUrl: stagedTradePaperUrl || matchedCust.tradePaperUrl,
+        tradePaperUploadedAt: uploadedAt,
       })
     }
 
@@ -379,6 +460,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       (c) => c.id === newCustomerId || (c.name && c.name.toLowerCase() === finalCustName.toLowerCase())
     )
 
+    if (selectedCust) {
+      const evaluation = getTradeLicenseStatus(selectedCust)
+      if (evaluation.status !== "valid" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
+        showToast("Validation Error", "warning", "An active (unexpired) Trade License must be uploaded for this customer.")
+        return
+      }
+    } else {
+      if (!stagedTradePaperUrl || !stagedTradePaperName) {
+        showToast("Validation Error", "warning", "A Trade License must be uploaded for a new customer registration.")
+        return
+      }
+    }
+
     if (!selectedCust) {
       const generatedCustId = `CUST-${Date.now().toString().slice(-4)}`
       selectedCust = {
@@ -391,15 +485,20 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         address: custAddress,
         tradePaperFileName: stagedTradePaperName,
         tradePaperUrl: stagedTradePaperUrl,
+        tradePaperUploadedAt: stagedTradePaperUrl ? new Date().toISOString() : undefined,
         status: "Active",
       }
       if (saveCustomerToRegistry) {
         erp.addCustomer(selectedCust)
       }
     } else {
+      const isNewFile = stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "")
+      const uploadedAt = isNewFile ? new Date().toISOString() : selectedCust.tradePaperUploadedAt
+
       erp.updateCustomer(selectedCust.id, {
         tradePaperFileName: stagedTradePaperName || selectedCust.tradePaperFileName,
         tradePaperUrl: stagedTradePaperUrl || selectedCust.tradePaperUrl,
+        tradePaperUploadedAt: uploadedAt,
       })
     }
 
@@ -844,9 +943,14 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             setCustPhone(matched.phone || "")
                             setCustEmail(matched.email || "")
                             setCustAddress(matched.address || "")
-                            if (matched.tradePaperFileName && matched.tradePaperUrl) {
+
+                            const evaluation = getTradeLicenseStatus(matched)
+                            if (evaluation.status === "valid" && matched.tradePaperFileName && matched.tradePaperUrl) {
                               setStagedTradePaperName(matched.tradePaperFileName)
                               setStagedTradePaperUrl(matched.tradePaperUrl)
+                            } else {
+                              setStagedTradePaperName("")
+                              setStagedTradePaperUrl("")
                             }
                           } else {
                             setNewCustomerId("")
@@ -902,9 +1006,13 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 setCustPhone(c.phone || "")
                                 setCustEmail(c.email || "")
                                 setCustAddress(c.address || "")
-                                if (c.tradePaperFileName && c.tradePaperUrl) {
+                                const evaluation = getTradeLicenseStatus(c)
+                                if (evaluation.status === "valid" && c.tradePaperFileName && c.tradePaperUrl) {
                                   setStagedTradePaperName(c.tradePaperFileName)
                                   setStagedTradePaperUrl(c.tradePaperUrl)
+                                } else {
+                                  setStagedTradePaperName("")
+                                  setStagedTradePaperUrl("")
                                 }
                                 setShowCustomerDropdown(false)
                               }}
@@ -991,6 +1099,29 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
                   />
                 </div>
+
+                {/* Warning banner if license is missing or expired */}
+                {(() => {
+                  const selectedCust = customers.find(c => c.id === newCustomerId)
+                  if (selectedCust) {
+                    const evaluation = getTradeLicenseStatus(selectedCust)
+                    if (evaluation.status !== "valid") {
+                      return (
+                        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-2 mb-3">
+                          <AlertTriangle className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-black uppercase tracking-wider block">Warning: Trade License Missing or Expired</span>
+                            <span className="text-[11px] block mt-0.5 leading-normal">
+                              This customer's trade license has expired (exceeded 30 days) or is missing.
+                              You <strong>must</strong> upload a new trade license to create this sales order.
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
+                  }
+                  return null
+                })()}
 
                 {/* Minimalistic Required Document Attachments Section */}
                 <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
@@ -1325,6 +1456,29 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
                   />
                 </div>
+
+                {/* Warning banner in Edit Modal if license is missing or expired */}
+                {(() => {
+                  const selectedCust = customers.find(c => c.id === editingOrder.customerId || c.name === editingOrder.customer)
+                  if (selectedCust) {
+                    const evaluation = getTradeLicenseStatus(selectedCust)
+                    if (evaluation.status !== "valid") {
+                      return (
+                        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-2 mb-3">
+                          <AlertTriangle className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-black uppercase tracking-wider block">Warning: Trade License Missing or Expired</span>
+                            <span className="text-[11px] block mt-0.5 leading-normal">
+                              This customer's trade license has expired (exceeded 30 days) or is missing.
+                              You <strong>must</strong> upload a new trade license to update this sales order.
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
+                  }
+                  return null
+                })()}
 
                 {/* ROW 3: Minimalistic Required Document Attachments Section */}
                 <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">

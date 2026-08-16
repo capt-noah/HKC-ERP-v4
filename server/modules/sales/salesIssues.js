@@ -316,7 +316,27 @@ export async function postSalesIssue(arg1, arg2) {
         totalAmount += issueQty * unitPrice
         totalCost += issueQty * unitCost
 
-        const newQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
+        const isWH1 = prod.warehouse === "WH1" || prod.warehouse === "WH1-AGRI-EXP"
+        let newQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
+        let updatedWH1Entries = prod.wh1Entries || []
+
+        if (isWH1 && Array.isArray(prod.wh1Entries) && prod.wh1Entries.length > 0) {
+          let remaining = issueQty
+          const sorted = [...prod.wh1Entries].sort((a, b) =>
+            new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()
+          )
+          updatedWH1Entries = sorted.map((entry) => {
+            if (remaining <= 0) return entry
+            const deduct = Math.min(entry.quantityRemaining, remaining)
+            remaining -= deduct
+            return {
+              ...entry,
+              quantityRemaining: Math.max(0, entry.quantityRemaining - deduct),
+            }
+          })
+          newQty = updatedWH1Entries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
+        }
+
         const newSold = Number(prod.quantitySold || 0) + issueQty
         const targetWh = existing.warehouse_id || existing.warehouse || prod.warehouse
         const targetWhBase = (targetWh || "").split("-")[0]
@@ -336,6 +356,13 @@ export async function postSalesIssue(arg1, arg2) {
         const newCartons = packSize > 0 ? Math.max(0, Math.floor(newQty / packSize)) : Math.max(0, (prod.numberOfCartons || 0) - issueQty)
         const updatedStatus = newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock"
 
+        let finalUnitCost = unitCost
+        let finalStockValue = newQty * unitCost
+        if (isWH1 && updatedWH1Entries.length > 0) {
+          finalStockValue = updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+          finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
+        }
+
         const updatedProd = {
           ...prod,
           quantity: newQty,
@@ -343,7 +370,11 @@ export async function postSalesIssue(arg1, arg2) {
           numberOfCartons: newCartons,
           stockBreakdown: updatedBreakdown,
           batches: updatedBatches,
+          wh1Entries: updatedWH1Entries,
           status: updatedStatus,
+          unitCost: finalUnitCost,
+          sellingPrice: finalUnitCost,
+          totalStockValue: finalStockValue,
           updatedAt: new Date().toISOString(),
         }
 

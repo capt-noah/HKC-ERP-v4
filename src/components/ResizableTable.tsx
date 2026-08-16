@@ -148,16 +148,18 @@ export function ResizableTh({
 
   return (
     <th
-      style={{ width: `${width}px`, minWidth: `${width}px` }}
-      className="relative px-3 py-3 group border-r border-zinc-200/50 last:border-r-0"
+      style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+      className={`relative px-3 py-3 group border-r border-zinc-200/50 last:border-r-0 select-none ${
+        isMenuOpen ? "overflow-visible z-30" : "overflow-hidden"
+      }`}
     >
       <div
-        className={`flex items-center gap-1 ${
+        className={`flex items-center gap-1.5 w-full ${
           col.align === "right"
-            ? "flex-row-reverse text-right"
+            ? "justify-end text-right"
             : col.align === "center"
-            ? "justify-center"
-            : ""
+            ? "justify-center text-center"
+            : "justify-start text-left"
         }`}
       >
         <span className="truncate">{col.label}</span>

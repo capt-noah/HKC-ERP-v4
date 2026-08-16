@@ -29,6 +29,16 @@ export interface BatchInfo {
   status: "Released" | "Pending QA" | "Quarantined"
 }
 
+export interface WH1Entry {
+  entryId: string
+  entryDate: string
+  leaveDate?: string
+  quantityReceived: number
+  quantityRemaining: number
+  unitPrice: number
+  notes?: string
+}
+
 export interface Product {
   id: string
   name: string
@@ -62,6 +72,7 @@ export interface Product {
   status: "In Stock" | "Low Stock" | "Quarantined" | "Out of Stock" | "Pending QA"
   stockBreakdown: StockBreakdown[]
   batches: BatchInfo[]
+  wh1Entries?: WH1Entry[]
   origin: string
   supplierName: string
   inventoryAssetAccount?: string
@@ -270,7 +281,30 @@ export interface Customer {
   creditLimit?: number
   tradePaperUrl?: string
   tradePaperFileName?: string
+  tradePaperUploadedAt?: string
   status?: string
+}
+
+export function getTradeLicenseStatus(customer: Customer): {
+  status: "valid" | "expired" | "missing"
+  daysRemaining: number
+} {
+  if (!customer.tradePaperUrl || !customer.tradePaperFileName) {
+    return { status: "missing", daysRemaining: 0 }
+  }
+  if (!customer.tradePaperUploadedAt) {
+    return { status: "expired", daysRemaining: 0 }
+  }
+  const uploadedDate = new Date(customer.tradePaperUploadedAt)
+  const expiryDate = new Date(uploadedDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const today = new Date()
+  const diffMs = expiryDate.getTime() - today.getTime()
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays <= 0) {
+    return { status: "expired", daysRemaining: 0 }
+  }
+  return { status: "valid", daysRemaining: diffDays }
 }
 
 export interface Supplier {
@@ -753,6 +787,101 @@ class ErpStore {
     this.products = this.products.map((product) => (product.id === id ? savedProduct : product))
     this.listeners.forEach((listener) => listener())
     return savedProduct
+  }
+
+  public async addWH1Entry(productId: string, entry: Omit<WH1Entry, "entryId">) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const newEntry: WH1Entry = {
+      ...entry,
+      entryId: `WH1E-${Date.now()}`,
+    }
+
+    const currentEntries = prod.wh1Entries || []
+    const updatedEntries = [...currentEntries, newEntry]
+
+    const nextQty = updatedEntries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
+    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+    const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
+
+    const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
+    const updatedBatches = [{ batchNo: prod.batch || "BATCH-WH1", qty: nextQty, expiry: "", status: "Released" as const }]
+
+    await this.updateProductDetails(productId, {
+      quantity: nextQty,
+      totalQuantity: nextQty + (prod.quantitySold || 0),
+      unitCost: weightedCost,
+      sellingPrice: weightedCost,
+      totalStockValue: nextVal,
+      stockBreakdown: updatedBreakdown,
+      batches: updatedBatches,
+      wh1Entries: updatedEntries,
+    })
+  }
+
+  public async updateWH1Entry(productId: string, entryId: string, patch: Partial<WH1Entry>) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const currentEntries = prod.wh1Entries || []
+    const updatedEntries = currentEntries.map((e) => {
+      if (e.entryId !== entryId) return e
+      const quantityReceived = patch.quantityReceived !== undefined ? Number(patch.quantityReceived) : e.quantityReceived
+      const quantityRemaining = patch.quantityRemaining !== undefined ? Number(patch.quantityRemaining) : e.quantityRemaining
+      const unitPrice = patch.unitPrice !== undefined ? Number(patch.unitPrice) : e.unitPrice
+      return {
+        ...e,
+        ...patch,
+        quantityReceived,
+        quantityRemaining: Math.min(quantityReceived, quantityRemaining),
+        unitPrice,
+      }
+    })
+
+    const nextQty = updatedEntries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
+    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+    const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
+
+    const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
+    const updatedBatches = [{ batchNo: prod.batch || "BATCH-WH1", qty: nextQty, expiry: "", status: "Released" as const }]
+
+    await this.updateProductDetails(productId, {
+      quantity: nextQty,
+      totalQuantity: nextQty + (prod.quantitySold || 0),
+      unitCost: weightedCost,
+      sellingPrice: weightedCost,
+      totalStockValue: nextVal,
+      stockBreakdown: updatedBreakdown,
+      batches: updatedBatches,
+      wh1Entries: updatedEntries,
+    })
+  }
+
+  public async deleteWH1Entry(productId: string, entryId: string) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const currentEntries = prod.wh1Entries || []
+    const updatedEntries = currentEntries.filter((e) => e.entryId !== entryId)
+
+    const nextQty = updatedEntries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
+    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+    const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
+
+    const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
+    const updatedBatches = [{ batchNo: prod.batch || "BATCH-WH1", qty: nextQty, expiry: "", status: "Released" as const }]
+
+    await this.updateProductDetails(productId, {
+      quantity: nextQty,
+      totalQuantity: nextQty + (prod.quantitySold || 0),
+      unitCost: weightedCost,
+      sellingPrice: weightedCost,
+      totalStockValue: nextVal,
+      stockBreakdown: updatedBreakdown,
+      batches: updatedBatches,
+      wh1Entries: updatedEntries,
+    })
   }
 
   // Actions - Quotations
@@ -1345,6 +1474,15 @@ class ErpStore {
     return processSalesOrderPipeline(so, stage)
   }
 
+  public getCompanySettings() {
+    return financeStore.getCompanySettings()
+  }
+
+  public updateCompanySettings(partial: any) {
+    financeStore.updateCompanySettings(partial)
+    this.notify()
+  }
+
   public clearAllTestingData() {
     this.products = []
     this.salesOrders = []
@@ -1369,4 +1507,23 @@ export function useErpStore() {
   }, [])
 
   return erpStore
+}
+
+export interface HkcDocAttachment {
+  attachmentId: string
+  fileName: string
+  fileUrl: string
+  fileSize?: number
+  uploadedAt: string
+}
+
+export interface HkcDocRecord {
+  id: string
+  shipmentId: string
+  itemsDescription: string
+  type: "Import" | "Export"
+  date: string
+  attachments: HkcDocAttachment[]
+  createdAt: string
+  updatedAt: string
 }
