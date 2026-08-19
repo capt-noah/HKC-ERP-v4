@@ -177,6 +177,7 @@ export default function SalesOrders() {
   const [custPhone, setCustPhone] = useState("")
   const [custEmail, setCustEmail] = useState("")
   const [custAddress, setCustAddress] = useState("")
+  const [newPaymentType, setNewPaymentType] = useState<"Cash" | "Credit">("Cash")
 
   // Staged Attachments
   const [stagedTradePaperName, setStagedTradePaperName] = useState("")
@@ -215,6 +216,7 @@ export default function SalesOrders() {
     { key: "id", label: "Order ID", align: "left" },
     { key: "customer", label: "Customer", align: "left" },
     { key: "warehouse", label: "Warehouse", align: "left" },
+    { key: "paymentType", label: "Payment Method", align: "left" },
     { key: "docsStatus", label: "Required Docs", align: "left" },
     { key: "amount", label: "Amount (ETB)", align: "right" },
     { key: "_actions", label: "Action", align: "center", noSort: true },
@@ -242,6 +244,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     // Robustly resolve warehouse code
     const targetWh = resolveWarehouseCode(defaultProduct.warehouse, warehouses)
     setNewWarehouse(targetWh)
+    setNewPaymentType("Cash")
 
     setOrderItems([
       {
@@ -321,11 +324,13 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
   // State for Editing Sales Order
   const [editingOrderItems, setEditingOrderItems] = useState<SalesOrderItem[]>([])
   const [editingCustPhone, setEditingCustPhone] = useState("")
+  const [editingPaymentType, setEditingPaymentType] = useState<"Cash" | "Credit">("Cash")
 
   const handleOpenEditModal = async (so: SalesOrder) => {
     setEditingOrder(so)
     setEditingCustPhone(so.customerPhone || "")
     setCustomerSearchInput(so.customer)
+    setEditingPaymentType(so.paymentType || "Cash")
     setEditingOrderItems(so.items.length > 0 ? [...so.items] : [
       {
         productId: products[0]?.id || "PRD-001",
@@ -370,6 +375,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
+    if (editingPaymentType === "Cash" && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
+      showToast("Validation Error", "warning", "Payment Advice (deposit receipt) is mandatory for Cash orders.")
+      return
+    }
+
     const sanitizedItems: SalesOrderItem[] = editingOrderItems.map((i) => {
       const q = Math.max(1, Number(i.qty) || 1)
       const p = Math.max(0, Number(i.unitPrice) || 0)
@@ -382,6 +392,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       customerPhone: editingCustPhone.trim(),
       items: sanitizedItems,
       amount: totalAmt,
+      paymentType: editingPaymentType,
     }
 
     erp.updateSalesOrder(updatedSo)
@@ -473,6 +484,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
+    if (newPaymentType === "Cash" && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
+      showToast("Validation Error", "warning", "Payment Advice (deposit receipt) is mandatory for Cash orders.")
+      return
+    }
+
     if (!selectedCust) {
       const generatedCustId = `CUST-${Date.now().toString().slice(-4)}`
       selectedCust = {
@@ -548,6 +564,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       deliveryStatus: "Not Delivered",
       billingStatus: "Not Billed",
       paymentTerms,
+      paymentType: newPaymentType,
     }
 
     // Upload staged attachments
@@ -717,12 +734,13 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
             },
           ]}
           defaultWidths={{
-            id: 120,
-            customer: 260,
-            warehouse: 140,
-            docsStatus: 220,
-            amount: 160,
-            _actions: 120,
+            id: 110,
+            customer: 240,
+            warehouse: 110,
+            paymentType: 130,
+            docsStatus: 180,
+            amount: 150,
+            _actions: 110,
           }}
           keyExtractor={(so) => so.id}
           renderRow={(so, colWidths) => (
@@ -755,11 +773,35 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 </span>
               </td>
 
+              <td style={{ width: `${colWidths.paymentType}px` }} className="py-4 px-4 overflow-hidden">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  {so.paymentType === "Credit" ? "Credit" : "Cash"}
+                </span>
+              </td>
+
               <td style={{ width: `${colWidths.docsStatus}px` }} className="py-4 px-4 overflow-hidden">
                 {(() => {
                   const docs = soAttachmentsMap[so.id] || []
                   const hasTrade = docs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
                   const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
+                  const isCredit = so.paymentType === "Credit"
+
+                  if (isCredit) {
+                    if (hasTrade) {
+                      return (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          <CheckCircle2 className="size-3 text-emerald-600" /> Docs Complete
+                        </span>
+                      )
+                    }
+                    return (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                        <AlertTriangle className="size-3 text-amber-600" /> Trade License Missing
+                      </span>
+                    )
+                  }
+
+                  // Cash sale (default)
                   if (hasTrade && hasAdvice) {
                     return (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -777,7 +819,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   if (!hasAdvice) {
                     return (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                        <AlertTriangle className="size-3 text-amber-600" /> Advice Missing
+                        <AlertTriangle className="size-3 text-amber-600" /> Payment Advice Missing
                       </span>
                     )
                   }
@@ -922,28 +964,25 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               </div>
 
               <form onSubmit={handleCreateOrder} className="space-y-4">
-                {/* ROW 1: Customer Name (Lengthy), Phone Number, Warehouse */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  {/* Customer Combobox - Lengthy (col-span-5) */}
-                  <div className="md:col-span-5 relative" ref={customerComboboxRef}>
+                  <div className="md:col-span-4 relative" ref={customerComboboxRef}>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
                     <div className="relative flex items-center">
                       <input
                         type="text"
                         required
-                        placeholder="Type to search or enter customer name..."
+                        placeholder="Search existing or type new customer..."
                         value={customerSearchInput}
+                        onFocus={() => setShowCustomerDropdown(true)}
                         onChange={(e) => {
-                          const val = e.target.value
-                          setCustomerSearchInput(val)
+                          setCustomerSearchInput(e.target.value)
                           setShowCustomerDropdown(true)
-                          const matched = customers.find((c) => c.name.toLowerCase() === val.trim().toLowerCase())
+                          const matched = customers.find((c) => (c.name || "").toLowerCase() === e.target.value.toLowerCase())
                           if (matched) {
                             setNewCustomerId(matched.id)
                             setCustPhone(matched.phone || "")
                             setCustEmail(matched.email || "")
                             setCustAddress(matched.address || "")
-                            
                             const evaluation = getTradeLicenseStatus(matched)
                             if (evaluation.status === "valid" && matched.tradePaperFileName && matched.tradePaperUrl) {
                               setStagedTradePaperName(matched.tradePaperFileName)
@@ -954,15 +993,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             }
                           } else {
                             setNewCustomerId("")
+                            setStagedTradePaperName("")
+                            setStagedTradePaperUrl("")
                           }
                         }}
-                        onFocus={() => setShowCustomerDropdown(true)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape" || e.key === "Enter") {
-                            setShowCustomerDropdown(false)
-                          }
-                        }}
-                        className="w-full pl-3 pr-12 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                        className="w-full pl-3 pr-16 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                       />
                       <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
                         {customerSearchInput && (
@@ -984,14 +1019,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           type="button"
                           onClick={() => setShowCustomerDropdown(!showCustomerDropdown)}
                           className="text-zinc-400 hover:text-zinc-700 p-0.5 rounded hover:bg-zinc-200/60"
-                          title="Toggle customer list"
                         >
                           {showCustomerDropdown ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                         </button>
                       </div>
                     </div>
 
-                    {/* Combobox Dropdown */}
                     {showCustomerDropdown && customers.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white rounded-2xl border border-zinc-200 shadow-xl max-h-48 overflow-y-auto divide-y divide-zinc-100">
                         {customers
@@ -1024,20 +1057,14 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                   {c.phone ? `📞 ${c.phone} • ` : ""}{c.category || "General Client"}
                                 </span>
                               </div>
-                              {c.tradePaperFileName && (
-                                <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                                  Trade License Saved
-                                </span>
-                              )}
                             </button>
                           ))}
                       </div>
                     )}
                   </div>
 
-                  {/* Customer Phone Number (col-span-3) */}
                   <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone Number *</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone *</label>
                     <div className="relative flex items-center">
                       <Phone className="size-3.5 text-zinc-400 absolute left-3" />
                       <input
@@ -1051,10 +1078,21 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     </div>
                   </div>
 
-                  {/* Warehouse (col-span-4) */}
-                  <div className="md:col-span-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
+                    <select
+                      value={newPaymentType}
+                      onChange={(e) => setNewPaymentType(e.target.value as "Cash" | "Credit")}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Credit">Credit</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-3">
                     <label className="block text-xs font-bold text-zinc-700 mb-1">
-                      Fulfillment Warehouse <span className="text-[10px] font-normal text-zinc-400 font-mono">(Auto-locked)</span>
+                      Warehouse <span className="text-[10px] font-normal text-zinc-400 font-mono">(Auto)</span>
                     </label>
                     <select 
                       value={newWarehouse}
@@ -1066,13 +1104,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
                       ))}
                     </select>
-                    <span className="text-[10px] text-zinc-400 font-semibold block mt-1">
-                      🔒 Locked: Auto-derived from selected stock item location
-                    </span>
                   </div>
                 </div>
 
-                {/* Save New Customer Checkbox */}
                 {!customers.some((c) => c.id === newCustomerId) && customerSearchInput.trim() !== "" && (
                   <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl flex items-center gap-2">
                     <input
@@ -1088,7 +1122,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   </div>
                 )}
 
-                {/* ROW 2: Contract Description (Full Width) */}
                 <div className="w-full">
                   <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
                   <textarea 
@@ -1100,7 +1133,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   />
                 </div>
 
-                {/* Warning banner if license is missing or expired */}
                 {(() => {
                   const selectedCust = customers.find(c => c.id === newCustomerId)
                   if (selectedCust) {
@@ -1128,11 +1160,15 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">Required Order Documentation</span>
-                      <span className="text-[11px] text-zinc-500 font-medium block">Attach mandatory Trade License and Payment Advice receipt for this sales contract</span>
+                      <span className="text-[11px] text-zinc-500 font-medium block">
+                        {newPaymentType === "Cash"
+                          ? "Attach mandatory Trade License and Payment Advice receipt for this cash order"
+                          : "Attach Trade License for this credit order (Payment Advice can be attached later upon payment in edit mode)"}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className={`grid gap-3 ${newPaymentType === "Cash" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
                     {/* Trade License Dropzone */}
                     <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -1182,54 +1218,56 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       </div>
                     </div>
 
-                    {/* Payment Advice Dropzone */}
-                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                          <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice / Receipt
-                        </span>
-                        {stagedPaymentAdviceName ? (
-                          <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
-                        ) : (
-                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Required</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                          <FileCheck className="size-3" /> Select Advice File
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0]
-                              if (f) {
-                                const reader = new FileReader()
-                                reader.onload = () => {
-                                  setStagedPaymentAdviceName(f.name)
-                                  setStagedPaymentAdviceUrl(reader.result as string)
+                    {/* Payment Advice Dropzone - ONLY shown for Cash orders in New Order modal */}
+                    {newPaymentType === "Cash" && (
+                      <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                            <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice / Receipt
+                          </span>
+                          {stagedPaymentAdviceName ? (
+                            <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Required</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 pt-1">
+                          <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                            <FileCheck className="size-3" /> Select Advice File
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0]
+                                if (f) {
+                                  const reader = new FileReader()
+                                  reader.onload = () => {
+                                    setStagedPaymentAdviceName(f.name)
+                                    setStagedPaymentAdviceUrl(reader.result as string)
+                                  }
+                                  reader.readAsDataURL(f)
                                 }
-                                reader.readAsDataURL(f)
-                              }
-                            }}
-                          />
-                        </label>
-                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                          {stagedPaymentAdviceName || "No file selected"}
-                        </span>
-                        {stagedPaymentAdviceUrl && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewUrl(stagedPaymentAdviceUrl)
-                              setPreviewName(stagedPaymentAdviceName || "Payment Advice")
-                            }}
-                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
-                          >
-                            View Doc <ExternalLink className="size-3" />
-                          </button>
-                        )}
+                              }}
+                            />
+                          </label>
+                          <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                            {stagedPaymentAdviceName || "No file selected"}
+                          </span>
+                          {stagedPaymentAdviceUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewUrl(stagedPaymentAdviceUrl)
+                                setPreviewName(stagedPaymentAdviceName || "Payment Advice")
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                            >
+                              View Doc <ExternalLink className="size-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
@@ -1391,9 +1429,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               />
 
               <form onSubmit={handleSaveEditOrder} className="space-y-4">
-                {/* ROW 1: Customer Name, Phone Number, Warehouse */}
+                {/* ROW 1: Customer Name, Phone Number, Payment Type, Warehouse */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  <div className="md:col-span-5">
+                  <div className="md:col-span-4">
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
                     <select 
                       value={editingOrder.customerId}
@@ -1417,7 +1455,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   </div>
 
                   <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone Number *</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone *</label>
                     <div className="relative flex items-center">
                       <Phone className="size-3.5 text-zinc-400 absolute left-3" />
                       <input
@@ -1431,7 +1469,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     </div>
                   </div>
 
-                  <div className="md:col-span-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
+                    <select
+                      value={editingPaymentType}
+                      onChange={(e) => setEditingPaymentType(e.target.value as "Cash" | "Credit")}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Credit">Credit</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-3">
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Fulfillment Warehouse</label>
                     <select 
                       value={editingOrder.warehouse}
@@ -1485,7 +1535,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">Required Order Documentation</span>
-                      <span className="text-[11px] text-zinc-500 font-medium block">View attached files or upload missing Trade License and Payment Advice</span>
+                      <span className="text-[11px] text-zinc-500 font-medium block">
+                        {editingPaymentType === "Cash"
+                          ? "View attached files or upload missing Trade License and Payment Advice"
+                          : "View attached Trade License (Payment Advice is optional / not required for credit sales)"}
+                      </span>
                     </div>
                   </div>
 
@@ -1538,13 +1592,15 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     </div>
 
                     {/* Payment Advice Dropzone */}
-                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                    <div className={`p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5 ${editingPaymentType === "Credit" && !stagedPaymentAdviceName ? "opacity-75" : ""}`}>
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
                           <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
                         </span>
                         {stagedPaymentAdviceName ? (
                           <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
+                        ) : editingPaymentType === "Credit" ? (
+                          <span className="text-[9px] font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">Optional (Credit Sale)</span>
                         ) : (
                           <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Missing</span>
                         )}
@@ -1568,7 +1624,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             }}
                           />
                         </label>
-                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedPaymentAdviceName || "No file attached"}</span>
+                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedPaymentAdviceName || (editingPaymentType === "Credit" ? "Not required for credit sale" : "No file attached")}</span>
                         {stagedPaymentAdviceUrl && (
                           <button
                             type="button"

@@ -181,6 +181,7 @@ export default function SalesIssued() {
     const matchedWh = warehouses.find((w) => w.code === firstSo.warehouse || w.id === firstSo.warehouse || w.name === firstSo.warehouse)
     const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(firstSo.warehouse)
     setWarehouseId(targetWhId)
+    setPaymentType(firstSo.paymentType === "Credit" ? "Credit" : "Cash")
     setReferenceNo("")
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
 
@@ -256,6 +257,7 @@ export default function SalesIssued() {
       const matchedWh = warehouses.find((w) => w.code === preselectedSo.warehouse || w.id === preselectedSo.warehouse || w.name === preselectedSo.warehouse)
       setWarehouseId(matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse))
       setSelectedSoIds([preselectedSo.id])
+      setPaymentType(preselectedSo.paymentType === "Credit" ? "Credit" : "Cash")
       const pulledItems: SalesIssueItem[] = (preselectedSo.items || []).map((line: any) => {
         const prod = products.find((p) => p.id === line.productId || p.name === line.name)
         const batchNo = prod?.batch || "BATCH-MAIN"
@@ -275,10 +277,10 @@ export default function SalesIssued() {
     } else {
       setWarehouseId("")
       setSelectedSoIds([])
+      setPaymentType("Cash")
       setItems([blankItem()])
     }
 
-    setPaymentType("Cash")
     setBatchOptions({})
     setFormOpen(true)
   }
@@ -678,28 +680,33 @@ export default function SalesIssued() {
                     {pendingSalesOrders.map((so) => {
                       const isSelected = selectedSoIds.includes(so.id)
                       const docs = soAttachmentsMap[so.id] || []
-                      const hasTrade = docs.some((d) => d.document_type === "Trade License")
+                      const hasTrade = docs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
                       const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
-                      const isDocsMissing = !hasTrade || !hasAdvice
+                      const isCredit = so.paymentType === "Credit"
+
+                      // Cash requires both; Credit requires only Trade License
+                      const isTradeMissing = !hasTrade
+                      const isAdviceMissing = !isCredit && !hasAdvice
+                      const isLocked = isTradeMissing || isAdviceMissing
 
                       return (
                         <button
                           key={so.id}
                           type="button"
-                          disabled={isDocsMissing}
+                          disabled={isLocked}
                           onClick={() => {
-                            if (isDocsMissing) {
-                              showToast(
-                                "Missing Documents",
-                                "warning",
-                                "Cannot issue stock for this order until Trade License and Payment Advice are attached."
-                              )
+                            if (isLocked) {
+                              if (isTradeMissing) {
+                                showToast("Missing Document", "warning", "Trade License is required before issuing stock.")
+                              } else if (isAdviceMissing) {
+                                showToast("Payment Advice Required", "warning", "Payment Advice is mandatory before issuing stock for Cash sales.")
+                              }
                               return
                             }
                             handleTogglePullSalesOrder(so)
                           }}
                           className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold text-left transition-all ${
-                            isDocsMissing
+                            isLocked
                               ? "bg-amber-50/80 border-amber-200/90 text-amber-900 cursor-not-allowed opacity-80"
                               : isSelected 
                               ? "bg-emerald-700 text-white border-emerald-700 shadow-sm" 
@@ -707,20 +714,28 @@ export default function SalesIssued() {
                           }`}
                         >
                           <div>
-                            <div className="font-bold font-mono text-xs flex items-center gap-1.5">
+                            <div className="font-bold font-mono text-xs flex items-center gap-1.5 flex-wrap">
                               {so.id} • {so.customer}
-                              {isDocsMissing && (
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold ${isCredit ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`}>
+                                {isCredit ? "Credit" : "Cash"}
+                              </span>
+                              {isLocked && (
                                 <span className="inline-flex items-center gap-1 text-[9px] font-black bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded-full">
-                                  <AlertTriangle className="size-2.5 text-amber-700" /> {!hasTrade && !hasAdvice ? "Trade License & Advice Missing" : !hasAdvice ? "Payment Advice Missing" : "Trade License Missing"}
+                                  <AlertTriangle className="size-2.5 text-amber-700" />
+                                  {isTradeMissing && isAdviceMissing
+                                    ? "Trade & Advice Missing"
+                                    : isAdviceMissing
+                                    ? "Payment Advice Missing"
+                                    : "Trade License Missing"}
                                 </span>
                               )}
                             </div>
-                            <div className={`text-[10px] mt-0.5 ${isDocsMissing ? "text-amber-800 font-semibold" : isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
+                            <div className={`text-[10px] mt-0.5 ${isLocked ? "text-amber-800 font-semibold" : isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
                               {so.warehouse} • ETB {so.amount.toLocaleString()} ({so.items.length} contract items)
                             </div>
                           </div>
-                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${isDocsMissing ? "bg-amber-100 border-amber-300 text-amber-800" : isSelected ? "bg-white text-emerald-700 border-white" : "border-zinc-300"}`}>
-                            {isDocsMissing ? <Lock className="size-3 text-amber-700" /> : isSelected ? <Check className="size-3 stroke-[3]" /> : null}
+                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${isLocked ? "bg-amber-100 border-amber-300 text-amber-800" : isSelected ? "bg-white text-emerald-700 border-white" : "border-zinc-300"}`}>
+                            {isLocked ? <Lock className="size-3 text-amber-700" /> : isSelected ? <Check className="size-3 stroke-[3]" /> : null}
                           </div>
                         </button>
                       )

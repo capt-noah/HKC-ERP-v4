@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Edit3,
   PlusCircle,
+  Download,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -14,7 +15,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import StoreTransfersTab from "@/components/StoreTransfersTab"
-import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
+import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -22,6 +23,9 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
+import StockBinCardLedger from "@/components/stock/StockBinCardLedger"
+import StockBinEntryModal from "@/components/stock/StockBinEntryModal"
+import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
 
 const packagingUnits = ["Box", "Bottle", "Vial"]
 const TON_TO_QUINTAL = 10
@@ -32,6 +36,8 @@ const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 interface StockEditForm {
   name: string
   sku: string
+  dosage?: string
+  shelfNo?: string
   category: string
   warehouse: string
   batch: string
@@ -120,6 +126,8 @@ export default function StockProducts() {
   // Add Stock Item Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [addDescription, setAddDescription] = useState("")
+  const [addDosage, setAddDosage] = useState("")
+  const [addShelfNo, setAddShelfNo] = useState("")
   const [addPackagingUnit, setAddPackagingUnit] = useState("")
   const [addWarehouse, setAddWarehouse] = useState("")
   const [addBatchNumber, setAddBatchNumber] = useState("")
@@ -150,12 +158,28 @@ export default function StockProducts() {
   const [editSubEntryNotes, setEditSubEntryNotes] = useState("")
   const [isSavingSubEdit, setIsSavingSubEdit] = useState(false)
 
+  // Bin Card Movement Modal State (WH2 / WH3)
+  const [binEntryModal, setBinEntryModal] = useState<{
+    isOpen: boolean
+    product: Product | null
+    entry: BinCardMovementEntry | null
+  }>({
+    isOpen: false,
+    product: null,
+    entry: null,
+  })
+
+  // Bin Card Print/Export Modal State
+  const [printModalProduct, setPrintModalProduct] = useState<Product | null>(null)
+
   // Edit/Delete Product state
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
   const [editForm, setEditForm] = useState<StockEditForm>({
     name: "",
     sku: "",
+    dosage: "",
+    shelfNo: "",
     category: "",
     warehouse: "",
     batch: "",
@@ -226,6 +250,8 @@ export default function StockProducts() {
 
   const resetAddForm = () => {
     setAddDescription("")
+    setAddDosage("")
+    setAddShelfNo("")
     setAddPackagingUnit("")
     setAddWarehouse("")
     setAddBatchNumber("")
@@ -257,6 +283,8 @@ export default function StockProducts() {
     return products.filter((prod) => {
       const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             prod.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (prod.dosage && prod.dosage.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                            (prod.shelfNo && prod.shelfNo.toLowerCase().includes(searchQuery.toLowerCase())) ||
                             prod.batch.toLowerCase().includes(searchQuery.toLowerCase())
       const selectedWarehouseKeys = warehouseKeyMap.get(selectedWarehouse) || new Set([selectedWarehouse])
       const matchesWarehouse =
@@ -266,8 +294,6 @@ export default function StockProducts() {
       return matchesSearch && matchesWarehouse
     })
   }, [products, searchQuery, selectedWarehouse, warehouseKeyMap])
-
-
 
   // Suggested matching existing items list for WH1 auto-complete lookup
   const wh1ItemSuggestions = useMemo(() => {
@@ -292,6 +318,8 @@ export default function StockProducts() {
       )
     } else {
       cols.push(
+        { key: "dosage", label: "Strength / Dosage", align: "left" },
+        { key: "shelfNo", label: "Shelf Number", align: "left" },
         { key: "batch", label: "Batch", align: "left" },
         { key: "manufacturingDate", label: "MFG", align: "left" },
         { key: "expiryDate", label: "EXP", align: "left" },
@@ -311,19 +339,25 @@ export default function StockProducts() {
   const productsTable = useResizableTable(currentProductColumns, filteredProducts, {
     sku: 110,
     name: 200,
-    batch: 100,
+    dosage: 130,
+    shelfNo: 120,
+    batch: 110,
     manufacturingDate: 100,
     expiryDate: 100,
-    unit: 120,
-    numberOfCartons: 80,
-    quantityPerPack: 90,
-    quantity: 110,
-    unitCost: 110,
-    totalStockValue: 120,
-    entryDate: 110,
-    leaveDate: 110,
-    _actions: 100,
+    unit: 100,
+    numberOfCartons: 85,
+    quantityPerPack: 95,
+    quantity: 130,
+    unitCost: 120,
+    totalStockValue: 170,
+    entryDate: 120,
+    leaveDate: 120,
+    _actions: 240,
   })
+
+  const totalTableWidth = useMemo(() => {
+    return currentProductColumns.reduce((sum, col) => sum + (productsTable.colWidths[col.key] || 120), 0)
+  }, [currentProductColumns, productsTable.colWidths])
 
   // Chevron expand / collapse toggle
   const toggleRowExpand = (productId: string) => {
@@ -379,6 +413,8 @@ export default function StockProducts() {
           id: productId,
           name: addDescription,
           sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? "WH1" : addBatchNumber}`,
+          dosage: isWH1Form ? undefined : addDosage.trim() || undefined,
+          shelfNo: isWH1Form ? undefined : addShelfNo.trim() || undefined,
           category: "",
           itemType: "",
           description: addDescription,
@@ -404,6 +440,19 @@ export default function StockProducts() {
           stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
           batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, status: "Released" }],
           wh1Entries: isWH1Form ? initialWH1Entries : undefined,
+          binCardEntries: (!isWH1Form && addTotalQuantity > 0) ? [{
+            id: `BCE-${Date.now()}-init`,
+            date: addMfgDate || now.slice(0, 10),
+            batchNo: addBatchNumber,
+            qtyReceived: addTotalQuantity,
+            qtyIssued: 0,
+            balance: addTotalQuantity,
+            expiryDate: addExpDate,
+            party: "Initial Stock Deposit",
+            unitPrice: Number(addUnitPrice || 0),
+            remark: addNotes.trim() || "Initial Stock Registration",
+            createdAt: now,
+          }] : [],
           origin: "",
           supplierName: "",
           itemRegistrationStatus: "Active",
@@ -505,12 +554,43 @@ export default function StockProducts() {
     }
   }
 
+  // Bin Card movement entry handlers (WH2 / WH3)
+  const handleSaveBinEntry = async (
+    productId: string,
+    entryData: Omit<BinCardMovementEntry, "id" | "balance">,
+    entryId?: string
+  ) => {
+    if (entryId) {
+      await erp.updateBinCardEntry(productId, entryId, entryData)
+    } else {
+      await erp.addBinCardEntry(productId, entryData)
+    }
+  }
+
+  const handleDeleteBinEntry = async (productId: string, entryId: string) => {
+    await erp.deleteBinCardEntry(productId, entryId)
+  }
+
+  const handleDeleteProductConfirm = async () => {
+    if (!deletingProduct) return
+    try {
+      await erp.deleteProduct(deletingProduct.id)
+      showToast("Item deleted", "success", `${deletingProduct.name} was removed from stock register.`)
+      setDeletingProduct(null)
+      setEditingProduct(null)
+    } catch (e: any) {
+      showToast("Delete failed", "warning", e.message || "Failed to delete item.")
+    }
+  }
+
   // Normal product edit dialog
   const openEditProduct = (product: Product) => {
     setEditingProduct(product)
     setEditForm({
       name: product.name,
       sku: product.sku,
+      dosage: product.dosage || "",
+      shelfNo: product.shelfNo || "",
       category: product.category || "",
       warehouse: product.warehouse,
       batch: product.batch || "",
@@ -534,6 +614,8 @@ export default function StockProducts() {
     if (!editingProduct) return
     const name = editForm.name.trim()
     const sku = editForm.sku.trim()
+    const dosage = editForm.dosage?.trim() || undefined
+    const shelfNo = editForm.shelfNo?.trim() || undefined
     const batch = editForm.batch.trim()
     const warehouse = editForm.warehouse
     const expiry = isWH1(warehouse) ? "" : editForm.expiry
@@ -562,8 +644,8 @@ export default function StockProducts() {
         return
       }
     } else {
-      if (!name || !sku || !batch || !warehouse || !expiry || !unit || !Number.isFinite(unitCost) || !Number.isFinite(sellingPrice)) {
-        showToast("Cannot save stock details", "warning", "Complete item name, SKU, batch, warehouse, expiry, unit, cost, and selling price.")
+      if (!name || !sku || !warehouse || !unit || !Number.isFinite(unitCost) || !Number.isFinite(sellingPrice)) {
+        showToast("Cannot save stock details", "warning", "Complete item name, SKU, warehouse, unit, cost, and selling price.")
         return
       }
     }
@@ -573,14 +655,16 @@ export default function StockProducts() {
       ? editingProduct.stockBreakdown.map((item, index) => index === 0 ? { ...item, warehouse } : item)
       : [{ warehouse, qty: editingProduct.quantity }]
     const nextBatches = editingProduct.batches.length
-      ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch, expiry } : item)
-      : [{ batchNo: batch, qty: editingProduct.quantity, expiry, status: "Released" as const }]
+      ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch, expiry: expiry || item.expiry } : item)
+      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", status: "Released" as const }]
 
     setIsSavingEdit(true)
     try {
       const saved = await erp.updateProductDetails(editingProduct.id, {
         name,
         sku,
+        dosage,
+        shelfNo,
         category: editForm.category.trim(),
         warehouse,
         warehouseName: selectedWarehouseRecord?.name,
@@ -631,7 +715,7 @@ export default function StockProducts() {
         {/* Tab Selection Row */}
         <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200/60 mb-6 overflow-x-auto no-scrollbar pb-1">
           {[
-            { id: "Register", label: "Stock Register" },
+            { id: "Register", label: "Stock" },
             { id: "Store Transfer", label: "Store Transfer" },
           ].map((tab) => {
             const isActive = activeTab === tab.id
@@ -693,7 +777,7 @@ export default function StockProducts() {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse table-fixed">
+                  <table className="w-full text-left border-collapse table-fixed" style={{ minWidth: `${Math.max(totalTableWidth, 1100)}px` }}>
                     <thead className="relative z-20">
                       <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                         {currentProductColumns.map((col: TableColumn) => (
@@ -859,62 +943,129 @@ export default function StockProducts() {
                             )
                           }
 
-                          // Standard Warehouse rendering (flat row)
+                          // Standard / WH2 / WH3 Warehouse rendering (Unified Bin Card parent-child row)
+                          const binEntries = prod.binCardEntries || []
+                          const totalReceived = binEntries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
+                          const totalIssued = binEntries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
+                          const currentBalance = binEntries.length > 0 ? binEntries[binEntries.length - 1].balance : prod.quantity
+
                           return (
-                            <tr
-                              key={prod.id}
-                              onClick={() => openEditProduct(prod)}
-                              className="hover:bg-white/45 cursor-pointer transition-colors text-xs border-b border-zinc-100"
-                            >
-                              {/* SKU */}
-                              <td className="py-4 px-6 font-mono text-[10px] text-zinc-400 font-bold uppercase truncate">
-                                {prod.sku}
-                              </td>
+                            <Fragment key={prod.id}>
+                              <tr
+                                onClick={() => toggleRowExpand(prod.id)}
+                                className="hover:bg-white/45 cursor-pointer transition-colors text-xs border-b border-zinc-100 font-semibold"
+                              >
+                                {/* SKU / Card No with expand toggle */}
+                                <td className="py-4 px-4 overflow-hidden">
+                                  <div className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 font-bold uppercase">
+                                    <button 
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); toggleRowExpand(prod.id) }} 
+                                      className="p-1 hover:bg-zinc-100 rounded-md"
+                                    >
+                                      {isExpanded ? <ChevronDown className="size-3 text-zinc-800" /> : <ChevronRight className="size-3 text-zinc-400" />}
+                                    </button>
+                                    <span className="truncate">{prod.sku}</span>
+                                  </div>
+                                </td>
 
-                              {/* Item name */}
-                              <td className="py-4 px-4 font-black text-zinc-950 leading-tight">
-                                {prod.name}
-                              </td>
+                                {/* Item name */}
+                                <td className="py-4 px-4 font-black text-zinc-950 leading-tight">
+                                  <div className="flex items-center gap-2">
+                                    <span className="truncate">{prod.name}</span>
+                                    {binEntries.length > 0 && (
+                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[9px] font-black text-emerald-800 border border-emerald-100 shrink-0">
+                                        {binEntries.length} {binEntries.length === 1 ? "entry" : "entries"}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
 
-                              {/* Standard flat table columns */}
-                              {!isWH1(selectedWarehouse) && (
-                                <>
-                                  <td className="py-4 px-4 font-mono font-bold text-zinc-700 truncate">{prod.batch || "—"}</td>
-                                  <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.manufacturingDate)}</td>
-                                  <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.expiry)}</td>
-                                  <td className="py-4 px-4 text-zinc-600">{prod.unit}</td>
-                                  <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.numberOfCartons?.toLocaleString() || "—"}</td>
-                                  <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.quantityPerPack?.toLocaleString() || "—"}</td>
-                                </>
-                              )}
+                                {/* Dosage */}
+                                <td className="py-4 px-4 font-bold text-zinc-600 truncate">{prod.dosage || "—"}</td>
 
-                              {/* Quantity */}
-                              <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
-                                {prod.quantity.toLocaleString()} <span className="text-[10px] text-zinc-400 uppercase font-bold">{prod.unit}</span>
-                              </td>
+                                {/* Shelf Number */}
+                                <td className="py-4 px-4 font-mono font-bold text-zinc-600 truncate">{prod.shelfNo || "—"}</td>
 
-                              {/* Unit Price (Standard) */}
-                              {!isWH1(selectedWarehouse) && (
+                                {/* Batch */}
+                                <td className="py-4 px-4 font-mono font-bold text-zinc-700 truncate">{prod.batch || "—"}</td>
+
+                                {/* MFG */}
+                                <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.manufacturingDate)}</td>
+
+                                {/* EXP */}
+                                <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.expiry)}</td>
+
+                                {/* Packaging Unit */}
+                                <td className="py-4 px-4 text-zinc-600">{prod.unit}</td>
+
+                                {/* Cartons */}
+                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.numberOfCartons?.toLocaleString() || "—"}</td>
+
+                                {/* Quantity Per Pack */}
+                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.quantityPerPack?.toLocaleString() || "—"}</td>
+
+                                {/* Total Quantity */}
+                                <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                  <div>{currentBalance.toLocaleString()} <span className="text-[10px] text-zinc-400 uppercase font-bold">{prod.unit}</span></div>
+                                  {binEntries.length > 0 && (
+                                    <div className="text-[9px] text-zinc-400 font-bold">+{totalReceived.toLocaleString()} / -{totalIssued.toLocaleString()}</div>
+                                  )}
+                                </td>
+
+                                {/* Unit Price */}
                                 <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
                                   ETB {money(prod.sellingPrice || prod.unitCost || 0)}
                                 </td>
+
+                                {/* Total Stock Value */}
+                                <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                  ETB {money(prod.totalStockValue || 0)}
+                                </td>
+
+                                {/* Actions */}
+                                <td className="py-4 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setBinEntryModal({ isOpen: true, product: prod, entry: null })}
+                                      className="px-2.5 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-800 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                      title="Record Stock Movement"
+                                    >
+                                      <PlusCircle className="size-3" /> Add
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPrintModalProduct(prod)}
+                                      className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                      title="Print & Export Bin Card"
+                                    >
+                                      <Download className="size-3 text-zinc-500" /> Export
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditProduct(prod)}
+                                      className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                      title="Edit stock item"
+                                    >
+                                      <Edit3 className="size-3 text-zinc-500" /> Edit
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+
+                              {/* Expanded Sub-table */}
+                              {isExpanded && (
+                                <tr className="bg-zinc-50/60">
+                                  <td colSpan={currentProductColumns.length} className="px-6 py-3">
+                                    <StockBinCardLedger
+                                      product={prod}
+                                      onEditEntry={(product, entry) => setBinEntryModal({ isOpen: true, product, entry })}
+                                    />
+                                  </td>
+                                </tr>
                               )}
-
-                              {/* Total stock value */}
-                              <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
-                                ETB {money(prod.totalStockValue || 0)}
-                              </td>
-
-                              {/* Action */}
-                              <td className="py-4 px-6 text-center" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  onClick={() => openEditProduct(prod)}
-                                  className="px-3.5 py-1.5 rounded-full bg-zinc-100 text-zinc-700 hover:bg-zinc-200 font-extrabold text-[11px] border border-zinc-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1"
-                                >
-                                  <Edit3 className="size-3 text-zinc-500" /> Edit
-                                </button>
-                              </td>
-                            </tr>
+                            </Fragment>
                           )
                         })
                       )}
@@ -983,10 +1134,30 @@ export default function StockProducts() {
                 </label>
                 
                 {!isWH1(editForm.warehouse) && (
-                  <label className="space-y-1">
-                    <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
-                    <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                  </label>
+                  <>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Strength / Dosage</span>
+                      <input 
+                        value={editForm.dosage || ""} 
+                        placeholder="e.g. 100ml Vial / 500mg" 
+                        onChange={(e) => updateEditForm({ dosage: e.target.value })} 
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" 
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Shelf Number</span>
+                      <input 
+                        value={editForm.shelfNo || ""} 
+                        placeholder="e.g. Shelf A-04" 
+                        onChange={(e) => updateEditForm({ shelfNo: e.target.value })} 
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
+                      <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                    </label>
+                  </>
                 )}
 
                 {isWH1(editForm.warehouse) ? (
@@ -1174,16 +1345,38 @@ export default function StockProducts() {
                   </label>
 
                   {!isWH1Form && (
-                    <label className="space-y-1">
-                      <span className="text-[11px] font-black uppercase text-zinc-700">Batch Number <span className="text-rose-600">*</span></span>
-                      <input
-                        type="text"
-                        placeholder="BATCH-001"
-                        value={addBatchNumber}
-                        onChange={(e) => setAddBatchNumber(e.target.value)}
-                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                      />
-                    </label>
+                    <>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Strength / Dosage <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
+                        <input
+                          type="text"
+                          placeholder="e.g. 100ml Vial / 500mg"
+                          value={addDosage}
+                          onChange={(e) => setAddDosage(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Shelf Number <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
+                        <input
+                          type="text"
+                          placeholder="e.g. Shelf A-04 / Bin 12"
+                          value={addShelfNo}
+                          onChange={(e) => setAddShelfNo(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Batch Number <span className="text-rose-600">*</span></span>
+                        <input
+                          type="text"
+                          placeholder="BATCH-001"
+                          value={addBatchNumber}
+                          onChange={(e) => setAddBatchNumber(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                        />
+                      </label>
+                    </>
                   )}
 
                   <label className="space-y-1">
@@ -1510,20 +1703,32 @@ export default function StockProducts() {
         )}
       </AnimatePresence>
 
+      {/* MODAL: BIN CARD MOVEMENT ENTRY (WH2 / WH3) */}
+      <StockBinEntryModal
+        isOpen={binEntryModal.isOpen}
+        product={binEntryModal.product}
+        entry={binEntryModal.entry}
+        onClose={() => setBinEntryModal({ isOpen: false, product: null, entry: null })}
+        onSave={handleSaveBinEntry}
+        onDelete={handleDeleteBinEntry}
+      />
+
+      {/* MODAL: BIN CARD PRINT & EXPORT */}
+      <StockBinCardPrintModal
+        isOpen={!!printModalProduct}
+        product={printModalProduct}
+        onClose={() => setPrintModalProduct(null)}
+      />
+
+      {/* MODAL: DELETE PRODUCT */}
       <RecordDeleteModal
         isOpen={!!deletingProduct}
-        title="Delete Grouped WH1 Item?"
+        title="Delete Stock Item?"
         recordId={deletingProduct?.sku}
         recordName={deletingProduct?.name}
-        description="This will permanently delete this product and ALL its sub-entries from system inventory registry. This action is irreversible."
+        description="This will permanently delete this stock product and all associated movement ledger records from the inventory registry. This action is irreversible."
         onClose={() => setDeletingProduct(null)}
-        onConfirmDelete={() => {
-          if (!deletingProduct) return
-          erp.deleteProduct(deletingProduct.id)
-          showToast("Product Removed", "info", `Product ${deletingProduct.name} deleted.`)
-          setDeletingProduct(null)
-          setEditingProduct(null)
-        }}
+        onConfirmDelete={handleDeleteProductConfirm}
       />
     </div>
   )

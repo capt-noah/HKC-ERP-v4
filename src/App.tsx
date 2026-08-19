@@ -11,7 +11,6 @@ import SalesOrders from "@/pages/SalesOrders"
 import InventoryDashboard from "@/pages/inventory/InventoryDashboard"
 import StockProducts from "@/pages/inventory/StockProducts"
 import AddStockItem from "@/pages/inventory/AddStockItem"
-import BinCard from "@/pages/inventory/BinCard"
 import HRDashboard from "@/pages/HRDashboard"
 import ControlCenter from "@/pages/ControlCenter"
 import FinanceOverview from "@/pages/finance/FinanceOverview"
@@ -86,7 +85,7 @@ export function App() {
       {/* Inventory section */}
       <Route path="/inventory" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><InventoryDashboard /></ProtectedRoute>} />
       <Route path="/inventory/stock" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><StockProducts /></ProtectedRoute>} />
-      <Route path="/inventory/bin-card" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><BinCard /></ProtectedRoute>} />
+      <Route path="/inventory/bin-card" element={<Navigate to="/inventory/stock" replace />} />
       <Route path="/inventory/processing-services" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><ProcessingServices /></ProtectedRoute>} />
       <Route path="/inventory/toll-processing" element={<Navigate to="/inventory/processing-services" replace />} />
       <Route path="/inventory/stock/add-item" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><AddStockItem /></ProtectedRoute>} />

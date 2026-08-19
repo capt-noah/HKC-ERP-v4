@@ -40,10 +40,26 @@ export interface WH1Entry {
   notes?: string
 }
 
+export interface BinCardMovementEntry {
+  id: string
+  date: string
+  batchNo: string
+  qtyReceived: number
+  qtyIssued: number
+  balance: number
+  expiryDate: string
+  party: string
+  unitPrice?: number
+  remark: string
+  createdAt?: string
+}
+
 export interface Product {
   id: string
   name: string
   sku: string
+  dosage?: string
+  shelfNo?: string
   category: string
   itemType?: string
   description?: string
@@ -74,6 +90,7 @@ export interface Product {
   stockBreakdown: StockBreakdown[]
   batches: BatchInfo[]
   wh1Entries?: WH1Entry[]
+  binCardEntries?: BinCardMovementEntry[]
   origin: string
   supplierName: string
   inventoryAssetAccount?: string
@@ -228,6 +245,7 @@ export interface SalesOrder {
   deliveryStatus?: "Not Delivered" | "Partially Delivered" | "Fully Delivered"
   billingStatus?: "Not Billed" | "Partially Billed" | "Fully Billed"
   paymentTerms?: string
+  paymentType?: "Cash" | "Credit"
   salesPerson?: string
   shippingAddress?: string
   deliveryNoteIds?: string[]
@@ -886,6 +904,129 @@ class ErpStore {
       stockBreakdown: updatedBreakdown,
       batches: updatedBatches,
       wh1Entries: updatedEntries,
+    })
+  }
+
+  public recalculateBinCardLedger(entries: BinCardMovementEntry[] = []) {
+    const sorted = [...entries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    let currentBalance = 0
+    let totalReceived = 0
+    let totalIssued = 0
+    let latestBatch = ""
+    let latestExpiry = ""
+
+    const recalculatedEntries = sorted.map((entry) => {
+      totalReceived += Number(entry.qtyReceived || 0)
+      totalIssued += Number(entry.qtyIssued || 0)
+      currentBalance += Number(entry.qtyReceived || 0) - Number(entry.qtyIssued || 0)
+      if (entry.batchNo) latestBatch = entry.batchNo
+      if (entry.expiryDate) latestExpiry = entry.expiryDate
+      return {
+        ...entry,
+        balance: Math.max(0, currentBalance),
+      }
+    })
+
+    return {
+      recalculatedEntries,
+      totalQuantity: Math.max(0, currentBalance),
+      totalReceived,
+      totalIssued,
+      latestBatch,
+      latestExpiry,
+    }
+  }
+
+  public async addBinCardEntry(productId: string, entry: Omit<BinCardMovementEntry, "id" | "balance">) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const newEntry: BinCardMovementEntry = {
+      ...entry,
+      id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      balance: 0,
+    }
+
+    const currentEntries = prod.binCardEntries || []
+    const updatedEntries = [...currentEntries, newEntry]
+
+    const { recalculatedEntries, totalQuantity, latestBatch, latestExpiry } = this.recalculateBinCardLedger(updatedEntries)
+    const unitPrice = entry.unitPrice !== undefined ? Number(entry.unitPrice) : Number(prod.unitCost || 0)
+    const nextVal = totalQuantity * (unitPrice || Number(prod.unitCost || 0))
+
+    const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
+    const updatedBatches = recalculatedEntries.filter(e => e.batchNo).map(e => ({
+      batchNo: e.batchNo,
+      qty: e.qtyReceived,
+      expiry: e.expiryDate || "",
+      status: "Released" as const,
+    }))
+
+    return await this.updateProductDetails(productId, {
+      quantity: totalQuantity,
+      totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      totalStockValue: nextVal,
+      batch: latestBatch || prod.batch,
+      expiry: latestExpiry || prod.expiry,
+      stockBreakdown: updatedBreakdown,
+      batches: updatedBatches.length ? updatedBatches : prod.batches,
+      binCardEntries: recalculatedEntries,
+    })
+  }
+
+  public async updateBinCardEntry(productId: string, entryId: string, patch: Partial<BinCardMovementEntry>) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const currentEntries = prod.binCardEntries || []
+    const rawUpdated = currentEntries.map((e) => {
+      if (e.id !== entryId) return e
+      return { ...e, ...patch }
+    })
+
+    const { recalculatedEntries, totalQuantity, latestBatch, latestExpiry } = this.recalculateBinCardLedger(rawUpdated)
+    const nextVal = totalQuantity * Number(prod.unitCost || 0)
+
+    const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
+    const updatedBatches = recalculatedEntries.filter(e => e.batchNo).map(e => ({
+      batchNo: e.batchNo,
+      qty: e.qtyReceived,
+      expiry: e.expiryDate || "",
+      status: "Released" as const,
+    }))
+
+    return await this.updateProductDetails(productId, {
+      quantity: totalQuantity,
+      totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      totalStockValue: nextVal,
+      batch: latestBatch || prod.batch,
+      expiry: latestExpiry || prod.expiry,
+      stockBreakdown: updatedBreakdown,
+      batches: updatedBatches.length ? updatedBatches : prod.batches,
+      binCardEntries: recalculatedEntries,
+    })
+  }
+
+  public async deleteBinCardEntry(productId: string, entryId: string) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const currentEntries = prod.binCardEntries || []
+    const rawUpdated = currentEntries.filter((e) => e.id !== entryId)
+
+    const { recalculatedEntries, totalQuantity, latestBatch, latestExpiry } = this.recalculateBinCardLedger(rawUpdated)
+    const nextVal = totalQuantity * Number(prod.unitCost || 0)
+
+    const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
+
+    return await this.updateProductDetails(productId, {
+      quantity: totalQuantity,
+      totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      totalStockValue: nextVal,
+      batch: latestBatch || prod.batch,
+      expiry: latestExpiry || prod.expiry,
+      stockBreakdown: updatedBreakdown,
+      binCardEntries: recalculatedEntries,
     })
   }
 
