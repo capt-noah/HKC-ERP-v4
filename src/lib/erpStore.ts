@@ -253,37 +253,74 @@ export interface SalesOrder {
 }
 
 export interface PurchaseOrderItem {
-  productId: string
+  productId?: string
   name: string
-  sku: string
+  sku?: string
   qty: number
   unit: string
   unitPrice: number
   total: number
+  accountCode?: string
+  accountName?: string
+}
+
+export interface VoucherAccountRow {
+  id?: string
+  accountId?: string
+  accountCode: string
+  accountName?: string
+  description: string
+  debit: number
+  credit: number
+}
+
+export interface PurchaseOrderAttachment {
+  id: string
+  name: string
+  size: number
+  url: string
+  uploadedAt: string
 }
 
 export interface PurchaseOrder {
   id: string
   poNumber: string
+  voucherNo?: string
+  paidTo?: string
   supplier: string
-  supplierId: string
-  warehouse: string
+  supplierId?: string
+  reasonForPayment?: string
+  chequeNo?: string
+  amountInWords?: string
+  accountEntries?: VoucherAccountRow[]
+  warehouse?: string
   warehouseName?: string
-  status: "DRAFT" | "IN TRANSIT" | "RECEIVED" | "CANCELLED"
+  status: "DRAFT" | "PAID" | "COMPLETED" | "RECEIVED" | "IN TRANSIT" | "CANCELLED"
   statusColor: string
   date: string
   requiredByDate?: string
-  eta: string
+  eta?: string
   amount: number
   currency: string
-  category: string
-  items: PurchaseOrderItem[]
+  category?: string
+  targetAccountId?: string
+  targetAccountCode?: string
+  targetAccountName?: string
+  paymentType?: "Cash" | "Credit"
+  paymentTerms?: string
+  preparedBy?: string
+  approvedBy?: string
+  paidBy?: string
+  receivedBy?: string
+  items?: PurchaseOrderItem[]
+  attachments?: PurchaseOrderAttachment[] | string[]
   receivedAmount?: number
   billedAmount?: number
   receiptStatus?: "Not Received" | "Partially Received" | "Fully Received"
   billingStatus?: "Not Billed" | "Partially Billed" | "Fully Billed"
   receiptIds?: string[]
   invoiceIds?: string[]
+  journalEntryId?: string
 }
 
 export interface Customer {
@@ -1442,19 +1479,182 @@ class ErpStore {
   // Actions - Purchase Orders
   public addPurchaseOrder(po: PurchaseOrder) {
     this.purchaseOrders.unshift(po)
+    if (po.status === "PAID" || po.status === "COMPLETED") {
+      this.syncPurchaseVoucherToFinance(po)
+    }
     this.notify()
   }
 
+  public updatePurchaseOrder(id: string, updates: Partial<PurchaseOrder>) {
+    this.purchaseOrders = this.purchaseOrders.map((p) => {
+      if (p.id !== id) return p
+      const merged = { ...p, ...updates }
+      if (merged.status === "PAID" || merged.status === "COMPLETED") {
+        this.syncPurchaseVoucherToFinance(merged)
+      } else {
+        // Clean up GL journal entry if moved back to draft or cancelled
+        financeStore.deleteJournalEntriesBySource("Payment Voucher", merged.id)
+        merged.journalEntryId = undefined
+      }
+      return merged
+    })
+    this.notify()
+  }
+
+  public deletePurchaseOrder(id: string) {
+    financeStore.deleteJournalEntriesBySource("Payment Voucher", id)
+    const target = this.purchaseOrders.find((p) => p.id === id)
+    if (target?.journalEntryId) {
+      financeStore.deleteJournalEntry(target.journalEntryId)
+    }
+    this.purchaseOrders = this.purchaseOrders.filter((p) => p.id !== id)
+    this.notify()
+  }
+
+  public syncPurchaseVoucherToFinance(po: PurchaseOrder): { success: boolean; error?: string; journalEntryId?: string } {
+    // 1. Remove any previous journal entries for this voucher
+    financeStore.deleteJournalEntriesBySource("Payment Voucher", po.id)
+    if (po.journalEntryId) {
+      financeStore.deleteJournalEntry(po.journalEntryId)
+    }
+
+    if (po.status !== "PAID" && po.status !== "COMPLETED") {
+      return { success: true }
+    }
+
+    const accounts = financeStore.getAccounts()
+    const rawLines: Array<{
+      account_id: string
+      debit_amount: number
+      credit_amount: number
+      party_type?: "Customer" | "Supplier" | "Employee" | null
+      party_id?: string | null
+      party_name?: string | null
+    }> = []
+
+    const partyName = po.paidTo || po.supplier || "Vendor / Payee"
+
+    // 2. Build lines from account distribution entries
+    if (Array.isArray(po.accountEntries) && po.accountEntries.length > 0) {
+      for (const entry of po.accountEntries) {
+        const acc = accounts.find((a) => a.code === entry.accountCode || a.id === entry.accountId || a.id === `ACC-${entry.accountCode}`)
+          || accounts.find((a) => a.code === "1410" || a.code === "5000" || a.account_type === "Expense" || a.account_type === "Asset")
+        
+        if (!acc) continue
+
+        const debit = Number(entry.debit) || 0
+        const credit = Number(entry.credit) || 0
+
+        if (debit > 0 || credit > 0) {
+          const accCode = acc.code
+          const isPartyReq = accCode === "1200" || accCode === "2000" || accCode === "2100" || acc.name.toLowerCase().includes("payable") || acc.name.toLowerCase().includes("receivable")
+          rawLines.push({
+            account_id: acc.id,
+            debit_amount: debit,
+            credit_amount: credit,
+            party_type: isPartyReq ? "Supplier" : null,
+            party_id: isPartyReq ? (po.supplierId || "SUP-MISC") : null,
+            party_name: isPartyReq ? partyName : null,
+          })
+        }
+      }
+    }
+
+    // 3. Fallback single line if no valid rows were added
+    if (rawLines.length === 0) {
+      const debitAcc = (po.targetAccountId && accounts.find((a) => a.id === po.targetAccountId))
+        || (po.targetAccountCode && accounts.find((a) => a.code === po.targetAccountCode))
+        || accounts.find((a) => a.code === "1410")
+        || accounts.find((a) => a.code === "5000")
+        || accounts.find((a) => a.account_type === "Expense")
+        || accounts.find((a) => a.account_type === "Asset")
+
+      if (debitAcc) {
+        rawLines.push({
+          account_id: debitAcc.id,
+          debit_amount: po.amount || 0,
+          credit_amount: 0,
+          party_type: "Supplier",
+          party_id: po.supplierId || "SUP-MISC",
+          party_name: partyName,
+        })
+      }
+    }
+
+    // 4. Calculate total debits & credits and balance the voucher with Bank / Cash
+    const totalDebit = rawLines.reduce((sum, l) => sum + (Number(l.debit_amount) || 0), 0)
+    const totalCredit = rawLines.reduce((sum, l) => sum + (Number(l.credit_amount) || 0), 0)
+
+    const bankAcc = accounts.find((a) => a.code === "1010" || a.name.toLowerCase().includes("bank") || a.name.toLowerCase().includes("cash"))
+      || accounts.find((a) => a.account_type === "Asset" && !a.is_group)
+
+    if (totalDebit > totalCredit) {
+      const diff = Math.round((totalDebit - totalCredit) * 100) / 100
+      if (bankAcc) {
+        rawLines.push({
+          account_id: bankAcc.id,
+          debit_amount: 0,
+          credit_amount: diff,
+          party_type: null,
+          party_id: null,
+          party_name: null,
+        })
+      }
+    } else if (totalCredit > totalDebit) {
+      const diff = Math.round((totalCredit - totalDebit) * 100) / 100
+      const invAcc = accounts.find((a) => a.code === "1410" || a.code === "5000" || a.account_type === "Expense")
+      if (invAcc) {
+        rawLines.push({
+          account_id: invAcc.id,
+          debit_amount: diff,
+          credit_amount: 0,
+          party_type: "Supplier",
+          party_id: po.supplierId || "SUP-MISC",
+          party_name: partyName,
+        })
+      }
+    }
+
+    // 5. Post the balanced journal entry to the General Ledger
+    const postRes = financeStore.postJournalEntry(
+      {
+        entry_date: po.date || new Date().toISOString().split("T")[0],
+        description: `Payment Voucher ${po.voucherNo || po.poNumber} (${partyName}): ${po.reasonForPayment || "General Procurement"}`,
+        source_type: "Payment Voucher",
+        source_id: po.id,
+        created_by: po.preparedBy || "Procurement Officer",
+        currency: po.currency || "ETB",
+        exchange_rate: 1.0,
+      },
+      rawLines
+    )
+
+    if (postRes.success && postRes.entry) {
+      po.journalEntryId = postRes.entry.id
+      return { success: true, journalEntryId: postRes.entry.id }
+    } else {
+      console.warn("Failed to post payment voucher to finance:", postRes.error)
+      return { success: false, error: postRes.error }
+    }
+  }
+
   public updatePurchaseOrderStatus(id: string, status: PurchaseOrder["status"]) {
-    const statusColorMap = {
+    const statusColorMap: Record<string, string> = {
       DRAFT: "bg-zinc-600 text-white",
+      PAID: "bg-emerald-600 text-white",
+      COMPLETED: "bg-emerald-600 text-white",
       "IN TRANSIT": "bg-blue-700 text-white",
       RECEIVED: "bg-emerald-600 text-white",
       CANCELLED: "bg-red-600 text-white",
     }
-    this.purchaseOrders = this.purchaseOrders.map((po) =>
-      po.id === id ? { ...po, status, statusColor: statusColorMap[status] || "bg-zinc-600 text-white" } : po
-    )
+    this.purchaseOrders = this.purchaseOrders.map((po) => {
+      if (po.id !== id) return po
+      const updatedPo = { ...po, status, statusColor: statusColorMap[status] || "bg-zinc-600 text-white" }
+      if ((status === "PAID" || status === "COMPLETED") && !updatedPo.journalEntryId) {
+        this.syncPurchaseVoucherToFinance(updatedPo)
+      }
+      return updatedPo
+    })
     this.notify()
   }
 
@@ -1467,7 +1667,7 @@ class ErpStore {
     if (!po) return { success: false, error: "Purchase Order not found." }
 
     // 1. Update product quantities in inventory store
-    po.items.forEach((item) => {
+    po.items?.forEach((item) => {
       const recQty = receivedItems?.find((i) => i.productId === item.productId)?.qty ?? item.qty
       const pIndex = this.products.findIndex((prod) => prod.id === item.productId || prod.sku === item.sku)
       if (pIndex !== -1) {

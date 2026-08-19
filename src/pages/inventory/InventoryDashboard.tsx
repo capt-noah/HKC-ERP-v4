@@ -1,9 +1,15 @@
 import { useMemo, useState } from "react"
 import { motion } from "framer-motion"
+import { useNavigate } from "react-router-dom"
 import {
   Archive,
   Package,
   Warehouse as WarehouseIcon,
+  AlertTriangle,
+  AlertOctagon,
+  Clock,
+  ExternalLink,
+  ShieldAlert,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -14,19 +20,10 @@ import { withOperatingWarehouses } from "@/lib/warehouses"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import { getExpiringItemsSummary } from "@/lib/expiryUtils"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
-
-function daysUntil(value?: string) {
-  if (!value) return null
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  parsed.setHours(0, 0, 0, 0)
-  return Math.ceil((parsed.getTime() - today.getTime()) / 86_400_000)
-}
 
 function KpiSkeleton() {
   return (
@@ -89,7 +86,9 @@ export default function InventoryDashboard() {
 
   const isLoading = erp.isLoading()
 
+  const navigate = useNavigate()
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("ALL")
+  const [expiryTierTab, setExpiryTierTab] = useState<"ALL" | "EXPIRED" | "CRITICAL" | "WARNING">("ALL")
 
   const warehouseById = useMemo(() => new Map(warehouses.flatMap((warehouse) => [[warehouse.id, warehouse], [warehouse.code, warehouse]])), [warehouses])
 
@@ -100,26 +99,12 @@ export default function InventoryDashboard() {
     })
   }, [products, selectedWarehouse])
 
-  const expiryAlerts = useMemo(() => {
-    return filteredProducts
-      .flatMap((product) =>
-        product.batches.map((batch) => {
-          const days = daysUntil(batch.expiry)
-          return {
-            id: `${product.id}-${batch.batchNo}`,
-            product: product.name,
-            batch: batch.batchNo,
-            days,
-            warehouse: product.warehouseName || warehouseById.get(product.warehouse)?.name || product.warehouse,
-            quantity: Number(batch.qty || 0),
-            unit: product.unit,
-          }
-        }),
-      )
-      .filter((entry) => entry.days !== null && entry.days >= 0 && entry.days <= 30)
-      .sort((a, b) => Number(a.days) - Number(b.days))
-      .slice(0, 5)
-  }, [filteredProducts, warehouseById])
+  const expirySummary = useMemo(() => {
+    return getExpiringItemsSummary(filteredProducts, {
+      thresholdDays: 90,
+      tierFilter: expiryTierTab,
+    })
+  }, [filteredProducts, expiryTierTab])
 
   const warehouseRows = useMemo(() => {
     return warehouses.map((warehouse) => {
@@ -384,50 +369,143 @@ export default function InventoryDashboard() {
 
             {/* Right Expiry Column */}
             <div className="lg:col-span-4">
-              <GlassCard className="h-full p-6">
-                <div className="flex items-center justify-between mb-4 border-b border-zinc-100 pb-3">
-                  <div>
-                    <h3 className="text-sm font-black text-zinc-900 uppercase tracking-tight">Near Expiry Watch</h3>
-                    <p className="text-[11px] font-semibold text-zinc-400">Batch expiry data from inventory products</p>
+              <GlassCard className="h-full p-6 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3 border-b border-zinc-100 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="size-4 text-amber-600" />
+                        <h3 className="text-sm font-black text-zinc-900 uppercase tracking-tight">Near Expiry Watch</h3>
+                      </div>
+                      <p className="text-[11px] font-semibold text-zinc-400">Batch-level shelf life & risk monitoring</p>
+                    </div>
+
+                    {expirySummary.totalAtRiskValue > 0 && (
+                      <div className="text-right">
+                        <span className="text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded-full font-mono">
+                          ETB {expirySummary.totalAtRiskValue.toLocaleString()} At Risk
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Filter Tabs */}
+                  <div className="flex items-center gap-1 bg-zinc-100/80 p-1 rounded-xl mb-4 text-[10px] font-bold text-zinc-600">
+                    <button
+                      onClick={() => setExpiryTierTab("ALL")}
+                      className={`flex-1 py-1 px-1.5 rounded-lg transition-all text-center ${
+                        expiryTierTab === "ALL" ? "bg-white text-zinc-900 shadow-xs font-black" : "hover:text-zinc-900"
+                      }`}
+                    >
+                      All ({expirySummary.items.length})
+                    </button>
+                    <button
+                      onClick={() => setExpiryTierTab("CRITICAL")}
+                      className={`flex-1 py-1 px-1.5 rounded-lg transition-all text-center ${
+                        expiryTierTab === "CRITICAL" ? "bg-white text-amber-900 shadow-xs font-black" : "hover:text-zinc-900"
+                      }`}
+                    >
+                      Critical ({expirySummary.totalCriticalCount})
+                    </button>
+                    <button
+                      onClick={() => setExpiryTierTab("WARNING")}
+                      className={`flex-1 py-1 px-1.5 rounded-lg transition-all text-center ${
+                        expiryTierTab === "WARNING" ? "bg-white text-yellow-900 shadow-xs font-black" : "hover:text-zinc-900"
+                      }`}
+                    >
+                      Watch ({expirySummary.totalWarningCount})
+                    </button>
+                    <button
+                      onClick={() => setExpiryTierTab("EXPIRED")}
+                      className={`flex-1 py-1 px-1.5 rounded-lg transition-all text-center ${
+                        expiryTierTab === "EXPIRED" ? "bg-white text-rose-900 shadow-xs font-black" : "hover:text-zinc-900"
+                      }`}
+                    >
+                      Expired ({expirySummary.totalExpiredCount})
+                    </button>
+                  </div>
+
+                  {/* List of Expiring Batches */}
+                  <div className="space-y-2.5 font-semibold text-xs max-h-[380px] overflow-y-auto pr-1">
+                    {isLoading ? (
+                      Array.from({ length: 4 }).map((_, index) => (
+                        <div key={index} className="flex items-start gap-3 rounded-2xl border border-zinc-100 bg-zinc-50/40 p-3">
+                          <Skeleton className="size-8.5 rounded-xl bg-zinc-200/80" />
+                          <div className="flex-1 space-y-2">
+                            <Skeleton className="h-3 w-4/5 bg-zinc-200/80" />
+                            <Skeleton className="h-3 w-1/2 bg-zinc-200/80" />
+                          </div>
+                        </div>
+                      ))
+                    ) : expirySummary.items.length === 0 ? (
+                      <div className="py-12 text-center text-zinc-400">
+                        <Clock className="size-8 mx-auto mb-2 text-zinc-300 stroke-1" />
+                        <p className="text-xs font-bold">No {expiryTierTab !== "ALL" ? expiryTierTab.toLowerCase() : "near-expiry"} batches found.</p>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">All inventory batches are within healthy shelf life thresholds.</p>
+                      </div>
+                    ) : (
+                      expirySummary.items.slice(0, 6).map((alert) => (
+                        <div
+                          key={alert.id}
+                          onClick={() => navigate(`/inventory/stock?search=${encodeURIComponent(alert.sku || alert.productName)}`)}
+                          className="flex items-start gap-2.5 p-2.5 bg-zinc-50/50 hover:bg-zinc-100/70 border border-zinc-200/60 rounded-xl transition-all cursor-pointer group"
+                          title="Click to view in Stock Register"
+                        >
+                          <div className="size-8 rounded-lg bg-white border border-zinc-200/70 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs group-hover:border-zinc-300">
+                            {alert.tier === "EXPIRED" ? (
+                              <AlertOctagon className="size-4 text-rose-600" />
+                            ) : alert.tier === "CRITICAL" ? (
+                              <AlertTriangle className="size-4 text-amber-600" />
+                            ) : (
+                              <Clock className="size-4 text-yellow-600" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                              <p className="text-xs font-black text-zinc-900 truncate leading-tight group-hover:text-emerald-700 transition-colors">{alert.productName}</p>
+                              <ExternalLink className="size-3 text-zinc-300 group-hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition-all shrink-0" />
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-[9px] font-bold text-zinc-500">{alert.batchNo}</span>
+                              <span className="text-[8px] font-bold uppercase px-1 py-0.2 bg-zinc-200/60 text-zinc-600 rounded font-mono">{alert.warehouseName}</span>
+                              <span className="font-mono text-[9px] text-zinc-400">EXP: {alert.expiryDate}</span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span
+                              className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                alert.tier === "EXPIRED"
+                                  ? "bg-rose-50 text-rose-800 border-rose-200"
+                                  : alert.tier === "CRITICAL"
+                                  ? "bg-amber-100 text-amber-900 border-amber-300"
+                                  : "bg-yellow-50 text-yellow-800 border-yellow-200"
+                              }`}
+                            >
+                              {alert.daysRemaining <= 0
+                                ? "EXPIRED"
+                                : `${alert.daysRemaining}d left`}
+                            </span>
+                            <p className="text-[9px] font-black font-mono text-zinc-500 mt-1">{alert.quantity.toLocaleString()} {alert.unit}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
-                <div className="space-y-4 font-semibold text-xs">
-                  {isLoading ? (
-                    Array.from({ length: 5 }).map((_, index) => (
-                      <div key={index} className="flex items-start gap-3 rounded-2xl border border-zinc-100 bg-zinc-50/40 p-3">
-                        <Skeleton className="size-8.5 rounded-xl bg-zinc-200/80" />
-                        <div className="flex-1 space-y-2">
-                          <Skeleton className="h-3 w-4/5 bg-zinc-200/80" />
-                          <Skeleton className="h-3 w-1/2 bg-zinc-200/80" />
-                        </div>
-                      </div>
-                    ))
-                  ) : expiryAlerts.length === 0 ? (
-                    <p className="py-12 text-center text-xs font-bold text-zinc-400">No near-expiry batches found.</p>
-                  ) : (
-                    expiryAlerts.map((alert) => (
-                      <div key={alert.id} className="flex items-start gap-3 p-3 bg-zinc-50/40 border border-zinc-100 rounded-2xl">
-                        <div className="size-8.5 rounded-xl bg-zinc-100 border border-zinc-200/50 flex items-center justify-center shrink-0 mt-0.5">
-                          <Package className="size-4 text-zinc-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-black text-zinc-900 truncate leading-tight mb-0.5">{alert.product}</p>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono text-[9px] font-bold text-zinc-400">{alert.batch}</span>
-                            <span className="text-[8px] font-bold uppercase px-1.5 py-0.2 bg-zinc-100 text-zinc-500 rounded font-mono">{alert.warehouse}</span>
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full border bg-zinc-100 border-zinc-200 text-zinc-800">
-                            {alert.days} days
-                          </span>
-                          <p className="text-[9px] font-black font-mono text-zinc-400 mt-1">{alert.quantity.toLocaleString()} {alert.unit}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+                {expirySummary.items.length > 0 && (
+                  <div className="pt-3 border-t border-zinc-100 mt-3 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-zinc-400">
+                      Showing {Math.min(6, expirySummary.items.length)} of {expirySummary.items.length} alerts
+                    </span>
+                    <button
+                      onClick={() => navigate("/inventory/stock")}
+                      className="text-[10px] font-extrabold text-emerald-700 hover:text-emerald-800 inline-flex items-center gap-1 hover:underline cursor-pointer"
+                    >
+                      Open Stock Register <ExternalLink className="size-2.5" />
+                    </button>
+                  </div>
+                )}
               </GlassCard>
             </div>
           </div>

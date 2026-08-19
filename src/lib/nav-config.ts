@@ -61,7 +61,13 @@ export const navSections: NavSection[] = [
   },
 ]
 
-export function getSectionChildren(sectionPath: string): NavChild[] {
-  const section = navSections.find((s) => s.path === sectionPath)
+export function getSectionChildren(sectionPathOrLabel: string): NavChild[] {
+  const normalized = sectionPathOrLabel.toLowerCase()
+  const section = navSections.find(
+    (s) =>
+      s.path.toLowerCase() === normalized ||
+      s.label.toLowerCase() === normalized ||
+      s.children?.some((c) => c.path.toLowerCase() === normalized)
+  )
   return section?.children ?? []
 }

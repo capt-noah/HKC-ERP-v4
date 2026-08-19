@@ -9,23 +9,22 @@ import {
   X,
   RotateCcw,
   CheckCircle2,
-  TrendingUp,
-  ShieldCheck,
   FolderTree,
   Folder,
   FolderOpen,
   ArrowUp,
   ArrowDown,
-  Edit
+  Edit,
+  MoreVertical,
+  Trash2,
+  AlertTriangle
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
-import { useFinanceStore } from "@/lib/financeStore"
-import type { JournalEntry } from "@/lib/financeStore"
-import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
+import { useFinanceStore, type JournalEntry } from "@/lib/financeStore"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 
 import { Skeleton } from "@/components/ui/skeleton"
@@ -38,31 +37,15 @@ export default function Ledger() {
   const store = useFinanceStore()
   const isLoading = store.isLoading()
 
-  const [activeTab, setActiveTab] = useState<
-    "Entries" | "Chart" | "Periods" | "Revaluation"
-  >("Entries")
+  const [activeTab, setActiveTab] = useState<"Entries" | "Chart">("Entries")
 
   // Store data
   const entries = store.getJournalEntries()
   const lines = store.getJournalEntryLines()
   const accounts = store.getAccounts()
-  const periods = store.getAccountingPeriods()
-  const revaluations = store.getRevaluations()
 
   const [searchEntries, setSearchEntries] = useState("")
   const [jeSourceFilter, setJeSourceFilter] = useState("ALL")
-  const [periodSearch, setPeriodSearch] = useState("")
-  const [periodStatusFilter, setPeriodStatusFilter] = useState("ALL")
-  const [revalSearch, setRevalSearch] = useState("")
-  const [revalStatusFilter, setRevalStatusFilter] = useState("ALL")
-
-  const periodColumns: TableColumn[] = [
-    {key:'period_label',label:'Period Label'},
-    {key:'start_date',label:'Start Date'},
-    {key:'end_date',label:'End Date'},
-    {key:'is_closed',label:'Status',align:'center'},
-    {key:'_actions',label:'Action',align:'right',noSort:true}
-  ]
 
   // Journal Entries Column Resizing & Sorting State
   const defaultJeColWidths: Record<string, number> = {
@@ -132,11 +115,16 @@ export default function Ledger() {
     "5150": true,
   })
   const [showAddAccountModal, setShowAddAccountModal] = useState(false)
+  const [showAddChildModal, setShowAddChildModal] = useState(false)
+  const [childParentAccount, setChildParentAccount] = useState<any>(null)
   const [newAccCode, setNewAccCode] = useState("")
   const [newAccName, setNewAccName] = useState("")
   const [newAccType, setNewAccType] = useState<"Asset" | "Liability" | "Equity" | "Revenue" | "Expense">("Asset")
   const [newAccParent, setNewAccParent] = useState<string>("")
   const [newAccIsGroup, setNewAccIsGroup] = useState(false)
+
+  // Filter Mode
+  const [coaFilterMode, setCoaFilterMode] = useState<"ALL" | "AR" | "AP">("ALL")
 
   // Edit Account state
   const [showEditAccountModal, setShowEditAccountModal] = useState(false)
@@ -147,17 +135,8 @@ export default function Ledger() {
   const [editAccParent, setEditAccParent] = useState("")
   const [editAccIsGroup, setEditAccIsGroup] = useState(false)
   const [editAccIsActive, setEditAccIsActive] = useState(true)
-
-  // Accounting Period addition states
-  const [showAddPeriodModal, setShowAddPeriodModal] = useState(false)
-  const [newPeriodLabel, setNewPeriodLabel] = useState("")
-  const [newPeriodStart, setNewPeriodStart] = useState("")
-  const [newPeriodEnd, setNewPeriodEnd] = useState("")
-
-  // Period Closing states
-  const [showClosingModal, setShowClosingModal] = useState(false)
-  const [closingPeriodId, setClosingPeriodId] = useState("")
-  const [closingRetainedEarningsCode, setClosingRetainedEarningsCode] = useState("3000")
+  const [editMenuOpen, setEditMenuOpen] = useState(false)
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
 
   // Posting modal state
   const todayStr = new Date().toISOString().split("T")[0]
@@ -179,14 +158,6 @@ export default function Ledger() {
     { account_id: accounts.find((a) => a.is_active)?.id || "", debit: "", credit: "", party_type: "", party_id: "", party_name: "" },
     { account_id: accounts.filter((a) => a.is_active)[1]?.id || "", debit: "", credit: "", party_type: "", party_id: "", party_name: "" },
   ])
-
-  // Revaluation modal
-  const [showRevalModal, setShowRevalModal] = useState(false)
-  const [revalDate, setRevalDate] = useState(todayStr)
-  const [revalCurrency, setRevalCurrency] = useState("USD")
-  const [revalTargetAcc, setRevalTargetAcc] = useState(accounts.find(a => a.code === "1000")?.id || "")
-  const [revalOrigBalance, setRevalOrigBalance] = useState("")
-  const [revalNewRate, setRevalNewRate] = useState("")
 
   // Reversal computation
   const reversedEntryIds = new Set(
@@ -287,6 +258,33 @@ export default function Ledger() {
     }
   }
 
+  const handleCreateChildAccount = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newAccCode.trim() || !newAccName.trim()) {
+      showToast("Validation Error", "warning", "Account Code and Name are required.")
+      return
+    }
+    const res = store.addAccount({
+      code: newAccCode.trim(),
+      name: newAccName.trim(),
+      account_type: newAccType,
+      parent_account_id: childParentAccount?.id || newAccParent || null,
+      is_active: true,
+      is_group: newAccIsGroup,
+    })
+    if (res.success) {
+      setShowAddChildModal(false)
+      setChildParentAccount(null)
+      setNewAccCode("")
+      setNewAccName("")
+      setNewAccParent("")
+      setNewAccIsGroup(false)
+      showToast("Sub-Account Created", "success", `Sub-Account ${newAccCode} - ${newAccName} added to Chart of Accounts.`)
+    } else {
+      showToast("Sub-Account Creation Failed", "warning", res.error || "Could not create sub-account.")
+    }
+  }
+
   const handleUpdateAccountSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingAccount) return
@@ -313,100 +311,18 @@ export default function Ledger() {
     }
   }
 
-  const handleDeleteAccountSubmit = (id: string) => {
-    if (confirm("Are you sure you want to delete this account node?")) {
-      const res = store.deleteAccount(id)
-      if (res.success) {
-        setShowEditAccountModal(false)
-        setEditingAccount(null)
-        showToast("Account Deleted", "success", "Account node has been deleted from Chart of Accounts.")
-      } else {
-        showToast("Account Deletion Failed", "warning", res.error || "Could not delete account.")
-      }
-    }
-  }
-
-  const handleAddPeriodSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newPeriodLabel.trim() || !newPeriodStart || !newPeriodEnd) {
-      showToast("Validation Error", "warning", "All fields are required to create a period.")
-      return
-    }
-    store.addAccountingPeriod({
-      period_label: newPeriodLabel,
-      start_date: newPeriodStart,
-      end_date: newPeriodEnd,
-      is_closed: false,
-    })
-    setShowAddPeriodModal(false)
-    setNewPeriodLabel("")
-    setNewPeriodStart("")
-    setNewPeriodEnd("")
-    showToast("Accounting Period Added", "success", `Period ${newPeriodLabel} is now open.`)
-  }
-
-  const handleDeletePeriod = (id: string) => {
-    if (confirm("Are you sure you want to delete this accounting period?")) {
-      store.deleteAccountingPeriod(id)
-      showToast("Accounting Period Deleted", "info", `Period ${id} has been deleted.`)
-    }
-  }
-
-  const handleClosePeriodVoucherSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!closingPeriodId) return
-    const res = store.closeAccountingPeriod(closingPeriodId, closingRetainedEarningsCode)
+  const handleConfirmDelete = () => {
+    if (!editingAccount) return
+    const res = store.deleteAccount(editingAccount.id)
     if (res.success) {
-      setShowClosingModal(false)
-      setClosingPeriodId("")
-      showToast("Period Closed", "success", "Voucher posted. Revenue & expense accounts rolled to retained earnings.")
+      setShowDeleteConfirmModal(false)
+      setShowEditAccountModal(false)
+      setEditingAccount(null)
+      setEditMenuOpen(false)
+      showToast("Account Deleted", "success", `Account ${editingAccount.code} has been deleted.`)
     } else {
-      showToast("Closing Process Failed", "warning", res.error || "Could not execute period closing.")
-    }
-  }
-
-  const handleLockPeriod = (periodId: string) => {
-    store.toggleLockPeriod(periodId)
-    const updated = store.getAccountingPeriods().find(p => p.id === periodId)
-    showToast(
-      updated?.is_closed ? "Accounting Period Locked" : "Accounting Period Unlocked",
-      updated?.is_closed ? "warning" : "info",
-      `Period ${periodId} is now ${updated?.is_closed ? "LOCKED (no entries allowed)" : "OPEN"}.`
-    )
-  }
-
-  const handleCreateRevaluation = (e: React.FormEvent) => {
-    e.preventDefault()
-    const origBal = parseFloat(revalOrigBalance) || 0
-    const rate = parseFloat(revalNewRate) || 0
-
-    if (origBal <= 0 || rate <= 0) {
-      showToast("Invalid Input", "warning", "Balance and exchange rate must be positive numbers.")
-      return
-    }
-
-    const res = store.createRevaluation({
-      currency: revalCurrency,
-      target_account_id: revalTargetAcc,
-      original_balance: origBal,
-      current_rate: rate,
-      revaluation_date: revalDate,
-    })
-
-    if (res.success) {
-      setShowRevalModal(false)
-      showToast("Draft Revaluation Created", "info", `Revaluation ${res.revaluation?.id} created as 'Draft'. Click 'Post' to execute.`)
-    } else {
-      showToast("Revaluation Creation Failed", "warning", res.error || "Could not create revaluation.")
-    }
-  }
-
-  const handlePostRevaluation = (revId: string) => {
-    const res = store.postRevaluation(revId)
-    if (res.success) {
-      showToast("Revaluation Posted", "success", `Journal entry ${res.entryId} created and posted to General Ledger.`)
-    } else {
-      showToast("Revaluation Posting Blocked", "warning", res.error || "Could not post revaluation.")
+      setShowDeleteConfirmModal(false)
+      showToast("Account Deletion Failed", "warning", res.error || "Could not delete account with active transactions.")
     }
   }
 
@@ -421,22 +337,6 @@ export default function Ledger() {
   })
 
   const jeSourceTypes = Array.from(new Set(entries.map((e) => e.source_type)))
-
-  const filteredPeriods = periods.filter((p) => {
-    if (periodStatusFilter === "OPEN" && p.is_closed) return false
-    if (periodStatusFilter === "LOCKED" && !p.is_closed) return false
-    if (!periodSearch.trim()) return true
-    const q = periodSearch.toLowerCase()
-    return (p.period_label || "").toLowerCase().includes(q) || (p.id || "").toLowerCase().includes(q)
-  })
-  const periodTable = useResizableTable(periodColumns, filteredPeriods)
-
-  const filteredRevaluations = revaluations.filter((rev) => {
-    if (revalStatusFilter !== "ALL" && rev.status !== revalStatusFilter) return false
-    if (!revalSearch.trim()) return true
-    const q = revalSearch.toLowerCase()
-    return (rev.id || "").toLowerCase().includes(q) || (rev.currency || "").toLowerCase().includes(q)
-  })
 
   // Sort entries
   const sortedEntries = [...filteredEntries].sort((a, b) => {
@@ -501,8 +401,41 @@ export default function Ledger() {
   }
 
   // COA Tree Helpers
+  const isRootCategoryDummy = (a: any) => {
+    return (
+      (a.code === "1000" && a.name.toLowerCase() === "assets") ||
+      (a.code === "2000" && a.name.toLowerCase() === "liabilities") ||
+      (a.code === "3000" && a.name.toLowerCase() === "equity") ||
+      (a.code === "4000" && (a.name.toLowerCase().includes("income") || a.name.toLowerCase().includes("revenue"))) ||
+      (a.code === "5000" && a.name.toLowerCase() === "expenses" && a.is_group === true)
+    )
+  }
+
+  const isChildOf = (child: any, parent: any) => {
+    if (!child.parent_account_id || child.id === parent.id) return false
+    const pId = parent.id
+    const pCode = parent.code
+    const cParent = child.parent_account_id
+    return (
+      cParent === pId ||
+      cParent === pCode ||
+      cParent === `ACC-${pCode}` ||
+      (pId.startsWith("ACC-") && cParent === pId.replace("ACC-", ""))
+    )
+  }
+
+  const getChildrenOfAccount = (parent: any) => {
+    if (isRootCategoryDummy(parent)) return []
+    return accounts.filter((a) => !isRootCategoryDummy(a) && isChildOf(a, parent))
+  }
+
+  const isGroupAccount = (acc: any) => {
+    if (acc.is_group === true) return true
+    return getChildrenOfAccount(acc).length > 0
+  }
+
   const getAccountNetBalance = (acc: any) => {
-    const accLines = lines.filter((l) => l.account_id === acc.id || l.account_id === acc.code)
+    const accLines = lines.filter((l) => l.account_id === acc.id || l.account_id === acc.code || l.account_id === `ACC-${acc.code}`)
     const debitSum = accLines.reduce((s, l) => s + l.debit_amount, 0)
     const creditSum = accLines.reduce((s, l) => s + l.credit_amount, 0)
     if (acc.account_type === "Asset" || acc.account_type === "Expense") {
@@ -511,14 +444,9 @@ export default function Ledger() {
     return creditSum - debitSum
   }
 
-  const isGroupAccount = (acc: any) => {
-    if (acc.is_group === true) return true
-    return accounts.some((a) => a.parent_account_id === acc.code || a.parent_account_id === acc.id)
-  }
-
   const getGroupNetBalance = (acc: any): number => {
     let sum = getAccountNetBalance(acc)
-    const children = accounts.filter((a) => a.parent_account_id === acc.code || a.parent_account_id === acc.id)
+    const children = getChildrenOfAccount(acc)
     for (const child of children) {
       if (isGroupAccount(child)) {
         sum += getGroupNetBalance(child)
@@ -529,41 +457,77 @@ export default function Ledger() {
     return sum
   }
 
-  const handleExpandAllCoa = () => {
-    const newExpanded: Record<string, boolean> = {
-      Asset: true,
-      Liability: true,
-      Equity: true,
-      Revenue: true,
-      Expense: true,
-    }
-    accounts.forEach((acc) => {
-      if (isGroupAccount(acc)) {
-        newExpanded[acc.code] = true
-        newExpanded[acc.id] = true
-      }
-    })
-    setExpandedNodes(newExpanded)
-  }
+  const getTopLevelAccountsForType = (type: string) => {
+    return accounts.filter((a) => {
+      if (a.account_type !== type) return false
+      if (isRootCategoryDummy(a)) return false
 
-  const handleCollapseAllCoa = () => {
-    setExpandedNodes({
-      Asset: false,
-      Liability: false,
-      Equity: false,
-      Revenue: false,
-      Expense: false,
+      if (!a.parent_account_id) return true
+
+      // Check if parent is a dummy category wrapper or non-existent in accounts
+      const parentAcc = accounts.find(
+        (p) => p.id === a.parent_account_id || p.code === a.parent_account_id || `ACC-${p.code}` === a.parent_account_id
+      )
+      if (!parentAcc) return true
+      if (isRootCategoryDummy(parentAcc)) return true
+      if (parentAcc.account_type !== type) return true
+
+      // It has a valid parent in the same category, so it will be rendered as a child of that parent
+      return false
     })
   }
 
   const renderAccountTreeNode = (acc: any, level = 1) => {
     const isGroup = isGroupAccount(acc)
-    const children = accounts.filter((a) => a.parent_account_id === acc.code || a.parent_account_id === acc.id)
+    const children = getChildrenOfAccount(acc)
     const nodeKey = acc.code || acc.id
     const isExpanded = !!expandedNodes[nodeKey] || coaSearch.trim().length > 0
     const netBalance = isGroup ? getGroupNetBalance(acc) : getAccountNetBalance(acc)
 
-    // Filter check
+    // AR / AP Filter Mode Check
+    if (coaFilterMode === "AR") {
+      const isArMatch =
+        acc.code.startsWith("12") ||
+        acc.code.startsWith("4") ||
+        acc.name.toLowerCase().includes("receivable") ||
+        acc.name.toLowerCase().includes("debtor") ||
+        acc.name.toLowerCase().includes("customer") ||
+        acc.name.toLowerCase().includes("sales")
+      const childHasAr = children.some((c) =>
+        c.code.startsWith("12") ||
+        c.code.startsWith("4") ||
+        c.name.toLowerCase().includes("receivable") ||
+        c.name.toLowerCase().includes("debtor") ||
+        c.name.toLowerCase().includes("customer") ||
+        c.name.toLowerCase().includes("sales")
+      )
+      if (!isArMatch && !childHasAr) return null
+    }
+
+    if (coaFilterMode === "AP") {
+      const isApMatch =
+        acc.code.startsWith("21") ||
+        acc.code.startsWith("5") ||
+        acc.name.toLowerCase().includes("payable") ||
+        acc.name.toLowerCase().includes("creditor") ||
+        acc.name.toLowerCase().includes("supplier") ||
+        acc.name.toLowerCase().includes("vendor") ||
+        acc.name.toLowerCase().includes("expense") ||
+        acc.name.toLowerCase().includes("purchase")
+      const childHasAp = children.some((c) =>
+        c.code.startsWith("21") ||
+        c.code.startsWith("5") ||
+        c.name.toLowerCase().includes("payable") ||
+        c.name.toLowerCase().includes("creditor") ||
+        c.name.toLowerCase().includes("supplier") ||
+        c.name.toLowerCase().includes("vendor") ||
+        c.name.toLowerCase().includes("expense") ||
+        c.name.toLowerCase().includes("purchase")
+      )
+      if (!isApMatch && !childHasAp) return null
+    }
+
+    // Search check
     const searchTerm = coaSearch.toLowerCase().trim()
     if (searchTerm) {
       const selfMatches = acc.code.toLowerCase().includes(searchTerm) || acc.name.toLowerCase().includes(searchTerm)
@@ -578,10 +542,13 @@ export default function Ledger() {
 
     const handleAddChild = (e: React.MouseEvent) => {
       e.stopPropagation()
+      setChildParentAccount(acc)
       setNewAccType(acc.account_type)
-      setNewAccParent(acc.code)
+      setNewAccParent(acc.id)
+      setNewAccCode(store.getNextSuggestedAccountCode(acc.code, acc.account_type))
+      setNewAccName("")
       setNewAccIsGroup(false)
-      setShowAddAccountModal(true)
+      setShowAddChildModal(true)
     }
 
     const handleEditAccount = (e: React.MouseEvent) => {
@@ -593,6 +560,7 @@ export default function Ledger() {
       setEditAccParent(acc.parent_account_id || "")
       setEditAccIsGroup(!!acc.is_group)
       setEditAccIsActive(!!acc.is_active)
+      setEditMenuOpen(false)
       setShowEditAccountModal(true)
     }
 
@@ -602,12 +570,16 @@ export default function Ledger() {
           onClick={isGroup ? toggleExpand : undefined}
           className={`flex items-center justify-between p-2.5 rounded-2xl transition-all border text-xs select-none ${
             isGroup
-              ? "bg-zinc-100/90 hover:bg-zinc-200/80 border-zinc-200/90 font-bold text-zinc-900 cursor-pointer shadow-sm"
-              : "bg-white/90 hover:bg-emerald-50/50 border-zinc-200/70 font-semibold text-zinc-800"
+              ? "bg-zinc-100/90 hover:bg-zinc-200/80 border-zinc-200/90 font-bold text-zinc-900 cursor-pointer shadow-xs"
+              : "bg-white hover:bg-emerald-50/40 border-zinc-200/70 font-semibold text-zinc-800 shadow-2xs"
           }`}
-          style={{ paddingLeft: `${Math.max(12, level * 20)}px` }}
         >
           <div className="flex items-center gap-2.5 min-w-0 pr-2">
+            {/* Tree Branch marker for nested children */}
+            {level > 1 && (
+              <span className="text-zinc-400 font-mono text-xs select-none pl-1">↳</span>
+            )}
+
             {/* Chevron for Groups */}
             {isGroup ? (
               <button
@@ -636,14 +608,10 @@ export default function Ledger() {
               </span>
               <span className="truncate font-bold text-zinc-900">{acc.name}</span>
 
-              {/* Badges */}
-              {isGroup ? (
+              {/* Group / Inactive Badges */}
+              {isGroup && (
                 <span className="text-[9px] font-black uppercase tracking-wider text-purple-700 bg-purple-100/90 border border-purple-200/80 px-1.5 py-0.5 rounded-full shrink-0">
                   Group
-                </span>
-              ) : (
-                <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/90 border border-emerald-200/80 px-1.5 py-0.5 rounded-full shrink-0">
-                  Ledger
                 </span>
               )}
 
@@ -670,7 +638,7 @@ export default function Ledger() {
 
             <button
               onClick={handleEditAccount}
-              className="flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-1 rounded-full transition-all"
+              className="flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2.5 py-1 rounded-full transition-all"
               title={`Edit ${acc.name}`}
             >
               <Edit className="size-3" /> Edit
@@ -679,7 +647,7 @@ export default function Ledger() {
             {isGroup && (
               <button
                 onClick={handleAddChild}
-                className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2 py-1 rounded-full transition-all"
+                className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2.5 py-1 rounded-full transition-all"
                 title={`Add sub-account under ${acc.code} - ${acc.name}`}
               >
                 <Plus className="size-3" /> Child
@@ -688,9 +656,9 @@ export default function Ledger() {
           </div>
         </div>
 
-        {/* Children List */}
+        {/* Children List with Left Guide Rail */}
         {isGroup && isExpanded && children.length > 0 && (
-          <div className="flex flex-col gap-1.5 pt-0.5 relative before:absolute before:left-5 before:top-1 before:bottom-3 before:w-0.5 before:bg-zinc-200/60">
+          <div className="flex flex-col gap-1.5 ml-5 pl-3 border-l-2 border-zinc-200/90 my-1">
             {children.map((childAcc) => renderAccountTreeNode(childAcc, level + 1))}
           </div>
         )}
@@ -735,8 +703,6 @@ export default function Ledger() {
             {[
               { id: "Entries", label: "Journal Entries", icon: FileText },
               { id: "Chart", label: "Chart of Accounts", icon: FolderTree },
-              { id: "Periods", label: "Accounting Periods", icon: ShieldCheck },
-              { id: "Revaluation", label: "Forex Revaluation", icon: TrendingUp },
             ].map((tab) => {
               const isActive = activeTab === tab.id
               const Icon = tab.icon
@@ -1035,7 +1001,15 @@ export default function Ledger() {
                                 style={{ width: `${jeColWidths.source_type}px` }}
                                 className="px-3 py-3 text-center whitespace-nowrap truncate"
                               >
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-700 truncate">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold truncate ${
+                                  ent.source_type === "Payment Voucher"
+                                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200/60"
+                                    : ent.source_type === "Sales Invoice"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                                    : ent.source_type === "Purchase Invoice"
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200/60"
+                                    : "bg-zinc-100 text-zinc-700"
+                                }`}>
                                   {ent.source_type}
                                 </span>
                               </td>
@@ -1081,59 +1055,17 @@ export default function Ledger() {
               transition={{ duration: 0.2 }}
               className="flex flex-col gap-4"
             >
-              {/* Header & Stats Banner */}
-              <GlassCard className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-black text-zinc-900 flex items-center gap-2">
-                    <FolderTree className="size-5 text-emerald-600" />
-                    ERPNext Hierarchical Chart of Accounts
-                  </h3>
-                  <p className="text-xs font-semibold text-zinc-500 mt-0.5">
-                    Structured double-entry ledger tree with 5 Root Types, Group Parent Folders, Sub-Classifications, and Postable Ledger Accounts.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap shrink-0">
-                  <div className="flex items-center gap-1.5 bg-zinc-100 px-3 py-1.5 rounded-full text-xs font-bold text-zinc-700 border border-zinc-200/60">
-                    <span className="text-zinc-400">Total:</span>
-                    <span className="font-mono text-zinc-900">{accounts.length}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-purple-50 px-3 py-1.5 rounded-full text-xs font-bold text-purple-700 border border-purple-200/60">
-                    <Folder className="size-3.5 text-purple-600" />
-                    <span>Groups:</span>
-                    <span className="font-mono">{accounts.filter(isGroupAccount).length}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-full text-xs font-bold text-emerald-700 border border-emerald-200/60">
-                    <FileText className="size-3.5 text-emerald-600" />
-                    <span>Ledgers:</span>
-                    <span className="font-mono">{accounts.filter(a => !isGroupAccount(a)).length}</span>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setNewAccCode("")
-                      setNewAccName("")
-                      setNewAccParent("")
-                      setNewAccIsGroup(false)
-                      setShowAddAccountModal(true)
-                    }}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 transition-all shadow-sm ml-2"
-                  >
-                    <Plus className="size-3.5" /> Add Account Node
-                  </button>
-                </div>
-              </GlassCard>
-
-              {/* Toolbar: Search & Expand/Collapse All */}
-              <GlassCard className="p-3 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2 bg-zinc-100/90 rounded-full px-3 h-9 w-full max-w-md border border-zinc-200/60">
+              {/* Single Clean Toolbar Card */}
+              <GlassCard className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                {/* Search Bar */}
+                <div className="flex items-center gap-2.5 bg-zinc-100/90 rounded-full px-4 h-10 w-full md:max-w-md border border-zinc-200/70">
                   <Search className="size-4 text-zinc-400 shrink-0" />
                   <input
                     type="text"
-                    placeholder="Search by Account Code or Name (e.g. 1100, Cash, Inventory)..."
+                    placeholder="Search account code or name (e.g. 1010, Cash, Inventory)..."
                     value={coaSearch}
                     onChange={(e) => setCoaSearch(e.target.value)}
-                    className="w-full bg-transparent text-xs font-semibold focus:outline-none text-zinc-900 py-2"
+                    className="w-full bg-transparent text-xs font-semibold focus:outline-none text-zinc-900"
                   />
                   {coaSearch && (
                     <button onClick={() => setCoaSearch("")} className="text-zinc-400 hover:text-zinc-600">
@@ -1142,18 +1074,42 @@ export default function Ledger() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Filter Mode Pills & Action Button */}
+                <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end flex-wrap">
+                  <div className="flex items-center bg-zinc-100 p-1 rounded-full border border-zinc-200/70">
+                    {(
+                      [
+                        { id: "ALL", label: "All Accounts" },
+                        { id: "AR", label: "AR • Receivables" },
+                        { id: "AP", label: "AP • Payables" },
+                      ] as const
+                    ).map((mode) => (
+                      <button
+                        key={mode.id}
+                        onClick={() => setCoaFilterMode(mode.id)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold transition-all ${
+                          coaFilterMode === mode.id
+                            ? "bg-zinc-950 text-white shadow-sm"
+                            : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <button
-                    onClick={handleExpandAllCoa}
-                    className="text-xs font-bold text-zinc-700 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-full transition-all border border-zinc-200/60"
+                    onClick={() => {
+                      setNewAccCode(store.getNextSuggestedAccountCode(null, "Asset"))
+                      setNewAccName("")
+                      setNewAccType("Asset")
+                      setNewAccParent("")
+                      setNewAccIsGroup(false)
+                      setShowAddAccountModal(true)
+                    }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-900 shadow-md active:scale-95 transition-all shrink-0"
                   >
-                    Expand All
-                  </button>
-                  <button
-                    onClick={handleCollapseAllCoa}
-                    className="text-xs font-bold text-zinc-700 hover:text-zinc-950 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-full transition-all border border-zinc-200/60"
-                  >
-                    Collapse All
+                    <Plus className="size-4" /> Add Account Node
                   </button>
                 </div>
               </GlassCard>
@@ -1168,11 +1124,15 @@ export default function Ledger() {
                     { type: "Revenue", title: "Income & Revenue Accounts", code: "4", color: "teal" },
                     { type: "Expense", title: "Expense Accounts", code: "5", color: "rose" },
                   ] as const
-                ).map((rootCat) => {
+                )
+                  .filter((rootCat) => {
+                    if (coaFilterMode === "AR") return rootCat.type === "Asset" || rootCat.type === "Revenue"
+                    if (coaFilterMode === "AP") return rootCat.type === "Liability" || rootCat.type === "Expense"
+                    return true
+                  })
+                  .map((rootCat) => {
                   const typeAccounts = accountsByType[rootCat.type as keyof typeof accountsByType] || []
-                  const rootAccounts = typeAccounts.filter(
-                    (a) => !a.parent_account_id || !accounts.some((p) => p.code === a.parent_account_id || p.id === a.parent_account_id)
-                  )
+                  const rootAccounts = getTopLevelAccountsForType(rootCat.type)
                   const isRootExpanded = expandedNodes[rootCat.type] !== false
                   const rootTotalNet = typeAccounts
                     .filter((a) => !isGroupAccount(a))
@@ -1238,185 +1198,6 @@ export default function Ledger() {
 
 
 
-          {/* TAB 3: Accounting Periods */}
-          {activeTab === "Periods" && (
-            <motion.div
-              key="periods-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
-              <GlassCard className="flex flex-col overflow-hidden">
-                <FinanceTableToolbar
-                  title="Accounting Periods & Fiscal Year Closing"
-                  subtitle="Lock accounting periods to prevent retroactive journal entries and perform year-end closing."
-                  searchValue={periodSearch}
-                  onSearchChange={setPeriodSearch}
-                  searchPlaceholder="Search period label or ID..."
-                  filters={[
-                    {
-                      value: periodStatusFilter,
-                      onChange: setPeriodStatusFilter,
-                      ariaLabel: "Period status filter",
-                      options: [
-                        { value: "ALL", label: "All Periods" },
-                        { value: "OPEN", label: "Open" },
-                        { value: "LOCKED", label: "Locked" },
-                      ],
-                    },
-                  ]}
-                  actions={[
-                    {
-                      label: "Period Closing Voucher",
-                      variant: "secondary",
-                      icon: <ShieldCheck className="size-4" />,
-                      onClick: () => {
-                        setClosingPeriodId("")
-                        setShowClosingModal(true)
-                      },
-                    },
-                    {
-                      label: "Add Period",
-                      variant: "primary",
-                      onClick: () => {
-                        setNewPeriodLabel("")
-                        setNewPeriodStart("")
-                        setNewPeriodEnd("")
-                        setShowAddPeriodModal(true)
-                      },
-                    },
-                  ]}
-                />
-                <div className="overflow-x-auto -mx-2 px-2">
-                <table className="w-full text-left border-collapse table-fixed text-xs">
-                  <thead>
-                    <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
-                      {periodColumns.map(col => <ResizableTh key={col.key} col={col} width={periodTable.colWidths[col.key] ?? 140} sortKey={periodTable.sortKey} sortDir={periodTable.sortDir} openMenuCol={periodTable.openMenuCol} onResizeStart={periodTable.handleResizeStart} onToggleMenu={periodTable.toggleMenu} onSortAsc={periodTable.setSortAsc} onSortDesc={periodTable.setSortDesc} onClearSort={periodTable.clearSort} />)}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {periodTable.sorted().map((p) => (
-                      <tr key={p.id} className="hover:bg-zinc-50/60">
-                        <td className="px-4 py-3 font-bold text-zinc-900">{p.period_label}</td>
-                        <td className="px-4 py-3 font-mono text-zinc-600">{p.start_date}</td>
-                        <td className="px-4 py-3 font-mono text-zinc-600">{p.end_date}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            p.is_closed ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"
-                          }`}>
-                            {p.is_closed ? "LOCKED" : "OPEN"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right pr-4 flex justify-end gap-1.5">
-                          <button
-                            onClick={() => handleLockPeriod(p.id)}
-                            className="text-[11px] font-bold text-black bg-zinc-100 hover:bg-zinc-200 px-3 py-1 rounded-full transition-all"
-                          >
-                            {p.is_closed ? "Unlock Period" : "Lock Period"}
-                          </button>
-                          <button
-                            onClick={() => handleDeletePeriod(p.id)}
-                            className="text-[11px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-3 py-1 rounded-full transition-all"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              </GlassCard>
-            </motion.div>
-          )}
-
-          {/* TAB 4: Forex Revaluation */}
-          {activeTab === "Revaluation" && (
-            <motion.div
-              key="reval-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
-              <FinanceTableToolbar
-                title="Multi-Currency Exchange Rate Revaluation"
-                subtitle="Revalue foreign asset/liability balances at period-end market rates."
-                searchValue={revalSearch}
-                onSearchChange={setRevalSearch}
-                searchPlaceholder="Search ID, currency..."
-                filters={[
-                  {
-                    value: revalStatusFilter,
-                    onChange: setRevalStatusFilter,
-                    ariaLabel: "Revaluation status filter",
-                    options: [
-                      { value: "ALL", label: "All Status" },
-                      { value: "Draft", label: "Draft" },
-                      { value: "Posted", label: "Posted" },
-                    ],
-                  },
-                ]}
-                actions={[
-                  {
-                    label: "Initiate Revaluation",
-                    onClick: () => setShowRevalModal(true),
-                  },
-                ]}
-              />
-
-              <GlassCard className="overflow-hidden p-0">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                      <th className="px-4 py-3">Reval ID / Date</th>
-                      <th className="px-4 py-3">Currency & Rate</th>
-                      <th className="px-4 py-3 text-right">Orig Balance</th>
-                      <th className="px-4 py-3 text-right">New Base Balance</th>
-                      <th className="px-4 py-3 text-right">Unrealized Gain/Loss</th>
-                      <th className="px-4 py-3 text-center">Status</th>
-                      <th className="px-4 py-3 text-right pr-4">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {filteredRevaluations.map((rev) => (
-                      <tr key={rev.id} className="hover:bg-zinc-50/60">
-                        <td className="px-4 py-3 font-mono font-bold text-zinc-900">
-                          {rev.id} <span className="text-[10px] text-zinc-400">({rev.revaluation_date})</span>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-zinc-700">{rev.currency} @ {rev.current_rate}</td>
-                        <td className="px-4 py-3 text-right font-mono text-zinc-900">{rev.currency} {rev.original_balance.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-zinc-900">ETB {rev.new_balance_in_base.toLocaleString()}</td>
-                        <td className={`px-4 py-3 text-right font-mono font-bold ${rev.unrealized_gain_loss >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
-                          ETB {rev.unrealized_gain_loss.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            rev.status === "Posted" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                          }`}>
-                            {rev.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right pr-4">
-                          {rev.status === "Draft" && (
-                            <button
-                              onClick={() => handlePostRevaluation(rev.id)}
-                              className="text-[11px] font-bold text-white bg-black hover:bg-zinc-800 px-3 py-1 rounded-full transition-all"
-                            >
-                              Post Revaluation
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </GlassCard>
-            </motion.div>
-          )}
         </AnimatePresence>
 
         {/* MODAL 1: Post Journal Entry */}
@@ -1550,7 +1331,125 @@ export default function Ledger() {
           )}
         </AnimatePresence>
 
-        {/* MODAL 2: Add Account */}
+        {/* MODAL 2A: Add Sub-Account (Child) */}
+        <AnimatePresence>
+          {showAddChildModal && childParentAccount && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-emerald-500/20"
+              >
+                {/* Modal Header */}
+                <div className="flex items-center justify-between border-b border-emerald-100 pb-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-9 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
+                      <Plus className="size-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-black text-zinc-900">Add Sub-Account</h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Child
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-zinc-400 mt-0.5">
+                        Adding child node under {childParentAccount.name}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowAddChildModal(false)} className="text-zinc-400 hover:text-zinc-600 p-1">
+                    <X className="size-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleCreateChildAccount} className="flex flex-col gap-3.5 text-xs">
+                  {/* Parent Info Card */}
+                  <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-200/60 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Folder className="size-4 text-emerald-700 shrink-0" />
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Parent Group</span>
+                        <span className="font-bold text-zinc-900">{childParentAccount.code} - {childParentAccount.name}</span>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white text-zinc-800 border border-emerald-200">
+                      {childParentAccount.account_type}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-zinc-700 mb-1 block">Sub-Account Code</label>
+                    <input
+                      type="text"
+                      value={newAccCode}
+                      onChange={(e) => setNewAccCode(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold text-zinc-900 outline-none"
+                      placeholder="e.g. 1011"
+                      required
+                    />
+                    <p className="text-[10px] text-zinc-400 mt-1 font-medium">Auto-suggested based on parent account code.</p>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-zinc-700 mb-1 block">Sub-Account Name</label>
+                    <input
+                      type="text"
+                      value={newAccName}
+                      onChange={(e) => setNewAccName(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold text-zinc-900 outline-none"
+                      placeholder="e.g. Commercial Bank of Ethiopia"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-zinc-700 mb-1 block">Account Classification</label>
+                    <div className="flex bg-zinc-100 p-1 rounded-2xl border border-zinc-200/80">
+                      <button
+                        type="button"
+                        onClick={() => setNewAccIsGroup(false)}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          !newAccIsGroup ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        <FileText className="size-3.5 text-emerald-600" /> Ledger (Postable)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewAccIsGroup(true)}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          newAccIsGroup ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        <Folder className="size-3.5 text-purple-600" /> Group (Folder)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddChildModal(false)}
+                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm"
+                    >
+                      Create Sub-Account
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* MODAL 2: Add Top-Level Account Node */}
         <AnimatePresence>
           {showAddAccountModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -1558,93 +1457,98 @@ export default function Ledger() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
+                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-zinc-900/10"
               >
+                {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
-                  <h3 className="text-base font-black text-zinc-900">Add Chart of Accounts Node</h3>
-                  <button onClick={() => setShowAddAccountModal(false)} className="text-zinc-400 hover:text-zinc-600">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-9 rounded-2xl bg-zinc-100 border border-zinc-300 flex items-center justify-center text-zinc-900">
+                      <FolderTree className="size-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-black text-zinc-900">Add Account Node</h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-800 border border-zinc-200">
+                          Root
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-zinc-400 mt-0.5">
+                        Create a primary category or top-level account
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowAddAccountModal(false)} className="text-zinc-400 hover:text-zinc-600 p-1">
                     <X className="size-5" />
                   </button>
                 </div>
 
                 <form onSubmit={handleCreateAccount} className="flex flex-col gap-3 text-xs">
                   <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Account Code (e.g. 1120)</label>
-                    <input
-                      type="text"
-                      value={newAccCode}
-                      onChange={(e) => setNewAccCode(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold"
-                      placeholder="1120"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Account Name</label>
-                    <input
-                      type="text"
-                      value={newAccName}
-                      onChange={(e) => setNewAccName(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
-                      placeholder="Commercial Bank of Ethiopia - USD"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Account Classification Node Type</label>
-                    <div className="flex items-center gap-4 bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
-                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-zinc-800">
-                        <input
-                          type="radio"
-                          name="accGroupType"
-                          checked={!newAccIsGroup}
-                          onChange={() => setNewAccIsGroup(false)}
-                          className="accent-emerald-600"
-                        />
-                        <span>Ledger Account (Postable)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-zinc-800">
-                        <input
-                          type="radio"
-                          name="accGroupType"
-                          checked={newAccIsGroup}
-                          onChange={() => setNewAccIsGroup(true)}
-                          className="accent-purple-600"
-                        />
-                        <span>Group Account (Parent Folder)</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Account Type</label>
+                    <label className="font-bold text-zinc-700 mb-1 block">Account Classification</label>
                     <select
                       value={newAccType}
                       onChange={(e) => {
                         const selectedType = e.target.value as any
                         setNewAccType(selectedType)
                         setNewAccParent("")
+                        setNewAccCode(store.getNextSuggestedAccountCode(null, selectedType))
                       }}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold outline-none"
                     >
-                      <option value="Asset">Asset</option>
-                      <option value="Liability">Liability</option>
-                      <option value="Equity">Equity</option>
-                      <option value="Revenue">Revenue</option>
-                      <option value="Expense">Expense</option>
+                      <option value="Asset">Asset Accounts (1000s)</option>
+                      <option value="Liability">Liability Accounts (2000s)</option>
+                      <option value="Equity">Equity Accounts (3000s)</option>
+                      <option value="Revenue">Income & Revenue Accounts (4000s)</option>
+                      <option value="Expense">Expense Accounts (5000s)</option>
                     </select>
                   </div>
+
                   <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Parent Group Account ({newAccType} Accounts)</label>
-                    <select
-                      value={newAccParent}
-                      onChange={(e) => setNewAccParent(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
-                    >
-                      <option value="">(Root {newAccType} Account - No Parent)</option>
-                      {accounts
-                        .filter((a) => a.account_type === newAccType)
-                        .map((a) => (
-                          <option key={a.id} value={a.code}>{a.code} - {a.name}</option>
-                        ))}
-                    </select>
+                    <label className="font-bold text-zinc-700 mb-1 block">Account Code (e.g. 1120)</label>
+                    <input
+                      type="text"
+                      value={newAccCode}
+                      onChange={(e) => setNewAccCode(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold outline-none"
+                      placeholder="1120"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-zinc-700 mb-1 block">Account Name</label>
+                    <input
+                      type="text"
+                      value={newAccName}
+                      onChange={(e) => setNewAccName(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold outline-none"
+                      placeholder="e.g. Foreign Currency Accounts"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-zinc-700 mb-1 block">Node Classification</label>
+                    <div className="flex bg-zinc-100 p-1 rounded-2xl border border-zinc-200/80">
+                      <button
+                        type="button"
+                        onClick={() => setNewAccIsGroup(false)}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          !newAccIsGroup ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        <FileText className="size-3.5 text-emerald-600" /> Ledger (Postable)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewAccIsGroup(true)}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          newAccIsGroup ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        <Folder className="size-3.5 text-purple-600" /> Group (Folder)
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
@@ -1657,9 +1561,9 @@ export default function Ledger() {
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 rounded-full bg-black text-white font-bold hover:bg-zinc-800"
+                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm"
                     >
-                      Create Node
+                      Create Account Node
                     </button>
                   </div>
                 </form>
@@ -1668,7 +1572,7 @@ export default function Ledger() {
           )}
         </AnimatePresence>
 
-        {/* MODAL 3: Edit Account */}
+        {/* MODAL 3: Edit Account Node */}
         <AnimatePresence>
           {showEditAccountModal && editingAccount && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -1676,13 +1580,82 @@ export default function Ledger() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
+                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-blue-500/20"
               >
-                <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
-                  <h3 className="text-base font-black text-zinc-900">Edit Chart of Accounts Node</h3>
-                  <button onClick={() => setShowEditAccountModal(false)} className="text-zinc-400 hover:text-zinc-600">
-                    <X className="size-5" />
-                  </button>
+                {/* Modal Header with 3-dot dropdown menu */}
+                <div className="flex items-center justify-between border-b border-blue-100 pb-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-9 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700">
+                      <Edit className="size-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-black text-zinc-900">Edit Account</h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
+                          {editingAccount.code}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-zinc-400 mt-0.5 truncate max-w-[200px]">
+                        {editingAccount.name}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 relative">
+                    {/* 3-dot dropdown menu button */}
+                    <button
+                      type="button"
+                      onClick={() => setEditMenuOpen(!editMenuOpen)}
+                      className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-800 transition-colors"
+                      title="More Options"
+                    >
+                      <MoreVertical className="size-4" />
+                    </button>
+
+                    {/* 3-dot dropdown popover */}
+                    {editMenuOpen && (
+                      <div className="absolute right-0 top-8 z-50 w-52 bg-white rounded-2xl shadow-xl border border-zinc-200 p-2 space-y-1">
+                        {/* Toggle Active / Inactive */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditAccIsActive(!editAccIsActive)
+                            setEditMenuOpen(false)
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-zinc-800 hover:bg-zinc-50 rounded-xl transition-colors text-left"
+                        >
+                          <span>Account Status</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            editAccIsActive ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-rose-100 text-rose-800 border border-rose-200"
+                          }`}>
+                            {editAccIsActive ? "Active" : "Inactive"}
+                          </span>
+                        </button>
+
+                        <div className="h-px bg-zinc-100 my-1" />
+
+                        {/* Delete Account */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditMenuOpen(false)
+                            setShowDeleteConfirmModal(true)
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors text-left"
+                        >
+                          <Trash2 className="size-3.5" /> Delete Account Node
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Close button */}
+                    <button
+                      onClick={() => setShowEditAccountModal(false)}
+                      className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
+                    >
+                      <X className="size-5" />
+                    </button>
+                  </div>
                 </div>
 
                 <form onSubmit={handleUpdateAccountSubmit} className="flex flex-col gap-3 text-xs">
@@ -1692,7 +1665,8 @@ export default function Ledger() {
                       type="text"
                       value={editAccCode}
                       onChange={(e) => setEditAccCode(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold"
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold outline-none"
+                      required
                     />
                   </div>
                   <div>
@@ -1701,32 +1675,31 @@ export default function Ledger() {
                       type="text"
                       value={editAccName}
                       onChange={(e) => setEditAccName(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold outline-none"
+                      required
                     />
                   </div>
                   <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Account Classification Node Type</label>
-                    <div className="flex items-center gap-4 bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
-                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-zinc-800">
-                        <input
-                          type="radio"
-                          name="editAccGroupType"
-                          checked={!editAccIsGroup}
-                          onChange={() => setEditAccIsGroup(false)}
-                          className="accent-emerald-600"
-                        />
-                        <span>Ledger Account</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-zinc-800">
-                        <input
-                          type="radio"
-                          name="editAccGroupType"
-                          checked={editAccIsGroup}
-                          onChange={() => setEditAccIsGroup(true)}
-                          className="accent-purple-600"
-                        />
-                        <span>Group Account</span>
-                      </label>
+                    <label className="font-bold text-zinc-700 mb-1 block">Account Classification</label>
+                    <div className="flex bg-zinc-100 p-1 rounded-2xl border border-zinc-200/80">
+                      <button
+                        type="button"
+                        onClick={() => setEditAccIsGroup(false)}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          !editAccIsGroup ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        <FileText className="size-3.5 text-emerald-600" /> Ledger (Postable)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditAccIsGroup(true)}
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          editAccIsGroup ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+                        }`}
+                      >
+                        <Folder className="size-3.5 text-purple-600" /> Group (Folder)
+                      </button>
                     </div>
                   </div>
                   <div>
@@ -1734,7 +1707,7 @@ export default function Ledger() {
                     <select
                       value={editAccType}
                       onChange={(e) => setEditAccType(e.target.value as any)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold outline-none"
                     >
                       <option value="Asset">Asset</option>
                       <option value="Liability">Liability</option>
@@ -1748,7 +1721,7 @@ export default function Ledger() {
                     <select
                       value={editAccParent}
                       onChange={(e) => setEditAccParent(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold outline-none"
                     >
                       <option value="">(Root Account - No Parent)</option>
                       {accounts
@@ -1758,108 +1731,20 @@ export default function Ledger() {
                         ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer font-semibold text-zinc-800">
-                      <input
-                        type="checkbox"
-                        checked={editAccIsActive}
-                        onChange={(e) => setEditAccIsActive(e.target.checked)}
-                        className="accent-emerald-600 rounded"
-                      />
-                      <span>Account Active (Allowed for postings)</span>
-                    </label>
-                  </div>
-
-                  <div className="flex justify-between items-center pt-3 border-t border-zinc-100">
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAccountSubmit(editingAccount.id)}
-                      className="px-4 py-2 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 font-bold"
-                    >
-                      Delete Account
-                    </button>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowEditAccountModal(false)}
-                        className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 rounded-full bg-black text-white font-bold hover:bg-zinc-800"
-                      >
-                        Save Changes
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* MODAL 3.5: Add Accounting Period */}
-        <AnimatePresence>
-          {showAddPeriodModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
-              >
-                <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
-                  <h3 className="text-base font-black text-zinc-900">Add Accounting Period</h3>
-                  <button onClick={() => setShowAddPeriodModal(false)} className="text-zinc-400 hover:text-zinc-600">
-                    <X className="size-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleAddPeriodSubmit} className="flex flex-col gap-3 text-xs">
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Period Label (e.g. FY 2026 Q3)</label>
-                    <input
-                      type="text"
-                      value={newPeriodLabel}
-                      onChange={(e) => setNewPeriodLabel(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-bold"
-                      placeholder="e.g. FY 2026 Q3"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Start Date</label>
-                    <input
-                      type="date"
-                      value={newPeriodStart}
-                      onChange={(e) => setNewPeriodStart(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">End Date</label>
-                    <input
-                      type="date"
-                      value={newPeriodEnd}
-                      onChange={(e) => setNewPeriodEnd(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono"
-                    />
-                  </div>
 
                   <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
                     <button
                       type="button"
-                      onClick={() => setShowAddPeriodModal(false)}
+                      onClick={() => setShowEditAccountModal(false)}
                       className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 rounded-full bg-black text-white font-bold hover:bg-zinc-800"
+                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm"
                     >
-                      Create Period
+                      Save Changes
                     </button>
                   </div>
                 </form>
@@ -1868,172 +1753,46 @@ export default function Ledger() {
           )}
         </AnimatePresence>
 
-        {/* MODAL 3.8: Period Closing Voucher */}
+        {/* MODAL 4: Delete Account Confirmation Modal */}
         <AnimatePresence>
-          {showClosingModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          {showDeleteConfirmModal && editingAccount && (
+            <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
+                className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 text-center"
               >
-                <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
-                  <h3 className="text-base font-black text-zinc-900">Period Closing Voucher</h3>
-                  <button onClick={() => setShowClosingModal(false)} className="text-zinc-400 hover:text-zinc-600">
-                    <X className="size-5" />
+                <div className="size-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+                  <AlertTriangle className="size-6" />
+                </div>
+                <h3 className="text-base font-black text-zinc-900 mb-1">Delete Account Node?</h3>
+                <p className="text-xs text-zinc-500 font-semibold mb-4 leading-relaxed">
+                  Are you sure you want to delete <strong className="text-zinc-900 font-mono">{editingAccount.code} - {editingAccount.name}</strong>?
+                  Accounts with active transaction entries cannot be deleted.
+                </p>
+
+                <div className="flex justify-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirmModal(false)}
+                    className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    className="px-5 py-2 rounded-full bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-all shadow-sm"
+                  >
+                    Confirm Delete
                   </button>
                 </div>
-
-                <form onSubmit={handleClosePeriodVoucherSubmit} className="flex flex-col gap-3 text-xs">
-                  <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 leading-relaxed font-semibold mb-2">
-                    This action will zero out all Revenue and Expense account balances for the selected period and roll the net balance into the Equity Retained Earnings account. The period will be locked.
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Accounting Period to Close</label>
-                    <select
-                      value={closingPeriodId}
-                      onChange={(e) => setClosingPeriodId(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
-                      required
-                    >
-                      <option value="">(Select Open Period)</option>
-                      {periods
-                        .filter((p) => !p.is_closed)
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>{p.period_label} ({p.start_date} to {p.end_date})</option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Retained Earnings Account (Equity)</label>
-                    <select
-                      value={closingRetainedEarningsCode}
-                      onChange={(e) => setClosingRetainedEarningsCode(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
-                      required
-                    >
-                      {accounts
-                        .filter((a) => a.account_type === "Equity" && !a.is_group)
-                        .map((a) => (
-                          <option key={a.id} value={a.code}>{a.code} - {a.name}</option>
-                        ))}
-                    </select>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
-                    <button
-                      type="button"
-                      onClick={() => setShowClosingModal(false)}
-                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2.5 rounded-full bg-emerald-700 text-white font-bold hover:bg-emerald-800"
-                    >
-                      Post Closing Voucher & Lock
-                    </button>
-                  </div>
-                </form>
               </motion.div>
             </div>
           )}
         </AnimatePresence>
 
-        {/* MODAL 4: Forex Revaluation */}
-        <AnimatePresence>
-          {showRevalModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
-              >
-                <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
-                  <h3 className="text-base font-black text-zinc-900">Initiate Forex Revaluation</h3>
-                  <button onClick={() => setShowRevalModal(false)} className="text-zinc-400 hover:text-zinc-600">
-                    <X className="size-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleCreateRevaluation} className="flex flex-col gap-3 text-xs">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="font-bold text-zinc-700 mb-1 block">Revaluation Date</label>
-                      <input
-                        type="date"
-                        value={revalDate}
-                        onChange={(e) => setRevalDate(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-bold text-zinc-700 mb-1 block">Currency</label>
-                      <select
-                        value={revalCurrency}
-                        onChange={(e) => setRevalCurrency(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-bold"
-                      >
-                        <option value="USD">USD - US Dollar</option>
-                        <option value="EUR">EUR - Euro</option>
-                        <option value="GBP">GBP - British Pound</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Target Account to Revalue</label>
-                    <select
-                      value={revalTargetAcc}
-                      onChange={(e) => setRevalTargetAcc(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
-                    >
-                      {accounts.map(a => (
-                        <option key={a.id} value={a.id}>{a.code} - {a.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Foreign Currency Balance</label>
-                    <input
-                      type="number"
-                      value={revalOrigBalance}
-                      onChange={(e) => setRevalOrigBalance(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">New Period-End Market Rate (ETB/FX)</label>
-                    <input
-                      type="number"
-                      value={revalNewRate}
-                      onChange={(e) => setRevalNewRate(e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
-                    <button
-                      type="button"
-                      onClick={() => setShowRevalModal(false)}
-                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 rounded-full bg-black text-white font-bold hover:bg-zinc-800"
-                    >
-                      Create Draft
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
       </motion.div>
     </div>
   )

@@ -103,7 +103,7 @@ function resolveSalesOrderDocs(
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
-const CONTAINER_UNITS = ["Box", "Bottle", "Vial"]
+const CONTAINER_UNITS = ["Box", "Bottle", "Vial", "Sachet"]
 
 export default function SalesOrders() {
   const { showToast } = useFeedback()

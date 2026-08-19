@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import { useSearchParams } from "react-router-dom"
 import { 
   Plus, 
   X,
@@ -8,6 +9,8 @@ import {
   Edit3,
   PlusCircle,
   Download,
+  AlertTriangle,
+  AlertOctagon,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -26,8 +29,9 @@ import { useAuthStore } from "@/lib/authStore"
 import StockBinCardLedger from "@/components/stock/StockBinCardLedger"
 import StockBinEntryModal from "@/components/stock/StockBinEntryModal"
 import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
+import { getExpiryStatus, getExpiringItemsSummary } from "@/lib/expiryUtils"
 
-const packagingUnits = ["Box", "Bottle", "Vial"]
+const packagingUnits = ["Box", "Bottle", "Vial", "Sachet"]
 const TON_TO_QUINTAL = 10
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
@@ -116,9 +120,13 @@ export default function StockProducts() {
     : allWarehouses
   const isWH1 = (w: string) => w === "WH1" || w === "WH1-AGRI-EXP"
 
+  const [searchParams] = useSearchParams()
+  const initialSearch = searchParams.get("search") || ""
+
   const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer">("Register")
-  const [searchQuery, setSearchQuery] = useState("")
+  const [searchQuery, setSearchQuery] = useState(initialSearch)
   const [selectedWarehouse, setSelectedWarehouse] = useState("ALL")
+  const [expiryFilter, setExpiryFilter] = useState<string>("ALL")
   
   // Expanded rows for WH1 items
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
@@ -278,6 +286,14 @@ export default function StockProducts() {
 
   const warehouseKeyMap = useMemo(() => new Map(warehouseRecords.map((warehouse) => [warehouse.code || warehouse.id, new Set([warehouse.id, warehouse.code, warehouse.name].filter(Boolean))])), [warehouseRecords])
 
+  // Expiry summary for warehouse stock
+  const expirySummary = useMemo(() => {
+    return getExpiringItemsSummary(products, {
+      thresholdDays: 90,
+      warehouseId: selectedWarehouse,
+    })
+  }, [products, selectedWarehouse])
+
   // Filters for Table
   const filteredProducts = useMemo(() => {
     return products.filter((prod) => {
@@ -291,9 +307,18 @@ export default function StockProducts() {
         selectedWarehouse === "ALL" ||
         selectedWarehouseKeys.has(prod.warehouse) ||
         prod.stockBreakdown.some((breakdown) => selectedWarehouseKeys.has(breakdown.warehouse))
-      return matchesSearch && matchesWarehouse
+
+      let matchesExpiry = true
+      if (expiryFilter !== "ALL") {
+        const prodExpStatus = getExpiryStatus(prod.expiry, 90)
+        const batchExpStatuses = (prod.batches || []).map((b) => getExpiryStatus(b.expiry, 90))
+        const allStatuses = [prodExpStatus, ...batchExpStatuses]
+        matchesExpiry = allStatuses.some((s) => s.tier === expiryFilter)
+      }
+
+      return matchesSearch && matchesWarehouse && matchesExpiry
     })
-  }, [products, searchQuery, selectedWarehouse, warehouseKeyMap])
+  }, [products, searchQuery, selectedWarehouse, warehouseKeyMap, expiryFilter])
 
   // Suggested matching existing items list for WH1 auto-complete lookup
   const wh1ItemSuggestions = useMemo(() => {
@@ -310,10 +335,10 @@ export default function StockProducts() {
 
     if (isWH1(selectedWarehouse)) {
       cols.push(
-        { key: "unit", label: "UOM", align: "left" },
         { key: "entryDate", label: "Entry Date", align: "left" },
         { key: "leaveDate", label: "Leave Date", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
+        { key: "unit", label: "UOM", align: "left" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
     } else {
@@ -323,10 +348,10 @@ export default function StockProducts() {
         { key: "batch", label: "Batch", align: "left" },
         { key: "manufacturingDate", label: "MFG", align: "left" },
         { key: "expiryDate", label: "EXP", align: "left" },
-        { key: "unit", label: "Packaging Unit", align: "left" },
         { key: "numberOfCartons", label: "Cartons", align: "right" },
         { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
         { key: "quantity", label: "Total Quantity", align: "right" },
+        { key: "unit", label: "Packaging Unit", align: "left" },
         { key: "unitCost", label: "Unit Price", align: "right" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
@@ -748,7 +773,84 @@ export default function StockProducts() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15 }}
+              className="space-y-4"
             >
+              {/* Expiry Risk Alert Banner */}
+              {(expirySummary.totalExpiredCount > 0 || expirySummary.totalCriticalCount > 0) && (
+                <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                  expirySummary.totalExpiredCount > 0
+                    ? "bg-rose-50/70 border-rose-200/80 text-rose-950"
+                    : "bg-amber-50/70 border-amber-200/80 text-amber-950"
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`size-9 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                      expirySummary.totalExpiredCount > 0 ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {expirySummary.totalExpiredCount > 0 ? (
+                        <AlertOctagon className="size-5" />
+                      ) : (
+                        <AlertTriangle className="size-5" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase tracking-wider">
+                          Inventory Expiry Alert
+                        </span>
+                        {expirySummary.totalExpiredCount > 0 && (
+                          <span className="bg-rose-600 text-white text-[10px] font-black px-2 py-0.2 rounded-full">
+                            {expirySummary.totalExpiredCount} Expired
+                          </span>
+                        )}
+                        {expirySummary.totalCriticalCount > 0 && (
+                          <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.2 rounded-full">
+                            {expirySummary.totalCriticalCount} Critical (≤30d)
+                          </span>
+                        )}
+                        {expirySummary.totalWarningCount > 0 && (
+                          <span className="bg-yellow-400 text-yellow-900 text-[10px] font-black px-2 py-0.2 rounded-full">
+                            {expirySummary.totalWarningCount} Watchlist (≤90d)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-semibold text-zinc-600 mt-0.5">
+                        Total At-Risk Valuation: <strong className="font-mono text-zinc-900">ETB {expirySummary.totalAtRiskValue.toLocaleString()}</strong> across warehouses.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    {expiryFilter !== "ALL" ? (
+                      <button
+                        onClick={() => setExpiryFilter("ALL")}
+                        className="px-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                      >
+                        Clear Expiry Filter
+                      </button>
+                    ) : (
+                      <>
+                        {expirySummary.totalCriticalCount > 0 && (
+                          <button
+                            onClick={() => setExpiryFilter("CRITICAL")}
+                            className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black transition-all shadow-2xs cursor-pointer"
+                          >
+                            Filter Critical (≤30d)
+                          </button>
+                        )}
+                        {expirySummary.totalExpiredCount > 0 && (
+                          <button
+                            onClick={() => setExpiryFilter("EXPIRED")}
+                            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition-all shadow-2xs cursor-pointer"
+                          >
+                            Filter Expired
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
                 <div className="px-6 pt-6">
                   <FinanceTableToolbar
@@ -763,6 +865,17 @@ export default function StockProducts() {
                         onChange: setSelectedWarehouse,
                         ariaLabel: "Filter by Warehouse",
                         options: warehouseOptions,
+                      },
+                      {
+                        value: expiryFilter,
+                        onChange: setExpiryFilter,
+                        ariaLabel: "Filter by Expiry Status",
+                        options: [
+                          { value: "ALL", label: "All Expiry Status" },
+                          { value: "CRITICAL", label: `Critical (≤30d) (${expirySummary.totalCriticalCount})` },
+                          { value: "WARNING", label: `Watchlist (≤90d) (${expirySummary.totalWarningCount})` },
+                          { value: "EXPIRED", label: `Expired (${expirySummary.totalExpiredCount})` },
+                        ],
                       },
                     ]}
                     actions={[
@@ -849,9 +962,6 @@ export default function StockProducts() {
                                     </div>
                                   </td>
 
-                                  {/* UOM */}
-                                  <td className="py-4 px-4 font-bold text-zinc-500 uppercase">{prod.unit}</td>
-
                                   {/* Entry date */}
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">
                                     {earliestDate === latestDate ? earliestDate : `${earliestDate} to ${latestDate}`}
@@ -865,6 +975,9 @@ export default function StockProducts() {
                                     <div>{prod.quantity.toLocaleString()}</div>
                                     <div className="text-[9px] text-zinc-400 font-bold">of {totalReceived.toLocaleString()} received</div>
                                   </td>
+
+                                  {/* UOM */}
+                                  <td className="py-4 px-4 font-bold text-zinc-500 uppercase">{prod.unit}</td>
 
                                   {/* Stock Value */}
                                   <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
@@ -994,10 +1107,26 @@ export default function StockProducts() {
                                 <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.manufacturingDate)}</td>
 
                                 {/* EXP */}
-                                <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.expiry)}</td>
-
-                                {/* Packaging Unit */}
-                                <td className="py-4 px-4 text-zinc-600">{prod.unit}</td>
+                                <td className="py-4 px-4 font-mono">
+                                  {(() => {
+                                    const status = getExpiryStatus(prod.expiry, 90)
+                                    if (status.tier === "UNKNOWN") {
+                                      return <span className="text-zinc-400 font-bold text-[11px]">—</span>
+                                    }
+                                    return (
+                                      <div className="flex flex-col gap-0.5 min-w-[90px]">
+                                        <span className="font-bold text-zinc-800 text-[11px]">{displayDate(prod.expiry)}</span>
+                                        <span
+                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] border font-black truncate max-w-[110px] ${status.badgeClass}`}
+                                          title={status.sublabel}
+                                        >
+                                          <span className={`size-1.5 rounded-full shrink-0 ${status.dotClass}`} />
+                                          <span className="truncate">{status.label}</span>
+                                        </span>
+                                      </div>
+                                    )
+                                  })()}
+                                </td>
 
                                 {/* Cartons */}
                                 <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.numberOfCartons?.toLocaleString() || "—"}</td>
@@ -1007,11 +1136,14 @@ export default function StockProducts() {
 
                                 {/* Total Quantity */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
-                                  <div>{currentBalance.toLocaleString()} <span className="text-[10px] text-zinc-400 uppercase font-bold">{prod.unit}</span></div>
+                                  <div>{currentBalance.toLocaleString()}</div>
                                   {binEntries.length > 0 && (
                                     <div className="text-[9px] text-zinc-400 font-bold">+{totalReceived.toLocaleString()} / -{totalIssued.toLocaleString()}</div>
                                   )}
                                 </td>
+
+                                {/* Packaging Unit */}
+                                <td className="py-4 px-4 font-bold text-zinc-600 uppercase">{prod.unit}</td>
 
                                 {/* Unit Price */}
                                 <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
@@ -1173,8 +1305,21 @@ export default function StockProducts() {
                   </>
                 ) : (
                   <label className="space-y-1">
-                    <span className="block text-[11px] font-black uppercase text-zinc-500">Expiry Date</span>
-                    <input type="date" value={editForm.expiry} onChange={(e) => updateEditForm({ expiry: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
+                    <div className="flex items-center justify-between">
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Expiry Date</span>
+                      {editForm.expiry && (() => {
+                        const s = getExpiryStatus(editForm.expiry)
+                        if (s.tier !== "UNKNOWN") {
+                          return (
+                            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
+                              {s.label}
+                            </span>
+                          )
+                        }
+                        return null
+                      })()}
+                    </div>
+                    <input type="date" value={editForm.expiry} onChange={(e) => updateEditForm({ expiry: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                   </label>
                 )}
                 
@@ -1195,6 +1340,7 @@ export default function StockProducts() {
                         <option value="Box">Box</option>
                         <option value="Bottle">Bottle</option>
                         <option value="Vial">Vial</option>
+                        <option value="Sachet">Sachet</option>
                       </>
                     )}
                   </select>
@@ -1438,7 +1584,20 @@ export default function StockProducts() {
                         <input type="date" value={addMfgDate} onChange={(e) => setAddMfgDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Expiry Date <span className="text-rose-600">*</span></span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Expiry Date <span className="text-rose-600">*</span></span>
+                          {addExpDate && (() => {
+                            const s = getExpiryStatus(addExpDate)
+                            if (s.tier !== "UNKNOWN") {
+                              return (
+                                <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
+                                  {s.label}
+                                </span>
+                              )
+                            }
+                            return null
+                          })()}
+                        </div>
                         <input type="date" value={addExpDate} onChange={(e) => setAddExpDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
                       <label className="space-y-1">

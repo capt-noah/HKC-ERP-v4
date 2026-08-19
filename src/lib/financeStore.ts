@@ -20,6 +20,7 @@ export interface JournalEntry {
   source_type:
     | "Sales Invoice"
     | "Purchase Invoice"
+    | "Payment Voucher"
     | "Payment"
     | "Payroll Run"
     | "Payroll Accrual"
@@ -806,13 +807,99 @@ class FinanceStore {
   }
 
   // --- Chart of Accounts Actions ---
+  public getNextSuggestedAccountCode(parentCodeOrId?: string | null, accountType?: AccountItem["account_type"]): string {
+    const parent = parentCodeOrId
+      ? this.accounts.find((a) => a.id === parentCodeOrId || a.code === parentCodeOrId || `ACC-${a.code}` === parentCodeOrId)
+      : null
+
+    if (parent) {
+      // Find all direct children
+      const children = this.accounts.filter(
+        (a) => a.parent_account_id === parent.id || a.parent_account_id === parent.code || a.parent_account_id === `ACC-${parent.code}`
+      )
+      
+      const parentNum = parseInt(parent.code.replace(/\D/g, ""), 10)
+      if (!isNaN(parentNum)) {
+        if (children.length > 0) {
+          const childNums = children
+            .map((c) => parseInt(c.code.replace(/\D/g, ""), 10))
+            .filter((n) => !isNaN(n) && n > parentNum)
+          
+          if (childNums.length > 0) {
+            const maxChild = Math.max(...childNums)
+            const step = (maxChild - parentNum >= 10 && maxChild % 10 === 0) ? 10 : 1
+            return String(maxChild + step)
+          }
+        }
+        
+        if (parent.code.endsWith("00")) {
+          return String(parentNum + 10)
+        }
+        if (parent.code.endsWith("0")) {
+          return String(parentNum + 1)
+        }
+        return `${parent.code}-01`
+      }
+      return `${parent.code}-${children.length + 1}`
+    }
+
+    const type = accountType || "Asset"
+    const typeRange: Record<string, { start: number; max: number; step: number }> = {
+      Asset: { start: 1010, max: 1999, step: 10 },
+      Liability: { start: 2100, max: 2999, step: 10 },
+      Equity: { start: 3100, max: 3999, step: 10 },
+      Revenue: { start: 4010, max: 4999, step: 10 },
+      Expense: { start: 5000, max: 5999, step: 10 },
+    }
+
+    const range = typeRange[type] || { start: 1000, max: 9999, step: 10 }
+    const existingTypeCodes = this.accounts
+      .filter((a) => a.account_type === type)
+      .map((a) => parseInt(a.code.replace(/\D/g, ""), 10))
+      .filter((n) => !isNaN(n) && n >= range.start && n <= range.max)
+
+    if (existingTypeCodes.length > 0) {
+      const maxCode = Math.max(...existingTypeCodes)
+      return String(maxCode + range.step)
+    }
+    return String(range.start)
+  }
+
+  public getPostableAccounts(accountType?: AccountItem["account_type"]): AccountItem[] {
+    return this.accounts.filter((a) => {
+      if (a.is_active === false) return false
+      if (a.is_group === true) return false
+      if (accountType && a.account_type !== accountType) return false
+      return true
+    })
+  }
+
   public addAccount(account: Omit<AccountItem, "id">): { success: boolean; error?: string; account?: AccountItem } {
-    if (this.accounts.some((a) => a.code === account.code)) {
+    if (this.accounts.some((a) => a.code.toLowerCase() === account.code.toLowerCase())) {
       return { success: false, error: `Account code "${account.code}" already exists in Chart of Accounts.` }
     }
+
+    let normalizedParentId: string | null = null
+    if (account.parent_account_id) {
+      const parentAcc = this.accounts.find(
+        (a) => a.id === account.parent_account_id || a.code === account.parent_account_id || `ACC-${a.code}` === account.parent_account_id
+      )
+      if (parentAcc) {
+        normalizedParentId = parentAcc.id
+        if (!parentAcc.is_group) {
+          this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
+        }
+      } else {
+        normalizedParentId = account.parent_account_id.startsWith("ACC-")
+          ? account.parent_account_id
+          : `ACC-${account.parent_account_id}`
+      }
+    }
+
     const newAcc: AccountItem = {
       ...account,
       id: `ACC-${account.code}`,
+      parent_account_id: normalizedParentId,
     }
     this.accounts = [...this.accounts, newAcc]
     this.notify()
@@ -1036,6 +1123,23 @@ class FinanceStore {
       return { success: true, reversalEntry: result.entry }
     }
     return { success: false, error: result.error || "Failed to post reversal entry." }
+  }
+
+  // --- Delete Journal Entry Action ---
+  public deleteJournalEntry(entryId: string): { success: boolean } {
+    this.entries = this.entries.filter((e) => e.id !== entryId)
+    this.lines = this.lines.filter((l) => l.journal_entry_id !== entryId)
+    this.notify()
+    return { success: true }
+  }
+
+  public deleteJournalEntriesBySource(sourceType: string, sourceId: string): { success: boolean } {
+    const matchingEntries = this.entries.filter((e) => e.source_type === sourceType && e.source_id === sourceId)
+    const matchingIds = new Set(matchingEntries.map((e) => e.id))
+    this.entries = this.entries.filter((e) => !matchingIds.has(e.id))
+    this.lines = this.lines.filter((l) => !matchingIds.has(l.journal_entry_id))
+    this.notify()
+    return { success: true }
   }
 
   // --- Invoice & Payment Actions ---
@@ -1816,14 +1920,42 @@ class FinanceStore {
     if (accIndex === -1) return { success: false, error: "Account not found." }
 
     // If changing code, verify uniqueness
-    if (updated.code && updated.code !== this.accounts[accIndex].code) {
-      if (this.accounts.some((a) => a.code === updated.code)) {
+    if (updated.code && updated.code.toLowerCase() !== this.accounts[accIndex].code.toLowerCase()) {
+      if (this.accounts.some((a) => a.code.toLowerCase() === updated.code?.toLowerCase() && a.id !== id && a.code !== id)) {
         return { success: false, error: `Account code "${updated.code}" already exists.` }
       }
     }
 
+    let normalizedParentId = updated.parent_account_id
+    if (updated.parent_account_id !== undefined) {
+      if (updated.parent_account_id) {
+        const parentAcc = this.accounts.find(
+          (a) => a.id === updated.parent_account_id || a.code === updated.parent_account_id || `ACC-${a.code}` === updated.parent_account_id
+        )
+        if (parentAcc) {
+          normalizedParentId = parentAcc.id
+          if (!parentAcc.is_group) {
+            this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
+          }
+        } else {
+          normalizedParentId = updated.parent_account_id.startsWith("ACC-")
+            ? updated.parent_account_id
+            : `ACC-${updated.parent_account_id}`
+        }
+      } else {
+        normalizedParentId = null
+      }
+    }
+
     this.accounts = this.accounts.map((a) =>
-      a.id === id || a.code === id ? { ...a, ...updated } : a
+      a.id === id || a.code === id
+        ? {
+            ...a,
+            ...updated,
+            ...(normalizedParentId !== undefined ? { parent_account_id: normalizedParentId } : {}),
+            ...(updated.code ? { id: `ACC-${updated.code}` } : {}),
+          }
+        : a
     )
     this.notify()
     return { success: true }
