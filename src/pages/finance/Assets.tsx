@@ -9,6 +9,7 @@ import {
   Building,
   CheckCircle2,
   TrendingDown,
+  Download,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -19,6 +20,7 @@ import { useFinanceStore } from "@/lib/financeStore"
 import type { FixedAsset } from "@/lib/financeStore"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { exportPeachtreeFixedAssets, isDateInPreset } from "@/lib/peachtreeExportUtils"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -52,6 +54,9 @@ export default function Assets() {
   const [activeTab, setActiveTab] = useState<"registry" | "depreciation">("registry")
   const [expandedAssets, setExpandedAssets] = useState<{ [id: string]: boolean }>({})
   const [assetSearch, setAssetSearch] = useState("")
+  const [assetDateFilter, setAssetDateFilter] = useState("ALL")
+  const [assetCustomStart, setAssetCustomStart] = useState("")
+  const [assetCustomEnd, setAssetCustomEnd] = useState("")
   const [assetCategoryFilter, setAssetCategoryFilter] = useState("ALL")
   const [assetStatusFilter, setAssetStatusFilter] = useState("ALL")
   const [deprSearch, setDeprSearch] = useState("")
@@ -95,6 +100,7 @@ export default function Assets() {
   const pendingDepreciations = allScheduleItems.filter((s) => s.status === "Pending")
 
   const filteredAssets = assets.filter((asset) => {
+    if (!isDateInPreset(asset.purchaseDate, assetDateFilter, assetCustomStart, assetCustomEnd)) return false
     if (assetCategoryFilter !== "ALL" && asset.category !== assetCategoryFilter) return false
     if (assetStatusFilter !== "ALL" && asset.status !== assetStatusFilter) return false
     if (!assetSearch.trim()) return true
@@ -246,22 +252,38 @@ export default function Assets() {
         <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Gross Value</span>
-            <p className="text-xl font-black text-black font-mono mt-1">ETB {totalAssetCost.toLocaleString()}</p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-black font-mono mt-1">ETB {totalAssetCost.toLocaleString()}</p>
+            )}
             <span className="text-[10px] text-gray-400 mt-1">{assets.length} assets registered</span>
           </GlassCard>
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Net Book Value</span>
-            <p className="text-xl font-black text-emerald-700 font-mono mt-1">ETB {totalNetBookValue.toLocaleString()}</p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-emerald-700 font-mono mt-1">ETB {totalNetBookValue.toLocaleString()}</p>
+            )}
             <span className="text-[10px] text-emerald-600 mt-1">After Accumulated Depreciation</span>
           </GlassCard>
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Active Assets</span>
-            <p className="text-xl font-black text-black font-mono mt-1">{activeCount}</p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-20 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-black font-mono mt-1">{activeCount}</p>
+            )}
             <span className="text-[10px] text-gray-400 mt-1">Currently in service</span>
           </GlassCard>
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pending Depreciations</span>
-            <p className="text-xl font-black text-amber-600 font-mono mt-1">{pendingDepreciations.length}</p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-20 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-amber-600 font-mono mt-1">{pendingDepreciations.length}</p>
+            )}
             <span className="text-[10px] text-amber-600 mt-1">Entries awaiting GL posting</span>
           </GlassCard>
         </motion.div>
@@ -298,6 +320,16 @@ export default function Assets() {
                 searchValue={assetSearch}
                 onSearchChange={setAssetSearch}
                 searchPlaceholder="Search name, ID, location, serial..."
+                dateFilter={{
+                  value: assetDateFilter,
+                  onChange: setAssetDateFilter,
+                  startDate: assetCustomStart,
+                  endDate: assetCustomEnd,
+                  onCustomDateChange: (start, end) => {
+                    setAssetCustomStart(start)
+                    setAssetCustomEnd(end)
+                  },
+                }}
                 filters={[
                   {
                     value: assetCategoryFilter,
@@ -321,7 +353,18 @@ export default function Assets() {
                     ],
                   },
                 ]}
-                actions={[{ label: "Register Asset", onClick: () => setShowAddModal(true) }]}
+                actions={[
+                  {
+                    label: `Export (${filteredAssets.length})`,
+                    onClick: () => {
+                      exportPeachtreeFixedAssets(filteredAssets as any, { format: "PEACHTREE_EXCEL" })
+                      showToast("Assets Exported", "success", `Exported ${filteredAssets.length} fixed assets to Excel.`)
+                    },
+                    icon: <Download className="size-3.5" />,
+                    variant: "emeraldLight",
+                  },
+                  { label: "Register Asset", onClick: () => setShowAddModal(true) },
+                ]}
               />
             </GlassCard>
             {isLoading ? (

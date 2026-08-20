@@ -21,6 +21,7 @@ import Banking from "@/pages/finance/Banking"
 import Assets from "@/pages/finance/Assets"
 import Taxes from "@/pages/finance/Taxes"
 import FinancialReports from "@/pages/finance/FinancialReports"
+import FinanceExport from "@/pages/finance/FinanceExport"
 import Employees from "@/pages/hr/Employees"
 import Payroll from "@/pages/hr/Payroll"
 import Attendance from "@/pages/hr/Attendance"
@@ -99,6 +100,7 @@ export function App() {
       <Route path="/finance/assets" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Assets /></ProtectedRoute>} />
       <Route path="/finance/taxes" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Taxes /></ProtectedRoute>} />
       <Route path="/finance/reports" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinancialReports /></ProtectedRoute>} />
+      <Route path="/finance/export" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinanceExport /></ProtectedRoute>} />
 
       {/* HR section - Accessible by hr_manager and superadmin */}
       <Route path="/hr" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><HRDashboard /></ProtectedRoute>} />

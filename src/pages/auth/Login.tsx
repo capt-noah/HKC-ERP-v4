@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useAuthStore } from "@/lib/authStore"
 import { API_BASE } from "@/lib/apiPersistence"
-import { toast } from "sonner"
+import { useFeedback } from "@/context/FeedbackContext"
 import { KeyRound, User, Loader2, Eye, EyeOff } from "lucide-react"
 
 export default function Login() {
@@ -10,6 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const { showToast } = useFeedback()
   const login = useAuthStore((state: any) => state.login)
   const navigate = useNavigate()
   const location = useLocation()
@@ -32,11 +33,11 @@ export default function Login() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to login")
+        throw new Error(data.error || "Invalid username or password")
       }
 
       login(data.user, data.token)
-      toast.success("Login successful")
+      showToast("Login Successful", "success", `Welcome back, ${data.user.name || data.user.username}!`)
       
       const userRoles = data.user.roles || (data.user.role ? [data.user.role] : [])
       const primaryRole = userRoles[0]
@@ -67,7 +68,7 @@ export default function Login() {
         navigate(from, { replace: true })
       }
     } catch (error: any) {
-      toast.error(error.message || "Failed to connect to server")
+      showToast("Authentication Failed", "warning", error.message || "Invalid username or password.")
     } finally {
       setLoading(false)
     }

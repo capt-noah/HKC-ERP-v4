@@ -7,7 +7,8 @@ import {
   Wrench, 
   ChevronDown, 
   ChevronRight,
-  Play
+  Play,
+  Download,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -18,6 +19,8 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
 import type { Vehicle, RecurringExpenseSchedule } from "@/lib/financeStore"
+import { exportToExcel } from "@/lib/exportUtils"
+import { isDateInPreset } from "@/lib/peachtreeExportUtils"
 
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -34,6 +37,9 @@ export default function Expenses() {
   // One-off Expenses state
   const expenses = store.getOneOffExpenses()
   const [searchQuery, setSearchQuery] = useState("")
+  const [expenseDateFilter, setExpenseDateFilter] = useState("ALL")
+  const [expenseCustomStart, setExpenseCustomStart] = useState("")
+  const [expenseCustomEnd, setExpenseCustomEnd] = useState("")
   const [filterCategory, setFilterCategory] = useState("ALL")
   const [filterStatus, setFilterStatus] = useState("ALL")
 
@@ -264,6 +270,7 @@ export default function Expenses() {
   }
 
   const filteredExpenses = expenses.filter((exp) => {
+    if (!isDateInPreset((exp as any).date || (exp as any).created_at, expenseDateFilter, expenseCustomStart, expenseCustomEnd)) return false
     const q = (searchQuery || "").toLowerCase()
     const merchant = (exp.merchant || "").toLowerCase()
     const employee = (exp.employee || "").toLowerCase()
@@ -334,33 +341,49 @@ export default function Expenses() {
         <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Approved Expenses YTD</span>
-            <p className="text-xl font-black text-black font-mono mt-1">
-              ETB {totalApproved.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-black font-mono mt-1">
+                ETB {totalApproved.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            )}
             <span className="text-[10px] text-emerald-600 font-semibold mt-1">GL Journal Entries Posted</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pending Claims Audit</span>
-            <p className="text-xl font-black text-amber-600 font-mono mt-1">
-              {pendingCount} claims <span className="text-xs font-normal text-gray-500">(ETB {pendingValue.toLocaleString()})</span>
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-amber-600 font-mono mt-1">
+                {pendingCount} claims <span className="text-xs font-normal text-gray-500">(ETB {pendingValue.toLocaleString()})</span>
+              </p>
+            )}
             <span className="text-[10px] text-amber-600 font-semibold mt-1">Awaiting Treasury Manager Approval</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Recurring Monthly Commitment</span>
-            <p className="text-xl font-black text-black font-mono mt-1">
-              ETB {recurringMonthly.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-black font-mono mt-1">
+                ETB {recurringMonthly.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            )}
             <span className="text-[10px] text-gray-400 mt-1">Rent, Software & Retainers</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fleet Service History Total</span>
-            <p className="text-xl font-black text-black font-mono mt-1">
-              ETB {totalFleetCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-black font-mono mt-1">
+                ETB {totalFleetCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            )}
             <span className="text-[10px] text-gray-400 mt-1">Logistics & Repairs (ACC-5400)</span>
           </GlassCard>
         </motion.div>
@@ -523,6 +546,16 @@ export default function Expenses() {
                 searchValue={searchQuery}
                 onSearchChange={setSearchQuery}
                 searchPlaceholder="Search merchant, employee..."
+                dateFilter={{
+                  value: expenseDateFilter,
+                  onChange: setExpenseDateFilter,
+                  startDate: expenseCustomStart,
+                  endDate: expenseCustomEnd,
+                  onCustomDateChange: (start, end) => {
+                    setExpenseCustomStart(start)
+                    setExpenseCustomEnd(end)
+                  },
+                }}
                 filters={[
                   {
                     value: filterCategory,
@@ -549,6 +582,29 @@ export default function Expenses() {
                   },
                 ]}
                 actions={[
+                  {
+                    label: `Export (${filteredExpenses.length})`,
+                    onClick: () => {
+                      exportToExcel({
+                        fileName: `HKC_Expenses_${new Date().toISOString().split("T")[0]}`,
+                        title: "HKC Trading - Corporate Expense Claims",
+                        headers: ["Expense ID", "Merchant / Payee", "Employee", "Category", "Cost Center", "GL Account", "Amount (ETB)", "Status"],
+                        rows: filteredExpenses.map((e) => [
+                          e.id || "",
+                          e.merchant || "",
+                          e.employee || "",
+                          e.category || "",
+                          e.cost_center || "HQ",
+                          e.gl_account_id || "5200",
+                          Number(e.amount) || 0,
+                          e.status || "",
+                        ]),
+                      })
+                      showToast("Expenses Exported", "success", `Exported ${filteredExpenses.length} expense claims to Excel.`)
+                    },
+                    icon: <Download className="size-3.5" />,
+                    variant: "emeraldLight",
+                  },
                   {
                     label: showForm ? "Close Form" : "Log Expense Claim",
                     onClick: () => setShowForm(!showForm),

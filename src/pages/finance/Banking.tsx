@@ -4,6 +4,7 @@ import {
   Landmark,
   ArrowRightLeft,
   CheckCircle2,
+  Download,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -13,6 +14,8 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { exportToExcel } from "@/lib/exportUtils"
+import { isDateInPreset } from "@/lib/peachtreeExportUtils"
 import { Skeleton } from "@/components/ui/skeleton"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
@@ -37,6 +40,9 @@ export default function Banking() {
   const [activeTab, setActiveTab] = useState<"BankRecon" | "Reconciliation">("BankRecon")
   const [clearedLineIds, setClearedLineIds] = useState<Set<string>>(new Set())
   const [bankSearch, setBankSearch] = useState("")
+  const [bankDateFilter, setBankDateFilter] = useState("ALL")
+  const [bankCustomStart, setBankCustomStart] = useState("")
+  const [bankCustomEnd, setBankCustomEnd] = useState("")
   const [bankStatusFilter, setBankStatusFilter] = useState("ALL")
   const [bankTypeFilter, setBankTypeFilter] = useState("ALL")
   const [allocSearch, setAllocSearch] = useState("")
@@ -57,6 +63,7 @@ export default function Banking() {
   })
 
   const filteredBankLines = bankLines.filter((line) => {
+    if (!isDateInPreset(line.date, bankDateFilter, bankCustomStart, bankCustomEnd)) return false
     if (bankStatusFilter === "CLEARED" && !line.isCleared) return false
     if (bankStatusFilter === "UNCLEARED" && line.isCleared) return false
     if (bankTypeFilter !== "ALL" && line.type !== bankTypeFilter) return false
@@ -176,15 +183,27 @@ export default function Banking() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <GlassCard className="p-4">
                   <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">GL Cash Ledger Balance</div>
-                  <div className="text-xl font-black text-zinc-900 font-mono mt-1">ETB {cashBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <div className="text-xl font-black text-zinc-900 font-mono mt-1">ETB {cashBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  )}
                 </GlassCard>
                 <GlassCard className="p-4">
                   <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">Statement Cleared Balance</div>
-                  <div className="text-xl font-black text-emerald-600 font-mono mt-1">ETB {clearedBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <div className="text-xl font-black text-emerald-600 font-mono mt-1">ETB {clearedBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  )}
                 </GlassCard>
                 <GlassCard className="p-4">
                   <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">Uncleared Difference</div>
-                  <div className="text-xl font-black text-amber-600 font-mono mt-1">ETB {(cashBalance - clearedBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <div className="text-xl font-black text-amber-600 font-mono mt-1">ETB {(cashBalance - clearedBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  )}
                 </GlassCard>
               </div>
 
@@ -196,6 +215,16 @@ export default function Banking() {
                   searchValue={bankSearch}
                   onSearchChange={setBankSearch}
                   searchPlaceholder="Search reference, payee, date..."
+                  dateFilter={{
+                    value: bankDateFilter,
+                    onChange: setBankDateFilter,
+                    startDate: bankCustomStart,
+                    endDate: bankCustomEnd,
+                    onCustomDateChange: (start, end) => {
+                      setBankCustomStart(start)
+                      setBankCustomEnd(end)
+                    },
+                  }}
                   filters={[
                     {
                       value: bankStatusFilter,
@@ -216,6 +245,30 @@ export default function Banking() {
                         { value: "Deposit", label: "Deposits" },
                         { value: "Withdrawal", label: "Withdrawals" },
                       ],
+                    },
+                  ]}
+                  actions={[
+                    {
+                      label: `Export (${filteredBankLines.length})`,
+                      onClick: () => {
+                        exportToExcel({
+                          fileName: `HKC_Bank_Transactions_${new Date().toISOString().split("T")[0]}`,
+                          title: "HKC Trading - Bank Statement Transactions",
+                          headers: ["Date", "Reference", "Payee / Description", "Type", "Amount (ETB)", "Status", "Cleared Date"],
+                          rows: filteredBankLines.map((l) => [
+                            l.date,
+                            l.reference,
+                            l.payee,
+                            l.type,
+                            l.amount,
+                            l.isCleared ? "Cleared" : "Uncleared",
+                            l.clearedDate || "—",
+                          ]),
+                        })
+                        showToast("Export Complete", "success", `Exported ${filteredBankLines.length} bank transactions to Excel.`)
+                      },
+                      icon: <Download className="size-3.5" />,
+                      variant: "emeraldLight",
                     },
                   ]}
                 />

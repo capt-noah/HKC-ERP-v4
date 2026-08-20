@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { Wallet, Calendar, Download, ArrowUpRight } from "lucide-react"
+import { Wallet, Calendar, ArrowUpRight } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -74,9 +74,6 @@ export default function FinanceOverview() {
           </div>
           <div className="flex items-center gap-3">
             <SubPageNav items={getSectionChildren("/finance")} />
-            <button className="flex items-center gap-2 px-4 py-2 rounded-full glass-card text-xs font-bold hover:bg-white/70">
-              <Download className="size-4" /> Export Report
-            </button>
           </div>
         </motion.div>
 

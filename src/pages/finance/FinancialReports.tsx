@@ -1,16 +1,9 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Scale,
   Download,
   BookOpen,
-  RotateCcw,
-  Search,
-  X,
-  ChevronDown,
-  ArrowUp,
-  ArrowDown,
-  Filter,
   CheckCircle2,
   Landmark,
   TrendingUp,
@@ -43,6 +36,11 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
+import { exportToExcel } from "@/lib/exportUtils"
+import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
+import { isDateInPreset } from "@/lib/peachtreeExportUtils"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -52,58 +50,19 @@ export type ReportTab = "GL" | "TrialBalance" | "BalanceSheet" | "IncomeStatemen
 export default function FinancialReports() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+  const isLoading = store.isLoading()
 
   const [activeTab, setActiveTab] = useState<ReportTab>("GL")
 
   // General Ledger Filters State
   const [glAccountFilter, setGlAccountFilter] = useState<string>("ALL")
   const [glVoucherTypeFilter, setGlVoucherTypeFilter] = useState<string>("ALL")
-  const [glPartyFilter, setGlPartyFilter] = useState<string>("ALL")
-  const [glFromDate, setGlFromDate] = useState<string>("")
-  const [glToDate, setGlToDate] = useState<string>("")
+  const [glDateFilter, setGlDateFilter] = useState<string>("ALL")
+  const [glCustomStart, setGlCustomStart] = useState<string>("")
+  const [glCustomEnd, setGlCustomEnd] = useState<string>("")
   const [glSearchQuery, setGlSearchQuery] = useState<string>("")
 
-  // General Ledger Column Resizing & Sorting State
-  const defaultGlColWidths: Record<string, number> = {
-    entry_date: 125,
-    account: 170,
-    source_type: 120,
-    source_id: 110,
-    party: 130,
-    description: 180,
-    against_account: 150,
-    debit_amount: 115,
-    credit_amount: 115,
-    running_balance: 145,
-  }
-
-  const [glColWidths, setGlColWidths] = useState<Record<string, number>>(defaultGlColWidths)
-  const [glSortKey, setGlSortKey] = useState<string | null>(null)
-  const [glSortDir, setGlSortDir] = useState<"asc" | "desc">("asc")
-  const [openSortMenuCol, setOpenSortMenuCol] = useState<string | null>(null)
-
-  const handleResizeStart = (e: React.MouseEvent, colKey: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const startX = e.clientX
-    const startWidth = glColWidths[colKey] || 120
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX
-      const newWidth = Math.max(65, startWidth + deltaX)
-      setGlColWidths((prev) => ({ ...prev, [colKey]: newWidth }))
-    }
-
-    const onMouseUp = () => {
-      document.removeEventListener("mousemove", onMouseMove)
-      document.removeEventListener("mouseup", onMouseUp)
-    }
-
-    document.addEventListener("mousemove", onMouseMove)
-    document.addEventListener("mouseup", onMouseUp)
-  }
-
-  const glColumns: { key: string; label: string; align?: "left" | "right" }[] = [
+  const glColumns: TableColumn[] = [
     { key: "entry_date", label: "Posting Date", align: "left" },
     { key: "account", label: "Account", align: "left" },
     { key: "source_type", label: "Voucher Type", align: "left" },
@@ -118,49 +77,18 @@ export default function FinancialReports() {
 
   // Data from store
   const accounts = store.getAccounts()
-  const trialBalance = store.getTrialBalance()
+  const entries = store.getJournalEntries()
+  const lines = store.getJournalEntryLines()
 
-  // Trial Balance Filters & Sorting State
+  // Trial Balance Filters State
   const [tbCategoryFilter, setTbCategoryFilter] = useState<string>("ALL")
   const [tbBalanceFilter, setTbBalanceFilter] = useState<string>("ALL")
+  const [tbDateFilter, setTbDateFilter] = useState<string>("ALL")
+  const [tbCustomStart, setTbCustomStart] = useState<string>("")
+  const [tbCustomEnd, setTbCustomEnd] = useState<string>("")
   const [tbSearchTerm, setTbSearchTerm] = useState<string>("")
-  const [tbSortKey, setTbSortKey] = useState<string | null>("code")
-  const [tbSortDir, setTbSortDir] = useState<"asc" | "desc">("asc")
-  const [openTbSortMenuCol, setOpenTbSortMenuCol] = useState<string | null>(null)
 
-  const defaultTbColWidths: Record<string, number> = {
-    code: 110,
-    name: 240,
-    account_type: 130,
-    debit_sum: 140,
-    credit_sum: 140,
-    net_balance: 150,
-    balance_type: 120,
-  }
-  const [tbColWidths, setTbColWidths] = useState<Record<string, number>>(defaultTbColWidths)
-
-  const handleTbResizeStart = (e: React.MouseEvent, colKey: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const startX = e.clientX
-    const startWidth = tbColWidths[colKey] || 120
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX
-      const newWidth = Math.max(65, startWidth + deltaX)
-      setTbColWidths((prev) => ({ ...prev, [colKey]: newWidth }))
-    }
-
-    const onMouseUp = () => {
-      document.removeEventListener("mousemove", onMouseMove)
-      document.removeEventListener("mouseup", onMouseUp)
-    }
-
-    document.addEventListener("mousemove", onMouseMove)
-    document.addEventListener("mouseup", onMouseUp)
-  }
-
-  const tbColumns: { key: string; label: string; align?: "left" | "right" | "center" }[] = [
+  const tbColumns: TableColumn[] = [
     { key: "code", label: "Account Code", align: "left" },
     { key: "name", label: "Account Name", align: "left" },
     { key: "account_type", label: "Category", align: "left" },
@@ -169,6 +97,58 @@ export default function FinancialReports() {
     { key: "net_balance", label: "Net Balance (ETB)", align: "right" },
     { key: "balance_type", label: "Balance Status", align: "center" },
   ]
+
+  // Dynamic Trial Balance Calculation (filtered by Date preset / custom)
+  const trialBalance = useMemo(() => {
+    const accountMap = new Map<
+      string,
+      { code: string; name: string; account_type: string; debit_sum: number; credit_sum: number }
+    >()
+
+    accounts.forEach((acc) => {
+      accountMap.set(acc.id, {
+        code: acc.code,
+        name: acc.name,
+        account_type: acc.account_type,
+        debit_sum: 0,
+        credit_sum: 0,
+      })
+    })
+
+    lines.forEach((line) => {
+      const parentEntry = entries.find((e) => e.id === line.journal_entry_id)
+      if (!parentEntry) return
+      if (!isDateInPreset(parentEntry.entry_date, tbDateFilter, tbCustomStart, tbCustomEnd)) return
+
+      let acc = accountMap.get(line.account_id)
+      if (!acc) {
+        const matched = accounts.find((a) => a.code === line.account_id || a.id === line.account_id)
+        if (matched) {
+          acc = accountMap.get(matched.id)
+        }
+      }
+      if (acc) {
+        acc.debit_sum += line.debit_amount
+        acc.credit_sum += line.credit_amount
+      }
+    })
+
+    const rows = Array.from(accountMap.entries()).map(([id, val]) => ({
+      account_id: id,
+      code: val.code,
+      name: val.name,
+      account_type: val.account_type,
+      debit_sum: Math.round(val.debit_sum * 100) / 100,
+      credit_sum: Math.round(val.credit_sum * 100) / 100,
+      net_balance: Math.round((val.debit_sum - val.credit_sum) * 100) / 100,
+    }))
+
+    const totalDebits = Math.round(rows.reduce((sum, r) => sum + r.debit_sum, 0) * 100) / 100
+    const totalCredits = Math.round(rows.reduce((sum, r) => sum + r.credit_sum, 0) * 100) / 100
+    const isBalanced = Math.abs(totalDebits - totalCredits) < 0.01
+
+    return { rows, totalDebits, totalCredits, isBalanced }
+  }, [accounts, lines, entries, tbDateFilter, tbCustomStart, tbCustomEnd])
 
   const filteredTbRows = trialBalance.rows.filter((r) => {
     if (tbCategoryFilter !== "ALL" && r.account_type !== tbCategoryFilter) return false
@@ -186,32 +166,24 @@ export default function FinancialReports() {
     return true
   })
 
-  const sortedTbRows = [...filteredTbRows].sort((a, b) => {
-    if (!tbSortKey) return 0
-    let valA: any
-    let valB: any
-    if (tbSortKey === "code") { valA = a.code; valB = b.code }
-    else if (tbSortKey === "name") { valA = a.name; valB = b.name }
-    else if (tbSortKey === "account_type") { valA = a.account_type; valB = b.account_type }
-    else if (tbSortKey === "debit_sum") { valA = a.debit_sum; valB = b.debit_sum }
-    else if (tbSortKey === "credit_sum") { valA = a.credit_sum; valB = b.credit_sum }
-    else if (tbSortKey === "net_balance") { valA = a.net_balance; valB = b.net_balance }
-    else if (tbSortKey === "balance_type") { valA = a.net_balance > 0 ? "Debit" : a.net_balance < 0 ? "Credit" : "Zero"; valB = b.net_balance > 0 ? "Debit" : b.net_balance < 0 ? "Credit" : "Zero" }
+  const tbTable = useResizableTable<any>(
+    tbColumns,
+    filteredTbRows,
+    {
+      code: 110,
+      name: 240,
+      account_type: 130,
+      debit_sum: 140,
+      credit_sum: 140,
+      net_balance: 150,
+      balance_type: 120,
+    }
+  )
 
-    if (typeof valA === "number" && typeof valB === "number") {
-      return tbSortDir === "asc" ? valA - valB : valB - valA
-    }
-    if (typeof valA === "string" && typeof valB === "string") {
-      const comp = valA.localeCompare(valB)
-      return tbSortDir === "asc" ? comp : -comp
-    }
-    return 0
-  })
+  const sortedTbRows = tbTable.sorted()
 
   const tbFilteredTotalDebits = sortedTbRows.reduce((s, r) => s + r.debit_sum, 0)
   const tbFilteredTotalCredits = sortedTbRows.reduce((s, r) => s + r.credit_sum, 0)
-  const entries = store.getJournalEntries()
-  const lines = store.getJournalEntryLines()
 
   // GL Engine Calculations
   const allGlTransactions = lines
@@ -256,10 +228,6 @@ export default function FinancialReports() {
     })
     .filter((tx): tx is NonNullable<typeof tx> => tx !== null)
 
-  const uniqueParties = Array.from(
-    new Set(allGlTransactions.map((tx) => tx.party_name).filter((p): p is string => Boolean(p)))
-  )
-
   const uniqueVoucherTypes = Array.from(
     new Set(allGlTransactions.map((tx) => tx.source_type))
   )
@@ -275,13 +243,9 @@ export default function FinancialReports() {
         return false
       }
     }
-    if (glPartyFilter !== "ALL") {
-      if (!tx.party_name || !tx.party_name.toLowerCase().includes(glPartyFilter.toLowerCase())) {
-        return false
-      }
+    if (!isDateInPreset(tx.entry_date, glDateFilter, glCustomStart, glCustomEnd)) {
+      return false
     }
-    if (glFromDate && tx.entry_date < glFromDate) return false
-    if (glToDate && tx.entry_date > glToDate) return false
 
     if (glSearchQuery.trim()) {
       const q = glSearchQuery.toLowerCase()
@@ -299,58 +263,8 @@ export default function FinancialReports() {
     return true
   })
 
-  const sortedGlTransactions = [...filteredGlTransactions].sort((a, b) => {
-    if (glSortKey) {
-      let valA: any
-      let valB: any
-
-      if (glSortKey === "entry_date") {
-        valA = a.entry_date
-        valB = b.entry_date
-      } else if (glSortKey === "account") {
-        valA = `${a.account_code} ${a.account_name}`
-        valB = `${b.account_code} ${b.account_name}`
-      } else if (glSortKey === "source_type") {
-        valA = a.source_type
-        valB = b.source_type
-      } else if (glSortKey === "source_id") {
-        valA = a.source_id
-        valB = b.source_id
-      } else if (glSortKey === "party") {
-        valA = a.party_name || ""
-        valB = b.party_name || ""
-      } else if (glSortKey === "description") {
-        valA = a.description || ""
-        valB = b.description || ""
-      } else if (glSortKey === "against_account") {
-        valA = a.against_account || ""
-        valB = b.against_account || ""
-      } else if (glSortKey === "debit_amount") {
-        valA = a.debit_amount
-        valB = b.debit_amount
-      } else if (glSortKey === "credit_amount") {
-        valA = a.credit_amount
-        valB = b.credit_amount
-      }
-
-      if (typeof valA === "number" && typeof valB === "number") {
-        if (valA !== valB) {
-          return glSortDir === "asc" ? valA - valB : valB - valA
-        }
-      } else if (typeof valA === "string" && typeof valB === "string") {
-        const comp = valA.localeCompare(valB)
-        if (comp !== 0) {
-          return glSortDir === "asc" ? comp : -comp
-        }
-      }
-    }
-
-    if (a.entry_date !== b.entry_date) return a.entry_date.localeCompare(b.entry_date)
-    return a.journal_entry_id.localeCompare(b.journal_entry_id)
-  })
-
   let runningBal = 0
-  let glRowsWithRunningBalance = sortedGlTransactions.map((tx) => {
+  const glRowsWithRunningBalance = filteredGlTransactions.map((tx) => {
     if (tx.account_type === "Asset" || tx.account_type === "Expense") {
       runningBal += tx.debit_amount - tx.credit_amount
     } else {
@@ -358,15 +272,29 @@ export default function FinancialReports() {
     }
     return {
       ...tx,
+      account: `${tx.account_code} - ${tx.account_name}`,
       running_balance: runningBal,
     }
   })
 
-  if (glSortKey === "running_balance") {
-    glRowsWithRunningBalance = [...glRowsWithRunningBalance].sort((a, b) =>
-      glSortDir === "asc" ? a.running_balance - b.running_balance : b.running_balance - a.running_balance
-    )
-  }
+  const glTable = useResizableTable<any>(
+    glColumns,
+    glRowsWithRunningBalance,
+    {
+      entry_date: 125,
+      account: 170,
+      source_type: 120,
+      source_id: 110,
+      party: 130,
+      description: 180,
+      against_account: 150,
+      debit_amount: 115,
+      credit_amount: 115,
+      running_balance: 145,
+    }
+  )
+
+  const sortedGlTransactions = glTable.sorted()
 
   const glTotalDebit = sortedGlTransactions.reduce((s, tx) => s + tx.debit_amount, 0)
   const glTotalCredit = sortedGlTransactions.reduce((s, tx) => s + tx.credit_amount, 0)
@@ -407,10 +335,6 @@ export default function FinancialReports() {
   const cashFlowTrendData = plMonthlyTrendData.map((row) => ({ period: row.month, operating: row.operating, investing: row.investing, financing: row.financing, netCash: row.netCash, cashBalance: row.cashBalance }))
   const chartColors = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899"]
   const plExpenseCategoryData = accountsByType.Expense.map((account, index) => ({ name: `${account.code} ${account.name}`, value: accountBalance(account), color: chartColors[index % chartColors.length] })).filter((item) => item.value !== 0)
-
-  const handleExportPDF = () => {
-    showToast("Report exported as PDF statement successfully", "success")
-  }
 
   return (
     <div className="min-h-screen page-gradient text-black">
@@ -459,7 +383,7 @@ export default function FinancialReports() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black relative tracking-tight transition-colors uppercase whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black relative tracking-tight transition-colors uppercase whitespace-nowrap cursor-pointer"
                 >
                   <Icon className={`size-3.5 ${isActive ? "text-emerald-600" : "text-zinc-400"}`} />
                   <span className={isActive ? "text-zinc-950 font-black" : "text-zinc-400 hover:text-zinc-700"}>
@@ -475,15 +399,6 @@ export default function FinancialReports() {
               )
             })}
           </div>
-
-          <div className="flex items-center gap-2 shrink-0 ml-4">
-            <button
-              onClick={handleExportPDF}
-              className="inline-flex items-center gap-1.5 text-xs font-extrabold bg-white border border-black/10 hover:bg-zinc-50 text-black px-3 py-1.5 rounded-full shadow-xs transition-all"
-            >
-              <Download className="size-3.5" /> Export PDF
-            </button>
-          </div>
         </motion.div>
 
         {/* Tab Contents */}
@@ -498,179 +413,109 @@ export default function FinancialReports() {
               transition={{ duration: 0.2 }}
               className="flex flex-col gap-4"
             >
-              {/* Summary Metric Strip */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <GlassCard className="p-3.5 flex flex-col justify-between">
-                  <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Account Scope</span>
-                  <span className="text-sm font-black text-zinc-900 mt-1 line-clamp-1">
-                    {glAccountFilter === "ALL" ? "All Accounts (Full Ledger)" : glAccountFilter}
-                  </span>
+              {/* Summary Metric Strip - Standardized 3 KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Debits Posted</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
+                      ETB {glTotalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Across all active account lines</span>
                 </GlassCard>
-                <GlassCard className="p-3.5 flex flex-col justify-between">
-                  <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Debits</span>
-                  <span className="text-sm font-mono font-black text-emerald-700 mt-1">
-                    ETB {glTotalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Credits Posted</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
+                      ETB {glTotalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Across all active account lines</span>
                 </GlassCard>
-                <GlassCard className="p-3.5 flex flex-col justify-between">
-                  <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Credits</span>
-                  <span className="text-sm font-mono font-black text-emerald-700 mt-1">
-                    ETB {glTotalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </GlassCard>
-                <GlassCard className="p-3.5 flex flex-col justify-between">
-                  <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Closing Balance</span>
-                  <span className="text-sm font-mono font-black text-zinc-950 mt-1">
-                    ETB {runningBal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Net Running Balance</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-zinc-950 font-mono mt-1">
+                      ETB {runningBal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Cumulative ledger position</span>
                 </GlassCard>
               </div>
 
               {/* General Ledger Table with Integrated Filter Parameters */}
-              <GlassCard className="overflow-hidden p-0 flex flex-col border border-zinc-200/80">
-                {/* Table Header & Integrated Filter Bar */}
-                <div className="p-4 border-b border-zinc-200/80 bg-zinc-50/50 flex flex-col gap-3">
-                  {/* Title & Search / Action Row */}
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="size-4 text-emerald-600" />
-                      <h3 className="text-xs font-black uppercase text-zinc-900 tracking-wider">
-                        General Ledger Transactions
-                      </h3>
-                      <span className="text-[10px] font-mono font-bold bg-zinc-200/80 text-zinc-700 px-2 py-0.5 rounded-full">
-                        {glRowsWithRunningBalance.length} {glRowsWithRunningBalance.length === 1 ? "record" : "records"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-1 max-w-md justify-end">
-                      {/* Integrated Search Box */}
-                      <div className="relative w-full max-w-xs">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                        <input
-                          type="text"
-                          placeholder="Search ref #, desc, account..."
-                          value={glSearchQuery}
-                          onChange={(e) => setGlSearchQuery(e.target.value)}
-                          className="w-full pl-8 pr-7 py-1 text-xs font-semibold bg-white border border-zinc-200 rounded-full focus:outline-none focus:ring-1 focus:ring-emerald-500 text-zinc-900 placeholder:text-zinc-400 transition-all"
-                        />
-                        {glSearchQuery && (
-                          <button
-                            onClick={() => setGlSearchQuery("")}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100"
-                          >
-                            <X className="size-3" />
-                          </button>
-                        )}
-                      </div>
-
-                      {(glAccountFilter !== "ALL" ||
-                        glVoucherTypeFilter !== "ALL" ||
-                        glPartyFilter !== "ALL" ||
-                        glFromDate ||
-                        glToDate ||
-                        glSearchQuery) && (
-                        <button
-                          onClick={() => {
-                            setGlAccountFilter("ALL")
-                            setGlVoucherTypeFilter("ALL")
-                            setGlPartyFilter("ALL")
-                            setGlFromDate("")
-                            setGlToDate("")
-                            setGlSearchQuery("")
-                          }}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-zinc-900 bg-white border border-zinc-200 px-2.5 py-1 rounded-full transition-colors shrink-0"
-                          title="Reset all filters"
-                        >
-                          <RotateCcw className="size-3" /> Reset
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => {
-                          showToast("Report Exported", "success", "General Ledger report exported to CSV.")
-                        }}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/60 px-3 py-1 rounded-full transition-colors shrink-0"
-                      >
-                        <Download className="size-3" /> Export CSV
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Filter Selectors Row inside Table Header */}
-                  <div className="flex items-center gap-2 flex-wrap text-xs pt-1">
-                    {/* Account Selector */}
-                    <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">Account:</span>
-                      <select
-                        value={glAccountFilter}
-                        onChange={(e) => setGlAccountFilter(e.target.value)}
-                        className="bg-transparent text-xs font-semibold focus:outline-none text-zinc-900 pr-1 max-w-[170px] truncate"
-                      >
-                        <option value="ALL">All Accounts (1000-6000)</option>
-                        {accounts.map((acc) => (
-                          <option key={acc.id} value={acc.code}>
-                            {acc.code} - {acc.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Voucher Type Selector */}
-                    <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">Voucher:</span>
-                      <select
-                        value={glVoucherTypeFilter}
-                        onChange={(e) => setGlVoucherTypeFilter(e.target.value)}
-                        className="bg-transparent text-xs font-semibold focus:outline-none text-zinc-900 pr-1"
-                      >
-                        <option value="ALL">All Voucher Types</option>
-                        {uniqueVoucherTypes.map((v) => (
-                          <option key={v} value={v}>
-                            {v}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Party Selector */}
-                    <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">Party:</span>
-                      <select
-                        value={glPartyFilter}
-                        onChange={(e) => setGlPartyFilter(e.target.value)}
-                        className="bg-transparent text-xs font-semibold focus:outline-none text-zinc-900 pr-1 max-w-[140px] truncate"
-                      >
-                        <option value="ALL">All Parties</option>
-                        {uniqueParties.map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Date From */}
-                    <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">From:</span>
-                      <input
-                        type="date"
-                        value={glFromDate}
-                        onChange={(e) => setGlFromDate(e.target.value)}
-                        className="bg-transparent text-xs font-semibold focus:outline-none text-zinc-900"
-                      />
-                    </div>
-
-                    {/* Date To */}
-                    <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">To:</span>
-                      <input
-                        type="date"
-                        value={glToDate}
-                        onChange={(e) => setGlToDate(e.target.value)}
-                        className="bg-transparent text-xs font-semibold focus:outline-none text-zinc-900"
-                      />
-                    </div>
-                  </div>
+              <GlassCard className="flex flex-col p-0">
+                <div className="px-6 pt-6">
+                  <FinanceTableToolbar
+                    title="General Ledger Transactions"
+                    subtitle={`${glRowsWithRunningBalance.length} accounting entries posted across all chart of accounts`}
+                    searchValue={glSearchQuery}
+                    onSearchChange={setGlSearchQuery}
+                    searchPlaceholder="Search ref #, desc, account..."
+                    dateFilter={{
+                      value: glDateFilter,
+                      onChange: setGlDateFilter,
+                      startDate: glCustomStart,
+                      endDate: glCustomEnd,
+                      onCustomDateChange: (start, end) => {
+                        setGlCustomStart(start)
+                        setGlCustomEnd(end)
+                      },
+                    }}
+                    filters={[
+                      {
+                        value: glAccountFilter,
+                        onChange: setGlAccountFilter,
+                        ariaLabel: "Account filter",
+                        options: [
+                          { value: "ALL", label: "All Accounts" },
+                          ...accounts.map((a) => ({ value: a.code, label: `${a.code} - ${a.name}` })),
+                        ],
+                      },
+                      {
+                        value: glVoucherTypeFilter,
+                        onChange: setGlVoucherTypeFilter,
+                        ariaLabel: "Voucher type filter",
+                        options: [
+                          { value: "ALL", label: "All Vouchers" },
+                          ...uniqueVoucherTypes.map((v) => ({ value: v, label: v })),
+                        ],
+                      },
+                    ]}
+                    actions={[
+                      {
+                        label: `Export (${glRowsWithRunningBalance.length})`,
+                        onClick: () => {
+                          exportToExcel({
+                            fileName: `HKC_General_Ledger_Report_${new Date().toISOString().split("T")[0]}`,
+                            title: "HKC Trading - General Ledger Detailed Report",
+                            headers: ["Posting Date", "Voucher ID", "Voucher Type", "Account", "Party", "Description", "Debit (ETB)", "Credit (ETB)", "Balance (ETB)"],
+                            rows: glRowsWithRunningBalance.map((r: any) => [
+                              r.entry_date,
+                              r.source_id,
+                              r.source_type,
+                              `${r.account_code} - ${r.account_name}`,
+                              r.party_name || "—",
+                              r.description,
+                              r.debit_amount || 0,
+                              r.credit_amount || 0,
+                              r.running_balance || 0,
+                            ]),
+                          })
+                          showToast("Report Exported", "success", `Exported ${glRowsWithRunningBalance.length} GL records to Excel.`)
+                        },
+                        icon: <Download className="size-3.5" />,
+                        variant: "emeraldLight",
+                      },
+                    ]}
+                  />
                 </div>
 
                 {/* Table View */}
@@ -678,139 +523,59 @@ export default function FinancialReports() {
                   <table className="w-full text-left border-collapse table-fixed">
                     <thead>
                       <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
-                        {glColumns.map((col) => {
-                          const width = glColWidths[col.key] || 120
-                          const isSorted = glSortKey === col.key
-                          const isMenuOpen = openSortMenuCol === col.key
-
-                          return (
-                            <th
-                              key={col.key}
-                              style={{ width: `${width}px`, minWidth: `${width}px` }}
-                              className="relative px-3 py-3 group border-r border-zinc-200/50 last:border-r-0"
-                            >
-                              <div className={`flex items-center justify-between gap-1 ${col.align === "right" ? "flex-row-reverse text-right" : ""}`}>
-                                <span className="truncate">{col.label}</span>
-
-                                {/* Dropdown Icon & Active Sort Indicator */}
-                                <div className="relative flex items-center shrink-0">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setOpenSortMenuCol(isMenuOpen ? null : col.key)
-                                    }}
-                                    className={`p-1 rounded hover:bg-zinc-200/80 transition-colors flex items-center gap-0.5 ${
-                                      isSorted
-                                        ? "text-emerald-700 font-bold bg-emerald-100/80"
-                                        : "text-zinc-400 opacity-0 group-hover:opacity-100"
-                                    }`}
-                                    title="Sort options"
-                                  >
-                                    {isSorted ? (
-                                      glSortDir === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />
-                                    ) : (
-                                      <ChevronDown className="size-3" />
-                                    )}
-                                  </button>
-
-                                  {/* Dropdown Menu Popover */}
-                                  {isMenuOpen && (
-                                    <>
-                                      <div
-                                        className="fixed inset-0 z-20 cursor-default"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          setOpenSortMenuCol(null)
-                                        }}
-                                      />
-                                      <div
-                                        className={`absolute top-full mt-1.5 z-30 bg-white border border-zinc-200 shadow-xl rounded-xl p-1.5 min-w-[150px] text-xs font-semibold normal-case tracking-normal ${
-                                          col.align === "right" ? "right-0 text-left" : "left-0 text-left"
-                                        }`}
-                                      >
-                                        <div className="px-2 py-1 text-[10px] font-bold uppercase text-zinc-400 border-b border-zinc-100 mb-1">
-                                          Sort {col.label}
-                                        </div>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setGlSortKey(col.key)
-                                            setGlSortDir("asc")
-                                            setOpenSortMenuCol(null)
-                                          }}
-                                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors ${
-                                            isSorted && glSortDir === "asc"
-                                              ? "bg-emerald-50 text-emerald-800 font-bold"
-                                              : "text-zinc-700 hover:bg-zinc-100"
-                                          }`}
-                                        >
-                                          <ArrowUp className="size-3 text-emerald-600" />
-                                          Sort Ascending
-                                        </button>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setGlSortKey(col.key)
-                                            setGlSortDir("desc")
-                                            setOpenSortMenuCol(null)
-                                          }}
-                                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors ${
-                                            isSorted && glSortDir === "desc"
-                                              ? "bg-emerald-50 text-emerald-800 font-bold"
-                                              : "text-zinc-700 hover:bg-zinc-100"
-                                          }`}
-                                        >
-                                          <ArrowDown className="size-3 text-emerald-600" />
-                                          Sort Descending
-                                        </button>
-                                        {isSorted && (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setGlSortKey(null)
-                                              setOpenSortMenuCol(null)
-                                            }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 transition-colors border-t border-zinc-100 mt-1 pt-1.5"
-                                          >
-                                            <RotateCcw className="size-3" />
-                                            Clear Sort
-                                          </button>
-                                        )}
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Column Resizer Handle */}
-                              <div
-                                onMouseDown={(e) => handleResizeStart(e, col.key)}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-500/60 active:bg-emerald-600 z-10 transition-colors"
-                                title="Drag to resize column"
-                              />
-                            </th>
-                          )
-                        })}
+                        {glColumns.map((col) => (
+                          <ResizableTh
+                            key={col.key}
+                            col={col}
+                            width={glTable.colWidths[col.key] ?? 140}
+                            sortKey={glTable.sortKey}
+                            sortDir={glTable.sortDir}
+                            openMenuCol={glTable.openMenuCol}
+                            onResizeStart={glTable.handleResizeStart}
+                            onToggleMenu={glTable.toggleMenu}
+                            onSortAsc={glTable.setSortAsc}
+                            onSortDesc={glTable.setSortDesc}
+                            onClearSort={glTable.clearSort}
+                          />
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                      {glRowsWithRunningBalance.length === 0 ? (
+                      {isLoading ? (
+                        Array.from({ length: 6 }).map((_, idx) => (
+                          <tr key={idx} className="animate-pulse text-xs">
+                            {glColumns.map((col) => (
+                              <td key={col.key} className="px-3 py-3.5">
+                                <Skeleton
+                                  className={`h-4 ${
+                                    col.align === "right"
+                                      ? "w-20 ml-auto"
+                                      : col.align === "center"
+                                      ? "w-16 mx-auto"
+                                      : "w-28"
+                                  } bg-zinc-200/80`}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : sortedGlTransactions.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
+                          <td colSpan={glColumns.length} className="px-4 py-12 text-center text-xs font-bold text-zinc-400">
                             No general ledger entries found matching the current filter criteria.
                           </td>
                         </tr>
                       ) : (
-                        glRowsWithRunningBalance.map((row) => (
+                        sortedGlTransactions.map((row) => (
                           <tr key={row.id} className="hover:bg-zinc-50/60 transition-colors text-xs">
                             <td
-                              style={{ width: `${glColWidths.entry_date}px` }}
+                              style={{ width: `${glTable.colWidths.entry_date ?? 125}px` }}
                               className="px-3 py-3 font-mono text-zinc-800 whitespace-nowrap truncate"
                             >
                               {row.entry_date}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.account}px` }}
+                              style={{ width: `${glTable.colWidths.account ?? 170}px` }}
                               className="px-3 py-3 whitespace-nowrap truncate"
                             >
                               <span className="font-mono font-bold text-zinc-900 bg-zinc-100 px-1.5 py-0.5 rounded text-[11px] mr-1">
@@ -819,19 +584,19 @@ export default function FinancialReports() {
                               <span className="font-semibold text-zinc-800">{row.account_name}</span>
                             </td>
                             <td
-                              style={{ width: `${glColWidths.source_type}px` }}
+                              style={{ width: `${glTable.colWidths.source_type ?? 120}px` }}
                               className="px-3 py-3 whitespace-nowrap text-[11px] font-semibold text-zinc-600 truncate"
                             >
                               {row.source_type}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.source_id}px` }}
+                              style={{ width: `${glTable.colWidths.source_id ?? 110}px` }}
                               className="px-3 py-3 whitespace-nowrap font-mono font-bold text-emerald-700 truncate"
                             >
                               {row.source_id}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.party}px` }}
+                              style={{ width: `${glTable.colWidths.party ?? 130}px` }}
                               className="px-3 py-3 whitespace-nowrap truncate"
                             >
                               {row.party_name ? (
@@ -843,19 +608,19 @@ export default function FinancialReports() {
                               )}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.description}px` }}
+                              style={{ width: `${glTable.colWidths.description ?? 180}px` }}
                               className="px-3 py-3 text-[11px] text-zinc-600 truncate"
                             >
                               {row.description}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.against_account}px` }}
+                              style={{ width: `${glTable.colWidths.against_account ?? 150}px` }}
                               className="px-3 py-3 text-[11px] text-zinc-600 truncate font-mono"
                             >
                               {row.against_account}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.debit_amount}px` }}
+                              style={{ width: `${glTable.colWidths.debit_amount ?? 115}px` }}
                               className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap truncate"
                             >
                               {row.debit_amount > 0
@@ -863,7 +628,7 @@ export default function FinancialReports() {
                                 : "-"}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.credit_amount}px` }}
+                              style={{ width: `${glTable.colWidths.credit_amount ?? 115}px` }}
                               className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap truncate"
                             >
                               {row.credit_amount > 0
@@ -871,7 +636,7 @@ export default function FinancialReports() {
                                 : "-"}
                             </td>
                             <td
-                              style={{ width: `${glColWidths.running_balance}px` }}
+                              style={{ width: `${glTable.colWidths.running_balance ?? 145}px` }}
                               className="px-3 py-3 text-right font-mono font-black text-emerald-800 whitespace-nowrap bg-emerald-50/20 truncate"
                             >
                               ETB {row.running_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -895,261 +660,172 @@ export default function FinancialReports() {
               transition={{ duration: 0.2 }}
               className="flex flex-col gap-4"
             >
-              {/* Top Summary Banner */}
-              <GlassCard className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Scale className="size-4 text-emerald-600" />
-                    <h3 className="text-sm font-bold text-zinc-900">General Ledger Trial Balance Statement</h3>
-                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                      ERPNext GL Aligned
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Complete verification of debits and credits across all 5 account categories (Assets, Liabilities, Equity, Revenue, Expenses).
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-4 border-l border-zinc-200/80 pl-4 shrink-0">
-                  <div className="text-right">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase block">Total Debits</span>
-                    <span className="text-xs font-mono font-black text-zinc-900">
+              {/* Summary Metric Strip - 3 Standard KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Debits</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
                       ETB {trialBalance.totalDebits.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase block">Total Credits</span>
-                    <span className="text-xs font-mono font-black text-zinc-900">
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">All debit account lines</span>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Credits</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
                       ETB {trialBalance.totalCredits.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase block">Ledger Status</span>
-                    <span className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-full ${
-                      trialBalance.isBalanced ? "text-emerald-700 bg-emerald-100/80 border border-emerald-200" : "text-rose-700 bg-rose-100/80 border border-rose-200"
-                    }`}>
-                      {trialBalance.isBalanced ? "BALANCED" : "IMBALANCED"}
-                    </span>
-                  </div>
-                </div>
-              </GlassCard>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">All credit account lines</span>
+                </GlassCard>
 
-              {/* Table Container Card with Integrated Toolbar */}
-              <GlassCard className="overflow-hidden p-0 flex flex-col">
-                {/* Integrated Table Toolbar Header */}
-                <div className="p-3 bg-zinc-50/90 border-b border-zinc-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                  {/* Category Pills (5 types) */}
-                  <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5">
-                    <span className="text-[10px] font-black uppercase text-zinc-400 mr-1 flex items-center gap-1 shrink-0">
-                      <Filter className="size-3" /> Category:
-                    </span>
-                    {[
-                      { id: "ALL", label: "All 5 Categories", count: trialBalance.rows.length },
-                      { id: "Asset", label: "Assets", count: trialBalance.rows.filter(r => r.account_type === "Asset").length },
-                      { id: "Liability", label: "Liabilities", count: trialBalance.rows.filter(r => r.account_type === "Liability").length },
-                      { id: "Equity", label: "Equity", count: trialBalance.rows.filter(r => r.account_type === "Equity").length },
-                      { id: "Revenue", label: "Revenue", count: trialBalance.rows.filter(r => r.account_type === "Revenue").length },
-                      { id: "Expense", label: "Expenses", count: trialBalance.rows.filter(r => r.account_type === "Expense").length },
-                    ].map((cat) => {
-                      const isActive = tbCategoryFilter === cat.id
-                      return (
-                        <button
-                          key={cat.id}
-                          onClick={() => setTbCategoryFilter(cat.id)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-                            isActive
-                              ? "bg-zinc-900 text-white shadow-xs"
-                              : "bg-white text-zinc-600 hover:bg-zinc-200/70 border border-zinc-200/80"
-                          }`}
-                        >
-                          <span>{cat.label}</span>
-                          <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
-                            isActive ? "bg-zinc-700 text-zinc-100" : "bg-zinc-100 text-zinc-500"
-                          }`}>
-                            {cat.count}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Right Controls: Balance Filter + Integrated Search */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <select
-                      value={tbBalanceFilter}
-                      onChange={(e) => setTbBalanceFilter(e.target.value)}
-                      className="bg-white border border-zinc-200/80 text-zinc-800 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    >
-                      <option value="ALL">All Accounts</option>
-                      <option value="NON_ZERO">Non-Zero Balances Only</option>
-                      <option value="DEBIT_ONLY">Debit Balances Only</option>
-                      <option value="CREDIT_ONLY">Credit Balances Only</option>
-                    </select>
-
-                    {/* Search Input Box */}
-                    <div className="flex items-center gap-2 bg-white border border-zinc-200/80 rounded-lg px-2.5 py-1.5 w-48 md:w-56 focus-within:ring-1 focus-within:ring-emerald-500">
-                      <Search className="size-3.5 text-zinc-400 shrink-0" />
-                      <input
-                        type="text"
-                        placeholder="Search code, name, type..."
-                        value={tbSearchTerm}
-                        onChange={(e) => setTbSearchTerm(e.target.value)}
-                        className="w-full bg-transparent text-xs font-semibold focus:outline-none text-zinc-900"
-                      />
-                      {tbSearchTerm && (
-                        <button onClick={() => setTbSearchTerm("")} className="text-zinc-400 hover:text-zinc-600">
-                          <X className="size-3" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Reset Filters button */}
-                    {(tbCategoryFilter !== "ALL" || tbBalanceFilter !== "ALL" || tbSearchTerm) && (
-                      <button
-                        onClick={() => {
-                          setTbCategoryFilter("ALL")
-                          setTbBalanceFilter("ALL")
-                          setTbSearchTerm("")
-                          setTbSortKey("code")
-                          setTbSortDir("asc")
-                        }}
-                        className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/60 rounded-lg transition-colors"
-                        title="Reset all filters"
-                      >
-                        <RotateCcw className="size-3.5" />
-                      </button>
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Trial Balance Health</span>
+                    {isLoading ? (
+                      <Skeleton className="h-5 w-20 rounded-full bg-zinc-200/80" />
+                    ) : (
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full font-mono ${
+                        trialBalance.isBalanced ? "text-emerald-700 bg-emerald-100/80 border border-emerald-200" : "text-rose-700 bg-rose-100/80 border border-rose-200"
+                      }`}>
+                        {trialBalance.isBalanced ? "BALANCED" : "IMBALANCED"}
+                      </span>
                     )}
                   </div>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-zinc-900 font-mono mt-1">
+                      ETB {Math.abs(trialBalance.totalDebits - trialBalance.totalCredits).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Net difference (should be 0.00)</span>
+                </GlassCard>
+              </div>
+
+              {/* Table Container Card with Standard FinanceTableToolbar */}
+              <GlassCard className="flex flex-col p-0">
+                <div className="px-6 pt-6">
+                  <FinanceTableToolbar
+                    title="General Ledger Trial Balance Statement"
+                    subtitle={`${sortedTbRows.length} accounts • ${trialBalance.isBalanced ? "Balanced" : "Imbalanced"}`}
+                    searchValue={tbSearchTerm}
+                    onSearchChange={setTbSearchTerm}
+                    searchPlaceholder="Search code, name, category..."
+                    dateFilter={{
+                      value: tbDateFilter,
+                      onChange: setTbDateFilter,
+                      startDate: tbCustomStart,
+                      endDate: tbCustomEnd,
+                      onCustomDateChange: (start, end) => {
+                        setTbCustomStart(start)
+                        setTbCustomEnd(end)
+                      },
+                    }}
+                    filters={[
+                      {
+                        value: tbCategoryFilter,
+                        onChange: setTbCategoryFilter,
+                        ariaLabel: "Category filter",
+                        options: [
+                          { value: "ALL", label: "All 5 Categories" },
+                          { value: "Asset", label: "Assets" },
+                          { value: "Liability", label: "Liabilities" },
+                          { value: "Equity", label: "Equity" },
+                          { value: "Revenue", label: "Revenue" },
+                          { value: "Expense", label: "Expenses" },
+                        ],
+                      },
+                      {
+                        value: tbBalanceFilter,
+                        onChange: setTbBalanceFilter,
+                        ariaLabel: "Balance filter",
+                        options: [
+                          { value: "ALL", label: "All Accounts" },
+                          { value: "NON_ZERO", label: "Non-Zero Balances Only" },
+                          { value: "DEBIT_ONLY", label: "Debit Balances Only" },
+                          { value: "CREDIT_ONLY", label: "Credit Balances Only" },
+                        ],
+                      },
+                    ]}
+                    actions={[
+                      {
+                        label: `Export (${sortedTbRows.length})`,
+                        onClick: () => {
+                          exportToExcel({
+                            fileName: `HKC_Trial_Balance_${new Date().toISOString().split("T")[0]}`,
+                            title: "HKC Trading - General Ledger Trial Balance",
+                            headers: ["Account Code", "Account Name", "Category", "Debit (ETB)", "Credit (ETB)", "Net Balance (ETB)", "Status"],
+                            rows: sortedTbRows.map((r) => [
+                              r.code,
+                              r.name,
+                              r.account_type,
+                              r.debit_sum,
+                              r.credit_sum,
+                              r.net_balance,
+                              r.net_balance > 0 ? "Debit" : r.net_balance < 0 ? "Credit" : "Settled",
+                            ]),
+                          })
+                          showToast("Trial Balance Exported", "success", `Exported ${sortedTbRows.length} accounts to Excel.`)
+                        },
+                        icon: <Download className="size-3.5" />,
+                        variant: "emeraldLight",
+                      },
+                    ]}
+                  />
                 </div>
 
                 {/* Resizable & Sortable Table */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse table-fixed">
                     <thead>
-                      <tr className="border-b border-zinc-200/80 bg-zinc-100/70 text-[10px] font-black text-zinc-500 uppercase tracking-wider select-none">
-                        {tbColumns.map((col) => {
-                          const width = tbColWidths[col.key] || 120
-                          const isSorted = tbSortKey === col.key
-                          const isMenuOpen = openTbSortMenuCol === col.key
-
-                          return (
-                            <th
-                              key={col.key}
-                              style={{ width: `${width}px`, minWidth: `${width}px` }}
-                              className="relative px-3 py-3 group border-r border-zinc-200/50 last:border-r-0"
-                            >
-                              <div
-                                className={`flex items-center justify-between gap-1 ${
-                                  col.align === "right"
-                                    ? "flex-row-reverse text-right"
-                                    : col.align === "center"
-                                    ? "justify-center"
-                                    : ""
-                                }`}
-                              >
-                                <span className="truncate">{col.label}</span>
-
-                                {/* Sort Options Popover Button */}
-                                <div className="relative flex items-center shrink-0">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setOpenTbSortMenuCol(isMenuOpen ? null : col.key)
-                                    }}
-                                    className={`p-1 rounded hover:bg-zinc-200/80 transition-colors flex items-center gap-0.5 ${
-                                      isSorted
-                                        ? "text-emerald-700 font-bold bg-emerald-100/80"
-                                        : "text-zinc-400 opacity-0 group-hover:opacity-100"
-                                    }`}
-                                    title="Sort options"
-                                  >
-                                    {isSorted ? (
-                                      tbSortDir === "asc" ? (
-                                        <ArrowUp className="size-3" />
-                                      ) : (
-                                        <ArrowDown className="size-3" />
-                                      )
-                                    ) : (
-                                      <ChevronDown className="size-3" />
-                                    )}
-                                  </button>
-
-                                  {/* Dropdown Menu Popover */}
-                                  {isMenuOpen && (
-                                    <>
-                                      <div
-                                        className="fixed inset-0 z-20 cursor-default"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          setOpenTbSortMenuCol(null)
-                                        }}
-                                      />
-                                      <div
-                                        className={`absolute top-full mt-1.5 z-30 bg-white border border-zinc-200 shadow-xl rounded-xl p-1.5 min-w-[150px] text-xs font-semibold normal-case tracking-normal ${
-                                          col.align === "right" ? "right-0 text-left" : "left-0 text-left"
-                                        }`}
-                                      >
-                                        <div className="px-2 py-1 text-[10px] font-bold uppercase text-zinc-400 border-b border-zinc-100 mb-1">
-                                          Sort {col.label}
-                                        </div>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setTbSortKey(col.key)
-                                            setTbSortDir("asc")
-                                            setOpenTbSortMenuCol(null)
-                                          }}
-                                          className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 hover:bg-zinc-100 transition-colors ${
-                                            isSorted && tbSortDir === "asc" ? "bg-emerald-50 text-emerald-800 font-bold" : "text-zinc-700"
-                                          }`}
-                                        >
-                                          <ArrowUp className="size-3 text-emerald-600" /> Sort Ascending
-                                        </button>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setTbSortKey(col.key)
-                                            setTbSortDir("desc")
-                                            setOpenTbSortMenuCol(null)
-                                          }}
-                                          className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 hover:bg-zinc-100 transition-colors ${
-                                            isSorted && tbSortDir === "desc" ? "bg-emerald-50 text-emerald-800 font-bold" : "text-zinc-700"
-                                          }`}
-                                        >
-                                          <ArrowDown className="size-3 text-emerald-600" /> Sort Descending
-                                        </button>
-                                        {isSorted && (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setTbSortKey(null)
-                                              setOpenTbSortMenuCol(null)
-                                            }}
-                                            className="w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 text-rose-600 hover:bg-rose-50 transition-colors border-t border-zinc-100 mt-1"
-                                          >
-                                            <X className="size-3" /> Clear Sort
-                                          </button>
-                                        )}
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Column Resizer Handle */}
-                              <div
-                                onMouseDown={(e) => handleTbResizeStart(e, col.key)}
-                                className="absolute top-0 right-0 bottom-0 w-2 cursor-col-resize hover:bg-emerald-500/50 group-hover:bg-zinc-300/60 transition-colors z-10"
-                              />
-                            </th>
-                          )
-                        })}
+                      <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                        {tbColumns.map((col) => (
+                          <ResizableTh
+                            key={col.key}
+                            col={col}
+                            width={tbTable.colWidths[col.key] ?? 140}
+                            sortKey={tbTable.sortKey}
+                            sortDir={tbTable.sortDir}
+                            openMenuCol={tbTable.openMenuCol}
+                            onResizeStart={tbTable.handleResizeStart}
+                            onToggleMenu={tbTable.toggleMenu}
+                            onSortAsc={tbTable.setSortAsc}
+                            onSortDesc={tbTable.setSortDesc}
+                            onClearSort={tbTable.clearSort}
+                          />
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 text-xs font-mono">
-                      {sortedTbRows.length === 0 ? (
+                      {isLoading ? (
+                        Array.from({ length: 6 }).map((_, idx) => (
+                          <tr key={idx} className="animate-pulse text-xs">
+                            {tbColumns.map((col) => (
+                              <td key={col.key} className="px-3 py-3">
+                                <Skeleton
+                                  className={`h-4 ${
+                                    col.align === "right"
+                                      ? "w-24 ml-auto"
+                                      : col.align === "center"
+                                      ? "w-16 mx-auto"
+                                      : "w-32"
+                                  } bg-zinc-200/80`}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : sortedTbRows.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-zinc-400 font-sans italic">
+                          <td colSpan={tbColumns.length} className="py-12 text-center text-zinc-400 font-sans font-bold">
                             No accounts match the selected category or filter criteria.
                           </td>
                         </tr>
@@ -1170,26 +846,26 @@ export default function FinancialReports() {
                           return (
                             <tr key={r.account_id} className="hover:bg-zinc-50/80 transition-colors">
                               {/* Account Code Column */}
-                              <td className="px-3 py-2.5">
+                              <td style={{ width: `${tbTable.colWidths.code ?? 110}px` }} className="px-3 py-2.5">
                                 <span className="font-mono font-black text-zinc-900 bg-zinc-200/90 px-1.5 py-0.5 rounded text-[11px]">
                                   {r.code}
                                 </span>
                               </td>
 
                               {/* Account Name Column */}
-                              <td className="px-3 py-2.5 font-sans font-bold text-zinc-900 truncate">
+                              <td style={{ width: `${tbTable.colWidths.name ?? 240}px` }} className="px-3 py-2.5 font-sans font-bold text-zinc-900 truncate">
                                 {r.name}
                               </td>
 
                               {/* Account Category Column */}
-                              <td className="px-3 py-2.5 font-sans">
+                              <td style={{ width: `${tbTable.colWidths.account_type ?? 130}px` }} className="px-3 py-2.5 font-sans">
                                 <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${categoryStyle}`}>
                                   {r.account_type}
                                 </span>
                               </td>
 
                               {/* Debit Sum Column */}
-                              <td className="px-3 py-2.5 text-right font-bold text-zinc-900">
+                              <td style={{ width: `${tbTable.colWidths.debit_sum ?? 140}px` }} className="px-3 py-2.5 text-right font-bold text-zinc-900">
                                 {r.debit_sum > 0 ? (
                                   `ETB ${r.debit_sum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 ) : (
@@ -1198,7 +874,7 @@ export default function FinancialReports() {
                               </td>
 
                               {/* Credit Sum Column */}
-                              <td className="px-3 py-2.5 text-right font-bold text-zinc-900">
+                              <td style={{ width: `${tbTable.colWidths.credit_sum ?? 140}px` }} className="px-3 py-2.5 text-right font-bold text-zinc-900">
                                 {r.credit_sum > 0 ? (
                                   `ETB ${r.credit_sum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 ) : (
@@ -1207,12 +883,12 @@ export default function FinancialReports() {
                               </td>
 
                               {/* Net Balance Column */}
-                              <td className="px-3 py-2.5 text-right font-black text-zinc-950">
+                              <td style={{ width: `${tbTable.colWidths.net_balance ?? 150}px` }} className="px-3 py-2.5 text-right font-black text-zinc-950">
                                 ETB {r.net_balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
 
                               {/* Balance Type Column */}
-                              <td className="px-3 py-2.5 text-center font-sans">
+                              <td style={{ width: `${tbTable.colWidths.balance_type ?? 120}px` }} className="px-3 py-2.5 text-center font-sans">
                                 {isDebit ? (
                                   <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full">
                                     Debit Balance
@@ -1272,45 +948,51 @@ export default function FinancialReports() {
               transition={{ duration: 0.2 }}
               className="flex flex-col gap-6"
             >
-              {/* Header & KPI Cards Strip - 3 Cards (Top Accounting Equation Card Removed) */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <GlassCard className="p-4 flex flex-col justify-between border-t-2 border-t-emerald-500">
+              {/* Header & KPI Cards Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Assets</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Assets</span>
                     <Building2 className="size-4 text-emerald-600" />
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-emerald-800">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
                       ETB {totalAssets.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">1000 Series Account Ledger</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">1000 Series Account Ledger</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-t-2 border-t-amber-500">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Liabilities</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Liabilities</span>
                     <Receipt className="size-4 text-amber-600" />
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-amber-800">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-amber-600 font-mono mt-1">
                       ETB {totalLiabilities.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">2000 Series Account Ledger</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">2000 Series Account Ledger</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-t-2 border-t-purple-500">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Shareholder Equity</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Shareholder Equity</span>
                     <Landmark className="size-4 text-purple-600" />
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-purple-800">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-purple-700 font-mono mt-1">
                       ETB {totalEquity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">3000 Series Account Ledger</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">3000 Series Account Ledger</span>
                 </GlassCard>
               </div>
 
@@ -1332,7 +1014,17 @@ export default function FinancialReports() {
                     </div>
 
                     <div className="flex flex-col gap-2.5 text-xs font-mono">
-                      {accountsByType.Asset.length === 0 ? (
+                      {isLoading ? (
+                        Array.from({ length: 3 }).map((_, i) => (
+                          <div key={i} className="flex justify-between items-center py-2 border-b border-zinc-100/80 animate-pulse">
+                            <div className="space-y-1">
+                              <Skeleton className="h-3.5 w-28 bg-zinc-200/80" />
+                              <Skeleton className="h-2.5 w-14 bg-zinc-200/80" />
+                            </div>
+                            <Skeleton className="h-4 w-20 bg-zinc-200/80" />
+                          </div>
+                        ))
+                      ) : accountsByType.Asset.length === 0 ? (
                         <p className="text-zinc-400 text-[11px] italic py-2">No asset accounts recorded.</p>
                       ) : (
                         accountsByType.Asset.map((a) => {
@@ -1375,7 +1067,17 @@ export default function FinancialReports() {
                     </div>
 
                     <div className="flex flex-col gap-2.5 text-xs font-mono">
-                      {accountsByType.Liability.length === 0 ? (
+                      {isLoading ? (
+                        Array.from({ length: 3 }).map((_, i) => (
+                          <div key={i} className="flex justify-between items-center py-2 border-b border-zinc-100/80 animate-pulse">
+                            <div className="space-y-1">
+                              <Skeleton className="h-3.5 w-28 bg-zinc-200/80" />
+                              <Skeleton className="h-2.5 w-14 bg-zinc-200/80" />
+                            </div>
+                            <Skeleton className="h-4 w-20 bg-zinc-200/80" />
+                          </div>
+                        ))
+                      ) : accountsByType.Liability.length === 0 ? (
                         <p className="text-zinc-400 text-[11px] italic py-2">No liability accounts recorded.</p>
                       ) : (
                         accountsByType.Liability.map((a) => {
@@ -1418,7 +1120,17 @@ export default function FinancialReports() {
                     </div>
 
                     <div className="flex flex-col gap-2.5 text-xs font-mono">
-                      {accountsByType.Equity.length === 0 ? (
+                      {isLoading ? (
+                        Array.from({ length: 3 }).map((_, i) => (
+                          <div key={i} className="flex justify-between items-center py-2 border-b border-zinc-100/80 animate-pulse">
+                            <div className="space-y-1">
+                              <Skeleton className="h-3.5 w-28 bg-zinc-200/80" />
+                              <Skeleton className="h-2.5 w-14 bg-zinc-200/80" />
+                            </div>
+                            <Skeleton className="h-4 w-20 bg-zinc-200/80" />
+                          </div>
+                        ))
+                      ) : accountsByType.Equity.length === 0 ? (
                         <p className="text-zinc-400 text-[11px] italic py-2">No equity accounts recorded.</p>
                       ) : (
                         accountsByType.Equity.map((a) => {
@@ -1490,57 +1202,71 @@ export default function FinancialReports() {
               className="flex flex-col gap-6"
             >
               {/* Summary KPIs Strip */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-500">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Operating Revenue</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Operating Revenue</span>
                     <ArrowUpRight className="size-4 text-emerald-600" />
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-emerald-700">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
                       ETB {totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </span>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Sales & Services (4000 Series)</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Sales & Services (4000 Series)</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-rose-500">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Cost of Goods Sold</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Cost of Goods Sold</span>
                     <ArrowDownRight className="size-4 text-rose-600" />
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-rose-600">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-rose-600 font-mono mt-1">
                       ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})
-                    </span>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Direct Materials & COGS (5000 Series)</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Direct Materials & COGS (5000 Series)</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-blue-500">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Gross Profit Margin</span>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">{totalRevenue ? (((totalRevenue - cogsTotal) / totalRevenue) * 100).toFixed(1) : "0.0"}% Margin</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Gross Profit Margin</span>
+                    {isLoading ? (
+                      <Skeleton className="h-5 w-14 rounded-full bg-zinc-200/80" />
+                    ) : (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-mono">
+                        {totalRevenue ? (((totalRevenue - cogsTotal) / totalRevenue) * 100).toFixed(1) : "0.0"}%
+                      </span>
+                    )}
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-zinc-900">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-zinc-900 font-mono mt-1">
                       ETB {(totalRevenue - cogsTotal).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </span>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Gross Surplus (Revenue - COGS)</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Gross Surplus (Revenue - COGS)</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-600 bg-emerald-50/40">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Net Operating Income</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Net Operating Income</span>
                     <TrendingUp className="size-4 text-emerald-600" />
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-emerald-800">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-800 font-mono mt-1">
                       ETB {netIncome.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <p className="text-[10px] text-zinc-500 font-medium mt-0.5">Bottom Line Net Profit (EBIT)</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-emerald-600 font-semibold mt-1">Bottom Line Net Profit (EBIT)</span>
                 </GlassCard>
               </div>
 
@@ -1649,14 +1375,23 @@ export default function FinancialReports() {
                       <span>1. Operating Revenues (4000 Series)</span>
                       <span className="text-emerald-700 font-mono">ETB {totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                     </div>
-                    {accountsByType.Revenue.map((a) => (
-                      <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
-                        <span>{a.code} - {a.name}</span>
-                        <span className="font-bold text-zinc-900">
-                          ETB {accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    ))}
+                    {isLoading ? (
+                      Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className="flex justify-between py-2 border-b border-zinc-100 animate-pulse">
+                          <Skeleton className="h-3.5 w-40 bg-zinc-200/80" />
+                          <Skeleton className="h-3.5 w-24 bg-zinc-200/80" />
+                        </div>
+                      ))
+                    ) : (
+                      accountsByType.Revenue.map((a) => (
+                        <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
+                          <span>{a.code} - {a.name}</span>
+                          <span className="font-bold text-zinc-900">
+                            ETB {accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   {/* COGS Section */}
@@ -1665,7 +1400,21 @@ export default function FinancialReports() {
                       <span>2. Cost of Goods Sold (5000 Series)</span>
                       <span className="text-rose-600 font-mono">ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
-                    {accountsByType.Expense.filter((a) => /^5/.test(a.code)).map((a) => <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700"><span>{a.code} - {a.name}</span><span className="font-bold text-rose-600">ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})</span></div>)}
+                    {isLoading ? (
+                      Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className="flex justify-between py-2 border-b border-zinc-100 animate-pulse">
+                          <Skeleton className="h-3.5 w-40 bg-zinc-200/80" />
+                          <Skeleton className="h-3.5 w-24 bg-zinc-200/80" />
+                        </div>
+                      ))
+                    ) : (
+                      accountsByType.Expense.filter((a) => /^5/.test(a.code)).map((a) => (
+                        <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
+                          <span>{a.code} - {a.name}</span>
+                          <span className="font-bold text-rose-600">ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   {/* Gross Profit Summary Bar */}
@@ -1680,14 +1429,23 @@ export default function FinancialReports() {
                       <span>3. Operating & Administrative Expenses (6000 Series)</span>
                       <span className="text-rose-600 font-mono">ETB ({operatingExpenseTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
-                    {accountsByType.Expense.map((a) => (
-                      <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
-                        <span>{a.code} - {a.name}</span>
-                        <span className="font-bold text-rose-600">
-                          ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})
-                        </span>
-                      </div>
-                    ))}
+                    {isLoading ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="flex justify-between py-2 border-b border-zinc-100 animate-pulse">
+                          <Skeleton className="h-3.5 w-40 bg-zinc-200/80" />
+                          <Skeleton className="h-3.5 w-24 bg-zinc-200/80" />
+                        </div>
+                      ))
+                    ) : (
+                      accountsByType.Expense.map((a) => (
+                        <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
+                          <span>{a.code} - {a.name}</span>
+                          <span className="font-bold text-rose-600">
+                            ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   {/* Net Operating Income Highlight */}
@@ -1713,42 +1471,56 @@ export default function FinancialReports() {
               className="flex flex-col gap-6"
             >
               {/* Summary KPIs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-500">
-                  <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Operating Cash Flow</span>
-                  <span className="text-xl font-mono font-black text-emerald-700 mt-1">
-                    ETB {cashFlowTrendData.reduce((total, row) => total + row.operating, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-medium mt-0.5">Collections & Customer Sales</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Operating Cash Flow</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
+                      ETB {cashFlowTrendData.reduce((total, row) => total + row.operating, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Collections & Customer Sales</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-rose-500">
-                  <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Investing Cash Flow</span>
-                  <span className="text-xl font-mono font-black text-rose-600 mt-1">
-                    ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-medium mt-0.5">Capex, Vehicles & Equipment</span>
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Investing Cash Flow</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-rose-600 font-mono mt-1">
+                      ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Capex, Vehicles & Equipment</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-zinc-400">
-                  <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Financing Cash Flow</span>
-                  <span className="text-xl font-mono font-black text-zinc-800 mt-1">
-                    ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-medium mt-0.5">Debt servicing & Dividends</span>
+                <GlassCard className="p-4 flex flex-col justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Financing Cash Flow</span>
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-zinc-900 font-mono mt-1">
+                      ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </p>
+                  )}
+                  <span className="text-[10px] text-gray-400 mt-1">Debt Servicing & Capital</span>
                 </GlassCard>
 
-                <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-600 bg-emerald-50/40">
+                <GlassCard className="p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Net Cash Position Increase</span>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Net Cash Position Increase</span>
                     <Coins className="size-4 text-emerald-600" />
                   </div>
-                  <div className="mt-2">
-                    <span className="text-xl font-mono font-black text-emerald-800">
+                  {isLoading ? (
+                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+                  ) : (
+                    <p className="text-xl font-black text-emerald-800 font-mono mt-1">
                       ETB {cashFlowTrendData.reduce((total, row) => total + row.netCash, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </span>
-                    <p className="text-[10px] text-zinc-500 font-medium mt-0.5">Net Liquidity Inflow YTD</p>
-                  </div>
+                    </p>
+                  )}
+                  <span className="text-[10px] text-emerald-600 font-semibold mt-1">Net Liquidity Inflow YTD</span>
                 </GlassCard>
               </div>
 
@@ -1834,18 +1606,29 @@ export default function FinancialReports() {
                 <div className="flex flex-col gap-4 text-xs font-mono">
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60 flex flex-col gap-2">
                     <span className="text-xs font-black text-zinc-900 font-sans uppercase">1. Cash Flow from Operating Activities</span>
-                    <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
-                      <span>Receipts from Customers & Sales Ledger</span>
-                      <span className="font-bold text-emerald-700">ETB {totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
-                      <span>Payments to Suppliers for Goods & Services</span>
-                      <span className="font-bold text-rose-600">ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
-                    </div>
-                    <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
-                      <span>Payroll & Employee Disbursements</span>
-                      <span className="font-bold text-rose-600">ETB ({operatingExpenseTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
-                    </div>
+                    {isLoading ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="flex justify-between py-2 border-b border-zinc-100 animate-pulse">
+                          <Skeleton className="h-3.5 w-48 bg-zinc-200/80" />
+                          <Skeleton className="h-3.5 w-24 bg-zinc-200/80" />
+                        </div>
+                      ))
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
+                          <span>Receipts from Customers & Sales Ledger</span>
+                          <span className="font-bold text-emerald-700">ETB {totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
+                          <span>Payments to Suppliers for Goods & Services</span>
+                          <span className="font-bold text-rose-600">ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
+                        </div>
+                        <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
+                          <span>Payroll & Employee Disbursements</span>
+                          <span className="font-bold text-rose-600">ETB ({operatingExpenseTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between font-sans font-black text-emerald-800 pt-1 text-xs">
                       <span>Net Cash Generated from Operating Activities</span>
                       <span>ETB {cashFlowTrendData.reduce((total, row) => total + row.operating, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
@@ -1854,10 +1637,17 @@ export default function FinancialReports() {
 
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60 flex flex-col gap-2">
                     <span className="text-xs font-black text-zinc-900 font-sans uppercase">2. Cash Flow from Investing Activities</span>
-                    <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
-                      <span>Purchase of Plant Machinery & Logistics Fleet</span>
-                      <span className="font-bold text-rose-600">ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                    </div>
+                    {isLoading ? (
+                      <div className="flex justify-between py-2 border-b border-zinc-100 animate-pulse">
+                        <Skeleton className="h-3.5 w-48 bg-zinc-200/80" />
+                        <Skeleton className="h-3.5 w-24 bg-zinc-200/80" />
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
+                        <span>Purchase of Plant Machinery & Logistics Fleet</span>
+                        <span className="font-bold text-rose-600">ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-sans font-black text-rose-700 pt-1 text-xs">
                       <span>Net Cash Used in Investing Activities</span>
                       <span>ETB {cashFlowTrendData.reduce((total, row) => total + row.investing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
@@ -1866,10 +1656,17 @@ export default function FinancialReports() {
 
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60 flex flex-col gap-2">
                     <span className="text-xs font-black text-zinc-900 font-sans uppercase">3. Cash Flow from Financing Activities</span>
-                    <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
-                      <span>Share Capital Issuance / Dividend Payments</span>
-                      <span className="font-bold text-zinc-600">ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                    </div>
+                    {isLoading ? (
+                      <div className="flex justify-between py-2 border-b border-zinc-100 animate-pulse">
+                        <Skeleton className="h-3.5 w-48 bg-zinc-200/80" />
+                        <Skeleton className="h-3.5 w-24 bg-zinc-200/80" />
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-zinc-700 py-1.5 border-b border-zinc-100">
+                        <span>Share Capital Issuance / Dividend Payments</span>
+                        <span className="font-bold text-zinc-600">ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-sans font-black text-zinc-800 pt-1 text-xs">
                       <span>Net Cash Flow from Financing Activities</span>
                       <span>ETB {cashFlowTrendData.reduce((total, row) => total + row.financing, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>

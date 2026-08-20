@@ -17,7 +17,8 @@ import {
   Edit,
   MoreVertical,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Download,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -26,6 +27,11 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore, type JournalEntry } from "@/lib/financeStore"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { 
+  exportPeachtreeGeneralJournal, 
+  exportPeachtreeChartOfAccounts,
+  isDateInPreset,
+} from "@/lib/peachtreeExportUtils"
 
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -45,6 +51,9 @@ export default function Ledger() {
   const accounts = store.getAccounts()
 
   const [searchEntries, setSearchEntries] = useState("")
+  const [jeDateFilter, setJeDateFilter] = useState("ALL")
+  const [jeCustomStart, setJeCustomStart] = useState("")
+  const [jeCustomEnd, setJeCustomEnd] = useState("")
   const [jeSourceFilter, setJeSourceFilter] = useState("ALL")
 
   // Journal Entries Column Resizing & Sorting State
@@ -328,6 +337,7 @@ export default function Ledger() {
 
   // Filter entries
   const filteredEntries = entries.filter((ent) => {
+    if (!isDateInPreset(ent.entry_date, jeDateFilter, jeCustomStart, jeCustomEnd)) return false
     if (jeSourceFilter !== "ALL" && ent.source_type !== jeSourceFilter) return false
     const q = (searchEntries || "").toLowerCase()
     const desc = (ent.description || "").toLowerCase()
@@ -744,7 +754,7 @@ export default function Ledger() {
               transition={{ duration: 0.2 }}
               className="flex flex-col gap-4"
             >
-              <GlassCard className="flex flex-col overflow-hidden p-0">
+              <GlassCard className="flex flex-col p-0">
                 <div className="px-6 pt-6">
                   <FinanceTableToolbar
                     title="Journal Entry Ledger"
@@ -752,6 +762,16 @@ export default function Ledger() {
                     searchValue={searchEntries}
                     onSearchChange={setSearchEntries}
                     searchPlaceholder="Search description, JE ID, source..."
+                    dateFilter={{
+                      value: jeDateFilter,
+                      onChange: setJeDateFilter,
+                      startDate: jeCustomStart,
+                      endDate: jeCustomEnd,
+                      onCustomDateChange: (start, end) => {
+                        setJeCustomStart(start)
+                        setJeCustomEnd(end)
+                      },
+                    }}
                     filters={[
                       {
                         value: jeSourceFilter,
@@ -763,7 +783,18 @@ export default function Ledger() {
                         ],
                       },
                     ]}
-                    actions={[{ label: "Post Entry", onClick: () => setShowPostModal(true) }]}
+                    actions={[
+                      {
+                        label: `Export (${filteredEntries.length})`,
+                        onClick: () => {
+                          exportPeachtreeGeneralJournal(filteredEntries, lines, accounts, { format: "PEACHTREE_EXCEL" })
+                          showToast("Journal Exported", "success", `Exported ${filteredEntries.length} filtered journal entries to Excel.`)
+                        },
+                        icon: <Download className="size-3.5" />,
+                        variant: "emeraldLight",
+                      },
+                      { label: "Post Entry", onClick: () => setShowPostModal(true) },
+                    ]}
                   />
                 </div>
                 <div className="overflow-x-auto">
@@ -1097,6 +1128,17 @@ export default function Ledger() {
                       </button>
                     ))}
                   </div>
+
+                  <button
+                    onClick={() => {
+                      exportPeachtreeChartOfAccounts(accounts, { format: "PEACHTREE_EXCEL" })
+                      showToast("COA Exported", "success", "Exported Chart of Accounts to Excel.")
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-700 text-white hover:bg-emerald-800 text-xs font-black shadow-md shadow-emerald-900/15 transition-all cursor-pointer active:scale-95"
+                  >
+                    <Download className="size-3.5" />
+                    <span>Export COA</span>
+                  </button>
 
                   <button
                     onClick={() => {

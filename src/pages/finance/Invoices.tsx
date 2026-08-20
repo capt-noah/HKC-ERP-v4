@@ -16,8 +16,9 @@ import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
-import { useFinanceStore } from "@/lib/financeStore"
-import type { Invoice, InvoiceLineItem } from "@/lib/financeStore"
+import { useFinanceStore, type Invoice, type InvoiceLineItem } from "@/lib/financeStore"
+import { exportPeachtreeSalesInvoices, isDateInPreset } from "@/lib/peachtreeExportUtils"
+import { FinanceDateFilter } from "@/components/FinanceTableToolbar"
 
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -32,6 +33,9 @@ export default function Invoices() {
 
   const [searchQuery, setSearchQuery] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("ALL")
+  const [filterDateRange, setFilterDateRange] = useState<string>("ALL")
+  const [invCustomStart, setInvCustomStart] = useState<string>("")
+  const [invCustomEnd, setInvCustomEnd] = useState<string>("")
 
   // Currently selected preview invoice
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
@@ -58,8 +62,9 @@ export default function Invoices() {
     { description: "", quantity: 1, unit_price: 0, line_total: 0 }
   ])
 
-  const getFilteredInvoices = (status: string, query: string) => {
+  const getFilteredInvoices = (status: string, query: string, datePreset: string, customStart = invCustomStart, customEnd = invCustomEnd) => {
     return invoices.filter((inv) => {
+      if (!isDateInPreset(inv.issue_date, datePreset, customStart, customEnd)) return false
       const matchesSearch =
         inv.invoice_number.toLowerCase().includes(query.toLowerCase()) ||
         inv.customer_name.toLowerCase().includes(query.toLowerCase())
@@ -73,19 +78,38 @@ export default function Invoices() {
     })
   }
 
-  const filteredInvoices = getFilteredInvoices(filterStatus, searchQuery)
+  const filteredInvoices = getFilteredInvoices(filterStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd)
 
   // Auto select first invoice on filter tab change
   const handleFilterStatusChange = (newStatus: string) => {
     setFilterStatus(newStatus)
-    const matches = getFilteredInvoices(newStatus, searchQuery)
+    const matches = getFilteredInvoices(newStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd)
     setSelectedInvoice(matches[0] || null)
   }
 
   // Auto select first matching invoice on search change
   const handleSearchChange = (query: string) => {
     setSearchQuery(query)
-    const matches = getFilteredInvoices(filterStatus, query)
+    const matches = getFilteredInvoices(filterStatus, query, filterDateRange, invCustomStart, invCustomEnd)
+    setSelectedInvoice(matches[0] || null)
+  }
+
+  // Auto select first matching invoice on date filter change
+  const handleDateFilterChange = (newDateFilter: string) => {
+    setFilterDateRange(newDateFilter)
+    const matches = getFilteredInvoices(filterStatus, searchQuery, newDateFilter, invCustomStart, invCustomEnd)
+    setSelectedInvoice(matches[0] || null)
+  }
+
+  const handleCustomStartChange = (start: string) => {
+    setInvCustomStart(start)
+    const matches = getFilteredInvoices(filterStatus, searchQuery, filterDateRange, start, invCustomEnd)
+    setSelectedInvoice(matches[0] || null)
+  }
+
+  const handleCustomEndChange = (end: string) => {
+    setInvCustomEnd(end)
+    const matches = getFilteredInvoices(filterStatus, searchQuery, filterDateRange, invCustomStart, end)
     setSelectedInvoice(matches[0] || null)
   }
 
@@ -231,31 +255,47 @@ export default function Invoices() {
         <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <GlassCard className="p-4 flex flex-col justify-between border border-black/5">
             <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Total AR Exposure</span>
-            <p className="text-xl font-black text-black font-mono mt-1">
-              ETB {totalARExposure.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-black font-mono mt-1">
+                ETB {totalARExposure.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            )}
             <span className="text-[10px] text-gray-400 mt-0.5">Uncollected receivables balance</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between border border-black/5">
             <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Collections Received</span>
-            <p className="text-xl font-black text-emerald-700 font-mono mt-1">
-              ETB {totalCollections.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-emerald-700 font-mono mt-1">
+                ETB {totalCollections.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            )}
             <span className="text-[10px] text-emerald-600 font-semibold mt-0.5">Cleared in cash/bank</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between border border-black/5">
             <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Overdue AR Amount</span>
-            <p className="text-xl font-black text-red-600 font-mono mt-1">
-              ETB {overdueAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-red-600 font-mono mt-1">
+                ETB {overdueAR.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+            )}
             <span className="text-[10px] text-red-500 font-semibold mt-0.5">Past due date</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between border border-black/5">
             <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Active Billing Count</span>
-            <p className="text-xl font-black text-black font-mono mt-1">{activeCount}</p>
+            {isLoading ? (
+              <Skeleton className="h-7 w-20 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-black font-mono mt-1">{activeCount}</p>
+            )}
             <span className="text-[10px] text-gray-400 mt-0.5">Sent, partial, or overdue</span>
           </GlassCard>
         </motion.div>
@@ -265,25 +305,52 @@ export default function Invoices() {
           
           {/* Left Master List Column (35% width / col-span-4) inside a GlassCard container */}
           <GlassCard className="lg:col-span-4 p-5 border border-black/5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="font-semibold text-base text-black">Invoices</h3>
-              <button
-                onClick={() => setShowCreateDrawer(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 shadow-md transition-all uppercase tracking-wider h-[34px]"
-              >
-                <Plus className="size-3.5" /> Create Invoice
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    exportPeachtreeSalesInvoices(filteredInvoices, { format: "PEACHTREE_EXCEL" })
+                    showToast("Invoices Exported", "success", `Exported ${filteredInvoices.length} filtered invoices to Excel.`)
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-700 text-white hover:bg-emerald-800 text-xs font-black h-[34px] cursor-pointer shadow-md shadow-emerald-900/15 transition-all active:scale-95"
+                  title="Export filtered invoices to Excel"
+                >
+                  <Download className="size-3.5" />
+                  <span>Export ({filteredInvoices.length})</span>
+                </button>
+                <button
+                  onClick={() => setShowCreateDrawer(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 shadow-md transition-all uppercase tracking-wider h-[34px] cursor-pointer"
+                >
+                  <Plus className="size-3.5" /> Create Invoice
+                </button>
+              </div>
             </div>
             
-            {/* Search Input Box */}
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Search invoices..."
-                className="w-full bg-white/70 backdrop-blur-xs border border-black/5 rounded-2xl pl-10 pr-4 py-2.5 text-xs font-semibold text-black placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-black/10 transition-all"
+            {/* Search and Date Filter Row */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Search invoices..."
+                  className="w-full bg-white/70 backdrop-blur-xs border border-black/5 rounded-2xl pl-10 pr-4 py-2 text-xs font-semibold text-black placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-black/10 transition-all h-[36px]"
+                />
+              </div>
+
+              <FinanceDateFilter
+                value={filterDateRange}
+                onChange={handleDateFilterChange}
+                startDate={invCustomStart}
+                endDate={invCustomEnd}
+                onCustomDateChange={(start, end) => {
+                  handleCustomStartChange(start)
+                  handleCustomEndChange(end)
+                }}
               />
             </div>
 
