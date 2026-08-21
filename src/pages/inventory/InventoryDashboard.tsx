@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import {
@@ -87,8 +87,15 @@ export default function InventoryDashboard() {
   const isLoading = erp.isLoading()
 
   const navigate = useNavigate()
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>("ALL")
+  const defaultWarehouse = (isInventoryAdminOnly && warehouses.length === 1) ? (warehouses[0].code || warehouses[0].id) : "ALL"
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>(defaultWarehouse)
   const [expiryTierTab, setExpiryTierTab] = useState<"ALL" | "EXPIRED" | "CRITICAL" | "WARNING">("ALL")
+
+  useEffect(() => {
+    if (isInventoryAdminOnly && warehouses.length === 1) {
+      setSelectedWarehouse(warehouses[0].code || warehouses[0].id)
+    }
+  }, [isInventoryAdminOnly, warehouses])
 
   const warehouseById = useMemo(() => new Map(warehouses.flatMap((warehouse) => [[warehouse.id, warehouse], [warehouse.code, warehouse]])), [warehouses])
 
@@ -258,21 +265,30 @@ export default function InventoryDashboard() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] font-black uppercase text-zinc-400">Warehouse:</span>
-                    <select
-                      value={selectedWarehouse}
-                      onChange={(e) => setSelectedWarehouse(e.target.value)}
-                      className="h-8 px-3 rounded-full bg-zinc-50 border border-zinc-200 text-xs font-black text-zinc-900 outline-none focus:border-zinc-950 cursor-pointer shadow-xs"
-                    >
-                      <option value="ALL">All Warehouses</option>
-                      {warehouses.map((w) => (
-                        <option key={w.id} value={w.code || w.id}>
-                          {w.name || w.code}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {warehouses.length > 1 ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] font-black uppercase text-zinc-400">Warehouse:</span>
+                      <select
+                        value={selectedWarehouse}
+                        onChange={(e) => setSelectedWarehouse(e.target.value)}
+                        className="h-8 px-3 rounded-full bg-zinc-50 border border-zinc-200 text-xs font-black text-zinc-900 outline-none focus:border-zinc-950 cursor-pointer shadow-xs"
+                      >
+                        <option value="ALL">All Warehouses</option>
+                        {warehouses.map((w) => (
+                          <option key={w.id} value={w.code || w.id}>
+                            {w.name || w.code}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : warehouses.length === 1 ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] font-black uppercase text-zinc-400">Assigned Facility:</span>
+                      <span className="px-3 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-xs font-black text-zinc-900 font-mono">
+                        {warehouses[0]?.name || warehouses[0]?.code}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="h-64 w-full">

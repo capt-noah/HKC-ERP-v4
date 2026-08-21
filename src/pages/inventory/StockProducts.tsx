@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from "react"
+import { useState, useEffect, useMemo, Fragment } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useSearchParams } from "react-router-dom"
 import { 
@@ -122,11 +122,21 @@ export default function StockProducts() {
 
   const [searchParams] = useSearchParams()
   const initialSearch = searchParams.get("search") || ""
-
   const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer">("Register")
   const [searchQuery, setSearchQuery] = useState(initialSearch)
-  const [selectedWarehouse, setSelectedWarehouse] = useState("ALL")
+  const defaultWarehouse = (isInventoryAdminOnly && warehouseRecords.length === 1)
+    ? (warehouseRecords[0].code || warehouseRecords[0].id)
+    : "ALL"
+  const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouse)
   const [expiryFilter, setExpiryFilter] = useState<string>("ALL")
+  
+  useEffect(() => {
+    if (isInventoryAdminOnly && warehouseRecords.length === 1) {
+      const singleWh = warehouseRecords[0].code || warehouseRecords[0].id
+      setSelectedWarehouse(singleWh)
+      setAddWarehouse(singleWh)
+    }
+  }, [isInventoryAdminOnly, warehouseRecords])
   
   // Expanded rows for WH1 items
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
@@ -860,12 +870,16 @@ export default function StockProducts() {
                     onSearchChange={setSearchQuery}
                     searchPlaceholder="Search product name, SKU..."
                     filters={[
-                      {
-                        value: selectedWarehouse,
-                        onChange: setSelectedWarehouse,
-                        ariaLabel: "Filter by Warehouse",
-                        options: warehouseOptions,
-                      },
+                      ...(warehouseRecords.length > 1
+                        ? [
+                            {
+                              value: selectedWarehouse,
+                              onChange: setSelectedWarehouse,
+                              ariaLabel: "Filter by Warehouse",
+                              options: warehouseOptions,
+                            },
+                          ]
+                        : []),
                       {
                         value: expiryFilter,
                         onChange: setExpiryFilter,
@@ -1447,24 +1461,35 @@ export default function StockProducts() {
                     )}
                   </div>
 
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase text-zinc-700">Primary Warehouse <span className="text-rose-600">*</span></span>
-                    <select
-                      value={addWarehouse}
-                      disabled={!!selectedExistingProduct}
-                      onChange={(e) => {
-                        setAddWarehouse(e.target.value)
-                        setAddPackagingUnit("")
-                        setAddQuantity("")
-                      }}
-                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
-                    >
-                      <option value="">Select warehouse</option>
-                      {warehouseRecords.map((item) => (
-                        <option key={item.id} value={item.code || item.id}>{item.name}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {warehouseRecords.length > 1 ? (
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-black uppercase text-zinc-700">Primary Warehouse <span className="text-rose-600">*</span></span>
+                      <select
+                        value={addWarehouse}
+                        disabled={!!selectedExistingProduct}
+                        onChange={(e) => {
+                          setAddWarehouse(e.target.value)
+                          setAddPackagingUnit("")
+                          setAddQuantity("")
+                        }}
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
+                      >
+                        <option value="">Select Warehouse...</option>
+                        {warehouseRecords.map((item) => (
+                          <option key={item.id} value={item.code || item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-black uppercase text-zinc-700">Assigned Facility</span>
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 flex items-center text-xs font-bold text-zinc-800 font-mono">
+                        {warehouseRecords[0]?.name || warehouseRecords[0]?.code}
+                      </div>
+                    </div>
+                  )}
 
                   <label className="space-y-1">
                     <span className="text-[11px] font-black uppercase text-zinc-700">

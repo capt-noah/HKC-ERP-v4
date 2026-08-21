@@ -50,9 +50,12 @@ export function FloatingNav({
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; desc: string; time: string; type: string; icon?: typeof Inbox; unread: boolean }>>([])
 
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const isSuperAdmin = userRoles.includes("superadmin")
+
   const visibleSections = sections.filter((s) => {
+    if (isSuperAdmin) return true
     const allowed = sectionRoleMapping[s.label]
-    if (!allowed) return true
+    if (!allowed) return false
     return allowed.some((r) => userRoles.includes(r))
   })
 
@@ -108,37 +111,39 @@ export function FloatingNav({
 
         {/* Right Section containing Menu Pill & Controls Pill */}
         <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
-          {/* 2. Middle Pill: Main Navigation Menu */}
-          <div
-            className={cn(
-              "flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
-              isDark 
-                ? "glass-nav-dark border-white/10" 
-                : "glass-nav border-white/80"
-            )}
-          >
-            {visibleSections.map((section) => {
-              const isActive = activeSection?.label === section.label
-              return (
-                <Link
-                  key={section.label}
-                  to={section.path}
-                  className={cn(
-                    "px-4 py-2 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
-                    isActive
-                      ? isDark
-                        ? "bg-white text-black shadow-md font-bold scale-[1.03]"
-                        : "bg-[#242427] text-white shadow-md font-bold scale-[1.03]"
-                      : isDark
-                        ? "text-zinc-400 hover:text-white hover:bg-white/5"
-                        : "text-[#505054] hover:text-black hover:bg-black/5"
-                  )}
-                >
-                  {section.label}
-                </Link>
-              )
-            })}
-          </div>
+          {/* 2. Middle Pill: Main Navigation Menu (Only shown if user has 2 or more assigned modules) */}
+          {visibleSections.length > 1 && (
+            <div
+              className={cn(
+                "flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
+                isDark 
+                  ? "glass-nav-dark border-white/10" 
+                  : "glass-nav border-white/80"
+              )}
+            >
+              {visibleSections.map((section) => {
+                const isActive = activeSection?.label === section.label
+                return (
+                  <Link
+                    key={section.label}
+                    to={section.path}
+                    className={cn(
+                      "px-4 py-2 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
+                      isActive
+                        ? isDark
+                          ? "bg-white text-black shadow-md font-bold scale-[1.03]"
+                          : "bg-[#242427] text-white shadow-md font-bold scale-[1.03]"
+                        : isDark
+                          ? "text-zinc-400 hover:text-white hover:bg-white/5"
+                          : "text-[#505054] hover:text-black hover:bg-black/5"
+                    )}
+                  >
+                    {section.label}
+                  </Link>
+                )
+              })}
+            </div>
+          )}
 
           {/* 3. Right Pill: Actions (Settings, Notification, User Profile) */}
           <div
@@ -151,18 +156,21 @@ export function FloatingNav({
           >
             {rightActions ?? (
               <div className="flex items-center gap-2 relative">
-                {/* Minimalist Setting button */}
-                <button
-                  className={cn(
-                    "size-8 rounded-full flex items-center justify-center transition-all duration-300 border hover:scale-105 active:scale-95",
-                    isDark
-                      ? "hover:bg-white/10 text-zinc-300 border-white/10"
-                      : "hover:bg-black/5 text-[#505054] border-black/5 bg-white/40"
-                  )}
-                  title="Settings"
-                >
-                  <Settings className="size-[18px]" />
-                </button>
+                {/* Minimalist Setting button (Only for superadmin) */}
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => navigate("/admin/settings")}
+                    className={cn(
+                      "size-8 rounded-full flex items-center justify-center transition-all duration-300 border hover:scale-105 active:scale-95",
+                      isDark
+                        ? "hover:bg-white/10 text-zinc-300 border-white/10"
+                        : "hover:bg-black/5 text-[#505054] border-black/5 bg-white/40"
+                    )}
+                    title="System Settings"
+                  >
+                    <Settings className="size-[18px]" />
+                  </button>
+                )}
 
                 {/* Minimalist Notification Bell */}
                 <button

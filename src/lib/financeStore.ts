@@ -433,7 +433,16 @@ class FinanceStore {
         accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumulated_depreciation ?? 0),
         netBookValue: Number(fa.netBookValue ?? fa.cost ?? 0),
       }))
-      this.taxRules = taxRules
+      this.taxRules = taxRules.map((t: any) => ({
+        ...t,
+        id: t.id,
+        name: t.name || "Tax Rule",
+        ratePercent: Number(t.ratePercent ?? t.rate ?? 0),
+        type: t.type || "VAT/GST",
+        accountCode: t.accountCode ?? t.gl_account_code ?? "",
+        isInclusive: Boolean(t.isInclusive ?? t.is_inclusive ?? false),
+        description: t.description || "",
+      }))
 
       // CROSS-MODULE LIVE FINANCE SYNC ENGINE:
       // Fetch source module records and ensure all posted transactions appear in Finance GL.
@@ -2170,14 +2179,37 @@ class FinanceStore {
 
   public addTaxRule(rule: Omit<TaxRule, "id">): TaxRule {
     const newId = `TAX-${String(this.taxRules.length + 1).padStart(2, "0")}`
-    const newRule = { ...rule, id: newId }
+    const ratePercent = Number(rule.ratePercent || 0)
+    const newRule: TaxRule = {
+      ...rule,
+      id: newId,
+      ratePercent,
+      rate: ratePercent,
+      accountCode: rule.accountCode || "",
+      gl_account_code: rule.accountCode || "",
+      isInclusive: Boolean(rule.isInclusive),
+      is_inclusive: Boolean(rule.isInclusive),
+    } as any
     this.taxRules = [...this.taxRules, newRule]
     this.notify()
     return newRule
   }
 
   public updateTaxRule(id: string, updated: Partial<TaxRule>) {
-    this.taxRules = this.taxRules.map((t) => (t.id === id ? { ...t, ...updated } : t))
+    this.taxRules = this.taxRules.map((t) => {
+      if (t.id !== id) return t
+      const ratePercent = updated.ratePercent !== undefined ? Number(updated.ratePercent) : t.ratePercent
+      return {
+        ...t,
+        ...updated,
+        ratePercent,
+        rate: ratePercent,
+        accountCode: updated.accountCode !== undefined ? updated.accountCode : t.accountCode,
+        gl_account_code: updated.accountCode !== undefined ? updated.accountCode : t.accountCode,
+        isInclusive: updated.isInclusive !== undefined ? updated.isInclusive : t.isInclusive,
+        is_inclusive: updated.isInclusive !== undefined ? updated.isInclusive : t.isInclusive,
+      } as any
+    })
     this.notify()
   }
 

@@ -808,6 +808,49 @@ class ErpStore {
     return { success: true, journalEntryId: jeId }
   }
 
+  // Actions - Warehouses
+  public async addWarehouse(warehouse: Omit<Warehouse, "id"> & { id?: string }): Promise<Warehouse> {
+    const id = warehouse.id || `WH-${String(this.warehouses.length + 1).padStart(2, "0")}`
+    const newWarehouse: Warehouse = {
+      id,
+      name: warehouse.name,
+      code: warehouse.code || id,
+      location: warehouse.location || "",
+      type: warehouse.type || "Dry Storage / Processing",
+      specialization: warehouse.specialization || "Commercial Coffee",
+      targetMarkets: warehouse.targetMarkets || "Domestic & Export",
+      manager: warehouse.manager || "Unassigned",
+      status: warehouse.status || "Active",
+    }
+    const savedWarehouse = await createResource<Warehouse>("warehouses", newWarehouse)
+    this.warehouses = [...this.warehouses, savedWarehouse]
+    this.notify()
+    return savedWarehouse
+  }
+
+  public async updateWarehouse(id: string, partial: Partial<Warehouse>): Promise<Warehouse> {
+    const current = this.warehouses.find((w) => w.id === id)
+    if (!current) throw new Error(`Warehouse with ID ${id} not found.`)
+    const updated: Warehouse = { ...current, ...partial }
+    const savedWarehouse = await updateResource<Warehouse>("warehouses", id, updated)
+    this.warehouses = this.warehouses.map((w) => (w.id === id ? savedWarehouse : w))
+    this.notify()
+    return savedWarehouse
+  }
+
+  public async deleteWarehouse(id: string): Promise<{ success: boolean; error?: string }> {
+    const hasProducts = this.products.some(
+      (p) => p.warehouse === id || p.stockBreakdown?.some((sb) => sb.warehouse === id && sb.qty > 0)
+    )
+    if (hasProducts) {
+      return { success: false, error: "Cannot delete warehouse with active stock in inventory." }
+    }
+    await deleteResource("warehouses", id)
+    this.warehouses = this.warehouses.filter((w) => w.id !== id)
+    this.notify()
+    return { success: true }
+  }
+
   // Actions - Products
   public async addProduct(product: Product) {
     const savedProduct = await createResource<Product>("inventory_products", this.withInventoryValue(product))
