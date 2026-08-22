@@ -44,29 +44,27 @@ export default function Login() {
       
       const userRoles = data.user.roles || (data.user.role ? [data.user.role] : [])
       const primaryRole = userRoles[0]
-      if (from === "/" || from === "/login") {
-        switch (primaryRole) {
+      const getRoleHome = (role: string) => {
+        switch (role) {
           case "sales_manager":
-            navigate("/sales")
-            break
+            return "/sales"
           case "hr_manager":
-            navigate("/hr")
-            break
+            return "/hr"
           case "inventory_admin":
-            navigate("/inventory")
-            break
+            return "/inventory"
           case "finance_manager":
-            navigate("/finance")
-            break
+            return "/finance"
           case "hkc_docs_manager":
-            navigate("/sales/hkc-docs")
-            break
+            return "/sales/hkc-docs"
           case "superadmin":
-            navigate("/admin")
-            break
+            return "/admin"
           default:
-            navigate("/")
+            return "/sales"
         }
+      }
+
+      if (from === "/" || from === "/login" || from === "/profile") {
+        navigate(getRoleHome(primaryRole), { replace: true })
       } else {
         navigate(from, { replace: true })
       }
@@ -158,7 +156,7 @@ export default function Login() {
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
-                "Sign In"
+                "Login"
               )}
             </button>
           </div>

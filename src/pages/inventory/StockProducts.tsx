@@ -120,9 +120,26 @@ export default function StockProducts() {
     : allWarehouses
   const isWH1 = (w: string) => w === "WH1" || w === "WH1-AGRI-EXP"
 
+  const hasCommercialStoreAccess =
+    !isInventoryAdminOnly ||
+    resolvedWarehouseIds.length === 0 ||
+    resolvedWarehouseIds.some(
+      (id) =>
+        id.toUpperCase().includes("WH2") ||
+        id.toUpperCase().includes("WH3") ||
+        id.toUpperCase().includes("WH-02") ||
+        id.toUpperCase().includes("WH-03")
+    )
+
   const [searchParams] = useSearchParams()
   const initialSearch = searchParams.get("search") || ""
   const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer">("Register")
+
+  useEffect(() => {
+    if (!hasCommercialStoreAccess && activeTab !== "Register") {
+      setActiveTab("Register")
+    }
+  }, [hasCommercialStoreAccess, activeTab])
   const [searchQuery, setSearchQuery] = useState(initialSearch)
   const defaultWarehouse = (isInventoryAdminOnly && warehouseRecords.length === 1)
     ? (warehouseRecords[0].code || warehouseRecords[0].id)
@@ -747,32 +764,34 @@ export default function StockProducts() {
             <SubPageNav items={getSectionChildren("/inventory")} />
           </div>
         </motion.div>
-        {/* Tab Selection Row */}
-        <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200/60 mb-6 overflow-x-auto no-scrollbar pb-1">
-          {[
-            { id: "Register", label: "Stock" },
-            { id: "Store Transfer", label: "Store Transfer" },
-          ].map((tab) => {
-            const isActive = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className="px-4 py-2.5 text-xs font-black relative tracking-tight transition-colors uppercase shrink-0"
-              >
-                <span className={isActive ? "text-zinc-950 font-bold" : "text-zinc-400 hover:text-zinc-700"}>
-                  {tab.label}
-                </span>
-                {isActive && (
-                  <motion.div
-                    layoutId="stock-tabs"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950"
-                  />
-                )}
-              </button>
-            )
-          })}
-        </motion.div>
+        {/* Tab Selection Row (Visible only for WH2 / WH3 commercial store access) */}
+        {hasCommercialStoreAccess && (
+          <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200/60 mb-6 overflow-x-auto no-scrollbar pb-1">
+            {[
+              { id: "Register", label: "Stock" },
+              { id: "Store Transfer", label: "Store Transfer" },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className="px-4 py-2.5 text-xs font-black relative tracking-tight transition-colors uppercase shrink-0 cursor-pointer"
+                >
+                  <span className={isActive ? "text-zinc-950 font-bold" : "text-zinc-400 hover:text-zinc-700"}>
+                    {tab.label}
+                  </span>
+                  {isActive && (
+                    <motion.div
+                      layoutId="stock-tabs"
+                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950"
+                    />
+                  )}
+                </button>
+              )
+            })}
+          </motion.div>
+        )}
 
         {/* Tab Contents */}
         <AnimatePresence mode="wait">

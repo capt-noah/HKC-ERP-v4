@@ -117,11 +117,34 @@ export function handleAuthExpiry() {
   }, 1000)
 }
 
+function getInitialAuthState(): { user: User | null; token: string | null } {
+  if (typeof window === "undefined") return { user: null, token: null }
+  try {
+    const raw = localStorage.getItem("auth-storage")
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const token = parsed?.state?.token
+      if (token && typeof token === "string" && !isTokenExpired(token)) {
+        return {
+          user: parsed.state.user || null,
+          token: token,
+        }
+      }
+    }
+  } catch {}
+  return { user: null, token: null }
+}
+
+const initialAuth = getInitialAuthState()
+if (initialAuth.token) {
+  scheduleTokenExpiryTimer(initialAuth.token)
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      user: null as User | null,
-      token: null as string | null,
+      user: initialAuth.user,
+      token: initialAuth.token,
       login: (user: User, token: string) => {
         set({ user, token })
         scheduleTokenExpiryTimer(token)

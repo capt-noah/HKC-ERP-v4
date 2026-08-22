@@ -38,7 +38,7 @@ export interface ShipmentDocAttachment {
   uploaded_by: string
 }
 
-const API_BASE = import.meta.env.VITE_API_URL ?? ""
+import { API_BASE } from "@/lib/apiPersistence"
 
 async function fetchShipmentDocs(recordId: string, recordType: string): Promise<ShipmentDocAttachment[]> {
   try {

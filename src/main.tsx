@@ -8,7 +8,6 @@ import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { FeedbackProvider } from "@/context/FeedbackContext.tsx"
 import { useAuthStore, isTokenExpired, handleAuthExpiry } from "@/lib/authStore"
 import { requestMonitor, evaluateRoleScoping } from "@/lib/requestMonitor"
-import { RequestMonitorHUD } from "@/components/RequestMonitorHUD"
 
 // Intercept all fetch requests globally to inject the JWT auth header & handle 401/expired tokens
 const originalFetch = window.fetch
@@ -86,19 +85,23 @@ window.fetch = async (input, init) => {
     })
   }
 
-  // React to 401 Unauthorized or Token Expiry responses by immediately logging out and redirecting
+  // React to 401 Unauthorized or Token Expiry responses by verifying token status before logging out
   if (isApiRequest && !isAuthLogin && (response.status === 401 || response.status === 403)) {
-    // If 403, verify if it's token-related or role-related
-    if (response.status === 401) {
-      handleAuthExpiry()
-    } else if (response.status === 403) {
-      try {
-        const cloned = response.clone()
-        const body = await cloned.json()
-        if (body?.error && /token|expired|jwt/i.test(String(body.error))) {
-          handleAuthExpiry()
-        }
-      } catch {}
+    try {
+      const cloned = response.clone()
+      const body = await cloned.json()
+      const isTokenIssue =
+        body?.code === "TOKEN_EXPIRED" ||
+        (body?.error && /token|expired|invalid.*token|token missing/i.test(String(body.error)))
+
+      if (isTokenIssue) {
+        handleAuthExpiry()
+      }
+    } catch {
+      const token = localStorage.getItem("auth_token") || localStorage.getItem("token")
+      if (!token) {
+        handleAuthExpiry()
+      }
     }
   }
 
@@ -112,7 +115,6 @@ createRoot(document.getElementById("root")!).render(
       <ThemeProvider defaultTheme="light">
         <FeedbackProvider>
           <App />
-          <RequestMonitorHUD />
         </FeedbackProvider>
       </ThemeProvider>
     </BrowserRouter>

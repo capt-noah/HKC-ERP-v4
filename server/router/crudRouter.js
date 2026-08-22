@@ -31,6 +31,12 @@ crudRouter.use("/:resource", (req, res, next) => {
   if (mod === "hr" && userRoles.includes("hr_manager")) isAllowed = true
   if (mod === "admin" && userRoles.includes("superadmin")) isAllowed = true
 
+  // Allow all authenticated users to read and update their own user profile
+  if (req.params.resource === "users") {
+    if (req.method === "GET") isAllowed = true
+    if ((req.method === "PATCH" || req.method === "PUT") && req.params.id === user.id) isAllowed = true
+  }
+
   // Allow inventory_admin read-only access to suppliers & purchase_orders for receiving goods
   if (userRoles.includes("inventory_admin") && (req.params.resource === "suppliers" || req.params.resource === "purchase_orders")) {
     if (req.method === "GET") {

@@ -1,3 +1,5 @@
+import { API_BASE } from "./apiPersistence"
+
 export type SalesIssueStatus = "Draft" | "Posted" | "Cancelled"
 export type PaymentType = "Cash" | "Credit"
 
@@ -59,8 +61,7 @@ async function parseResponse(response: Response) {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const base = import.meta.env.VITE_API_URL ?? ""
-  const response = await fetch(`${base}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",

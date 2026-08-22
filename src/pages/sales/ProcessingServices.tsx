@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react"
+import { Navigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Plus,
@@ -368,20 +369,7 @@ export default function ProcessingServices() {
   })
 
   if (!hasWH1Access) {
-    return (
-      <div className="min-h-screen page-gradient flex items-center justify-center">
-        <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-        <GlassCard className="max-w-md p-8 text-center border border-white/60 shadow-xl">
-          <div className="size-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-rose-100">
-            <X className="size-8" />
-          </div>
-          <h2 className="text-xl font-black text-black">Access Denied</h2>
-          <p className="text-xs text-gray-500 mt-2">
-            You do not have authorization to view or manage processing services at Warehouse 1. Please contact your system administrator to update your assigned warehouse scopes.
-          </p>
-        </GlassCard>
-      </div>
-    )
+    return <Navigate to="/inventory/stock" replace />
   }
 
   return (

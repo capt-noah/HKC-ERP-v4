@@ -29,6 +29,7 @@ import Leave from "@/pages/hr/Leave"
 import UserManagement from "@/pages/admin/UserManagement"
 import PartnersRegistry from "@/pages/admin/PartnersRegistry"
 import AdminSettings from "@/pages/admin/AdminSettings"
+import Profile from "@/pages/Profile"
 import NotFound from "@/pages/NotFound"
 
 import { Toaster } from "sonner"
@@ -118,6 +119,9 @@ export function App() {
       <Route path="/admin/users" element={<ProtectedRoute allowedRoles={["superadmin"]}><UserManagement /></ProtectedRoute>} />
       <Route path="/admin/partners" element={<ProtectedRoute allowedRoles={["superadmin"]}><PartnersRegistry /></ProtectedRoute>} />
       <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={["superadmin"]}><AdminSettings /></ProtectedRoute>} />
+
+      {/* Profile section - Accessible by all authenticated users */}
+      <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
       {/* Catch-all route */}
       <Route path="*" element={<NotFound />} />

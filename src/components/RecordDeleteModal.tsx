@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion"
-import { AlertTriangle, Trash2, X } from "lucide-react"
+import { Trash2, X } from "lucide-react"
 
 export interface RecordDeleteModalProps {
   isOpen: boolean
@@ -42,25 +42,20 @@ export function RecordDeleteModal({
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             className="relative z-10 bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-rose-100 overflow-hidden"
           >
-            {/* Warning Header Pill */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-900 border border-rose-200">
-                <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
-                <span>Confirm Record Deletion</span>
-              </div>
+            {/* Header Title & Close Button */}
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <h3 className="text-lg font-black text-zinc-950 tracking-tight">{title}</h3>
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer shrink-0 -mr-1.5 -mt-1.5"
               >
                 <X className="size-4" />
               </button>
             </div>
 
-            {/* Title & Target Details */}
+            {/* Target Details */}
             <div className="space-y-2 mb-5">
-              <h3 className="text-lg font-black text-zinc-950 tracking-tight">{title}</h3>
-              
               {(recordId || recordName) && (
                 <div className="p-3 bg-rose-50/60 rounded-2xl border border-rose-200/70 text-xs font-semibold">
                   {recordId && (
@@ -87,7 +82,7 @@ export function RecordDeleteModal({
                 type="button"
                 onClick={onClose}
                 disabled={isDeleting}
-                className="px-4 py-2.5 rounded-full border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-100 active:scale-95 transition-all"
+                className="px-4 py-2.5 rounded-xl border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-100 active:scale-95 transition-all cursor-pointer"
               >
                 Cancel
               </button>
@@ -95,7 +90,7 @@ export function RecordDeleteModal({
                 type="button"
                 disabled={isDeleting}
                 onClick={onConfirmDelete}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-rose-600/20 transition-all"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-rose-600/20 transition-all cursor-pointer"
               >
                 <Trash2 className="size-3.5" />
                 {isDeleting ? "Deleting..." : "Delete Record"}

@@ -62,6 +62,15 @@ async function safeSupabaseFetch(url, options, retries = 2) {
   }
 }
 
+function mapSupabaseStatus(status) {
+  if (!status) return 500
+  // Upstream Supabase errors (401/403) must never masquerade as user JWT session expiry
+  if (status === 401 || status === 403) {
+    return 500
+  }
+  return status
+}
+
 // ── Public Database Client API ──────────────────────────────────────────
 
 export async function listRows({ resource, query = {}, headers = {} }) {
@@ -78,7 +87,7 @@ export async function listRows({ resource, query = {}, headers = {} }) {
   })
 
   return {
-    status: response.status,
+    status: mapSupabaseStatus(response.status),
     headers: { "Content-Range": response.headers.get("content-range") },
     body:
       resource.storage === "jsonb_document"
@@ -102,7 +111,7 @@ export async function getRow({ resource, id, query = {}, headers = {} }) {
   })
 
   return {
-    status: response.status,
+    status: mapSupabaseStatus(response.status),
     headers: {},
     body: await (async () => {
       const parsed = await parseSupabaseResponse(response)
@@ -129,7 +138,7 @@ export async function createRow({ resource, body, headers = {} }) {
   })
 
   return {
-    status: response.status,
+    status: mapSupabaseStatus(response.status),
     headers: {},
     body:
       resource.storage === "jsonb_document"
@@ -163,7 +172,7 @@ export async function updateRow({ resource, id, body, headers = {} }) {
   })
 
   return {
-    status: response.status,
+    status: mapSupabaseStatus(response.status),
     headers: {},
     body:
       resource.storage === "jsonb_document"
@@ -182,7 +191,7 @@ export async function deleteRow({ resource, id, headers = {} }) {
   })
 
   return {
-    status: response.status,
+    status: mapSupabaseStatus(response.status),
     headers: {},
     body:
       resource.storage === "jsonb_document"
@@ -254,7 +263,7 @@ export async function replaceRows({ resource, body, headers = {} }) {
 
   if (response.status >= 400) {
     return {
-      status: response.status,
+      status: mapSupabaseStatus(response.status),
       headers: response.headers,
       body: await parseSupabaseResponse(response),
     }

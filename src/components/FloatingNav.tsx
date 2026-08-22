@@ -1,14 +1,14 @@
 import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Bell, Settings, User, Check, Inbox, LogOut } from "lucide-react"
+import { Bell, User, Check, Inbox } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/lib/authStore"
 import type { Role } from "@/lib/authStore"
 
 const sectionRoleMapping: Record<string, Role[]> = {
-  Sales: ["superadmin", "sales_manager", "hkc_docs_manager"],
-  "HKC Docs": ["superadmin", "sales_manager", "hkc_docs_manager"],
+  Sales: ["superadmin", "sales_manager"],
+  "HKC Docs": ["superadmin", "hkc_docs_manager"],
   Inventory: ["superadmin", "inventory_admin"],
   Finance: ["superadmin", "finance_manager"],
   HR: ["superadmin", "hr_manager"],
@@ -45,12 +45,15 @@ export function FloatingNav({
   const navigate = useNavigate()
   const isDark = variant === "dark"
   const [showNotifications, setShowNotifications] = useState(false)
-  const [showProfile, setShowProfile] = useState(false)
-  const { user, logout } = useAuthStore()
+  const { user } = useAuthStore()
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; desc: string; time: string; type: string; icon?: typeof Inbox; unread: boolean }>>([])
 
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
   const isSuperAdmin = userRoles.includes("superadmin")
+  const userWarehouseIds = (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
+
+  // WH1 access: true if superadmin, or if no specific warehouse restriction is set, or if WH1 is in assigned warehouses
+  const hasWH1Access = isSuperAdmin || userWarehouseIds.length === 0 || userWarehouseIds.some(id => id.includes("WH1") || id.includes("WH-01") || id.includes("WH 1") || id.includes("WAREHOUSE 1"))
 
   const visibleSections = sections.filter((s) => {
     if (isSuperAdmin) return true
@@ -85,16 +88,23 @@ export function FloatingNav({
       .sort((a, b) => b.path.length - a.path.length)
       .find((s) => location.pathname.startsWith(s.path))) ?? sections[0]
 
+  const visibleChildren = (activeSection?.children || []).filter((child) => {
+    if (child.path === "/inventory/processing-services" && !hasWH1Access) {
+      return false
+    }
+    return true
+  })
+
   return (
     <div className="fixed top-4 left-0 right-0 z-50 w-full px-4 md:px-6 lg:px-8">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-[100%] mx-auto">
+      <div className="flex items-center justify-between gap-3 w-full max-w-[100%] mx-auto">
         {/* 1. Left Pill: Brand Logo */}
         <div
           className={cn(
-            "flex items-center gap-1.5 px-4 py-1.5 rounded-full border shadow-sm shrink-0",
+            "flex items-center gap-2 px-4 py-2 rounded-full border shadow-sm shrink-0 transition-all backdrop-blur-2xl",
             isDark 
-              ? "glass-nav-dark border-white/10 text-white" 
-              : "glass-nav border-white/80 text-black"
+              ? "bg-zinc-900/65 border-white/10 text-white shadow-black/20" 
+              : "bg-white/60 border-white/80 text-zinc-950 shadow-black/5"
           )}
         >
           {brandIcon ?? (
@@ -110,15 +120,16 @@ export function FloatingNav({
         </div>
 
         {/* Right Section containing Menu Pill & Controls Pill */}
-        <div className="flex flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
-          {/* 2. Middle Pill: Main Navigation Menu (Only shown if user has 2 or more assigned modules) */}
-          {visibleSections.length > 1 && (
+        <div className="flex items-center justify-end gap-3 shrink-0">
+          {/* 2. Middle Pill: Navigation Menu */}
+          {visibleSections.length > 1 ? (
+            /* Multi-module / Super Admin user: Switch between modules */
             <div
               className={cn(
-                "flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
+                "flex items-center gap-1 p-1.5 rounded-full border shadow-sm overflow-x-auto no-scrollbar backdrop-blur-2xl",
                 isDark 
-                  ? "glass-nav-dark border-white/10" 
-                  : "glass-nav border-white/80"
+                  ? "bg-zinc-900/65 border-white/10 shadow-black/20" 
+                  : "bg-white/60 border-white/80 shadow-black/5"
               )}
             >
               {visibleSections.map((section) => {
@@ -143,35 +154,51 @@ export function FloatingNav({
                 )
               })}
             </div>
-          )}
+          ) : visibleSections.length === 1 && visibleChildren.length > 1 ? (
+            /* Single-role user: Promote sub-pages directly into the primary top FloatingNav */
+            <div
+              className={cn(
+                "flex items-center gap-1 p-1.5 rounded-full border shadow-sm overflow-x-auto no-scrollbar backdrop-blur-2xl",
+                isDark 
+                  ? "bg-zinc-900/65 border-white/10 shadow-black/20" 
+                  : "bg-white/60 border-white/80 shadow-black/5"
+              )}
+            >
+              {visibleChildren.map((child) => {
+                const isChildActive = location.pathname === child.path
+                return (
+                  <Link
+                    key={child.path}
+                    to={child.path}
+                    className={cn(
+                      "px-4 py-2 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
+                      isChildActive
+                        ? isDark
+                          ? "bg-white text-black shadow-md font-bold scale-[1.03]"
+                          : "bg-emerald-700 text-white shadow-md font-bold scale-[1.03]"
+                        : isDark
+                          ? "text-zinc-400 hover:text-white hover:bg-white/5"
+                          : "text-zinc-600 hover:text-zinc-950 hover:bg-black/5"
+                    )}
+                  >
+                    {child.label}
+                  </Link>
+                )
+              })}
+            </div>
+          ) : null}
 
-          {/* 3. Right Pill: Actions (Settings, Notification, User Profile) */}
+          {/* 3. Right Pill: Actions (Notification, User Profile) */}
           <div
             className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm shrink-0",
+              "flex items-center gap-2 px-3.5 py-2 rounded-full border shadow-sm shrink-0 backdrop-blur-2xl",
               isDark 
-                ? "glass-nav-dark border-white/10" 
-                : "glass-nav border-white/80"
+                ? "bg-zinc-900/65 border-white/10 shadow-black/20" 
+                : "bg-white/60 border-white/80 shadow-black/5"
             )}
           >
             {rightActions ?? (
               <div className="flex items-center gap-2 relative">
-                {/* Minimalist Setting button (Only for superadmin) */}
-                {isSuperAdmin && (
-                  <button
-                    onClick={() => navigate("/admin/settings")}
-                    className={cn(
-                      "size-8 rounded-full flex items-center justify-center transition-all duration-300 border hover:scale-105 active:scale-95",
-                      isDark
-                        ? "hover:bg-white/10 text-zinc-300 border-white/10"
-                        : "hover:bg-black/5 text-[#505054] border-black/5 bg-white/40"
-                    )}
-                    title="System Settings"
-                  >
-                    <Settings className="size-[18px]" />
-                  </button>
-                )}
-
                 {/* Minimalist Notification Bell */}
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
@@ -311,67 +338,23 @@ export function FloatingNav({
                   )}
                 </AnimatePresence>
 
-                {/* Minimalist User Avatar Circle */}
-                <div className="relative">
-                  <button
-                    onClick={() => {
-                      setShowProfile(!showProfile)
-                      setShowNotifications(false)
-                    }}
-                    className={cn(
-                      "size-8 rounded-full flex items-center justify-center border cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95",
-                      isDark
-                        ? "bg-green-700/20 text-green-400 border-green-700/30"
-                        : "bg-[#e5e5ea] text-[#1c1c1e] border-black/10"
-                    )}
-                    title="Profile"
-                  >
-                    <User className="size-[18px]" />
-                  </button>
-
-                  <AnimatePresence>
-                    {showProfile && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-40 cursor-default" 
-                          onClick={() => setShowProfile(false)} 
-                        />
-                        
-                        <motion.div
-                          initial={{ opacity: 0, y: 15, scale: 0.96 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.96 }}
-                          transition={{ duration: 0.2, ease: "easeOut" }}
-                          className="absolute right-0 top-11 z-50 w-64 rounded-3xl border border-zinc-200/80 bg-white text-zinc-900 p-5 shadow-2xl text-left overflow-hidden"
-                        >
-                          <div className="mb-3">
-                            <h4 className="text-xs font-black tracking-wider text-zinc-400 uppercase mb-1">Logged In As</h4>
-                            <p className="text-sm font-extrabold text-zinc-900 leading-tight">
-                              {user?.fullname || user?.username || "Guest User"}
-                            </p>
-                            <p className="text-[10px] font-mono font-bold text-green-700 bg-green-50 border border-green-100 rounded px-1.5 py-0.5 inline-block mt-1">
-                              {(user?.roles || ((user as any)?.role ? [(user as any).role] : [])).join(", ") || "No Roles"}
-                            </p>
-                          </div>
-
-                          <div className="border-t border-zinc-100 pt-3 mt-3">
-                            <button
-                              onClick={() => {
-                                logout()
-                                setShowProfile(false)
-                                navigate("/login")
-                              }}
-                              className="flex items-center gap-2 w-full text-left text-xs font-bold text-red-500 hover:text-red-700 transition-colors py-1.5"
-                            >
-                              <LogOut className="size-4" />
-                              Logout
-                            </button>
-                          </div>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
+                {/* Minimalist User Avatar Button (Navigates directly to /profile) */}
+                <button
+                  onClick={() => navigate("/profile")}
+                  className={cn(
+                    "size-8 rounded-full flex items-center justify-center border cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95",
+                    location.pathname === "/profile"
+                      ? isDark
+                        ? "bg-emerald-700 text-white border-emerald-600 shadow-sm"
+                        : "bg-emerald-700 text-white border-emerald-700 shadow-sm font-bold"
+                      : isDark
+                        ? "bg-green-700/20 text-green-400 border-green-700/30 hover:bg-emerald-700/30"
+                        : "bg-[#e5e5ea] hover:bg-emerald-50 hover:text-emerald-700 text-[#1c1c1e] border-black/10"
+                  )}
+                  title="View Profile"
+                >
+                  <User className="size-[18px]" />
+                </button>
               </div>
             )}
           </div>

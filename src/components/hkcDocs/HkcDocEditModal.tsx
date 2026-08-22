@@ -19,7 +19,7 @@ export default function HkcDocEditModal({
   onSaveSuccess,
   onDeleteSuccess,
 }: HkcDocEditModalProps) {
-  const { showToast } = useFeedback()
+  const { showToast, confirm } = useFeedback()
   const [shipmentId, setShipmentId] = useState("")
   const [itemsDescription, setItemsDescription] = useState("")
   const [type, setType] = useState<"Import" | "Export">("Import")
@@ -54,7 +54,8 @@ export default function HkcDocEditModal({
     setAttachments((prev) => prev.filter((a) => a.attachmentId !== attachmentId))
   }
 
-  const handleSave = async () => {
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
     if (!shipmentId.trim() || !itemsDescription.trim()) {
       showToast("Validation failed", "warning", "Provide a shipment reference ID and items description.")
       return
@@ -79,22 +80,27 @@ export default function HkcDocEditModal({
     }
   }
 
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to permanently delete this documentation record? This will delete all its attachments.")) {
-      return
-    }
-
-    setIsDeleting(true)
-    try {
-      await deleteHkcDocRecord(record.id)
-      showToast("Documentation deleted", "info", `Record ${record.shipmentId} deleted successfully.`)
-      onDeleteSuccess(record.id)
-      onClose()
-    } catch (err) {
-      showToast("Delete failed", "warning", err instanceof Error ? err.message : "Failed to delete record.")
-    } finally {
-      setIsDeleting(false)
-    }
+  const handleDelete = () => {
+    confirm({
+      title: "Delete Documentation Record?",
+      message: "Are you sure you want to permanently delete this documentation record? This will delete all its attachments.",
+      confirmLabel: "Delete Record",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDeleting(true)
+        try {
+          await deleteHkcDocRecord(record.id)
+          showToast("Documentation deleted", "info", `Record ${record.shipmentId} deleted successfully.`)
+          onDeleteSuccess(record.id)
+          onClose()
+        } catch (err) {
+          showToast("Delete failed", "warning", err instanceof Error ? err.message : "Failed to delete record.")
+        } finally {
+          setIsDeleting(false)
+        }
+      },
+    })
   }
 
   return (

@@ -116,7 +116,7 @@ export interface Product {
   updatedAt?: string
 }
 
-export type TransferStatus = "Issued" | "Received" | "Discrepancy"
+export type TransferStatus = "Draft" | "Issued" | "Received" | "Discrepancy"
 
 export interface TransferLineItem {
   line_no: number
@@ -817,8 +817,15 @@ class ErpStore {
     return { success: true, journalEntryId: jeId }
   }
 
-  public updateTransferStatus(refNum: string, status: TransferStatus, receivedBy?: string, remark?: string) {
-    const todayStr = new Date().toISOString().replace("T", " ").substring(0, 16)
+  public updateTransferStatus(
+    refNum: string,
+    status: TransferStatus,
+    receivedBy?: string,
+    remark?: string,
+    receivedSignature?: string,
+    receivedAt?: string
+  ) {
+    const todayStr = receivedAt || new Date().toISOString().replace("T", " ").substring(0, 16)
     this.transfers = this.transfers.map((t) => {
       if (t.reference_number !== refNum) return t
       return {
@@ -826,6 +833,7 @@ class ErpStore {
         status,
         received_by: receivedBy || t.received_by,
         received_at: todayStr,
+        received_signature: receivedSignature || t.received_signature || receivedBy,
         discrepancy_remark: remark || t.discrepancy_remark,
       }
     })

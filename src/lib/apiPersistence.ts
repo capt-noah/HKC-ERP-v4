@@ -2,10 +2,10 @@ import { handleAuthExpiry } from "./authStore"
 
 type Identified = { id?: string }
 
-// In dev, API_BASE is empty and Vite's proxy forwards /api/* to the local server.
-// In production (Vercel), VITE_API_URL must be set to the Render service URL
-// so requests go directly to the backend (e.g. https://hkc-erp-api.onrender.com).
-export const API_BASE = import.meta.env.VITE_API_URL ?? ""
+// In local dev & Plesk single-server deployments, API_BASE is empty so requests use relative paths (/api/...)
+// In separate frontend deployments (e.g. Vercel), VITE_API_URL is set to the remote backend URL (e.g. https://hkc-erp-api.onrender.com).
+const rawApiUrl = (import.meta.env.VITE_API_URL ?? "").trim()
+export const API_BASE = (rawApiUrl === "http://localhost:3000" || rawApiUrl === "http://127.0.0.1:3000" || !rawApiUrl) ? "" : rawApiUrl.replace(/\/$/, "")
 
 function itemId(item: Identified, fallbackIndex: number) {
   return item.id ? String(item.id) : `row-${fallbackIndex + 1}`

@@ -265,7 +265,7 @@ export default function InventoryDashboard() {
                     </p>
                   </div>
 
-                  {warehouses.length > 1 ? (
+                  {warehouses.length > 1 && (
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-[10px] font-black uppercase text-zinc-400">Warehouse:</span>
                       <select
@@ -281,14 +281,7 @@ export default function InventoryDashboard() {
                         ))}
                       </select>
                     </div>
-                  ) : warehouses.length === 1 ? (
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] font-black uppercase text-zinc-400">Assigned Facility:</span>
-                      <span className="px-3 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-xs font-black text-zinc-900 font-mono">
-                        {warehouses[0]?.name || warehouses[0]?.code}
-                      </span>
-                    </div>
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="h-64 w-full">

@@ -79,6 +79,65 @@ export async function login(req, res) {
   }
 }
 
+export async function getCurrentUser(req, res) {
+  try {
+    const userId = req.user.id
+    const response = await listRows({
+      resource: USERS_RESOURCE,
+      query: { id: `eq.${userId}`, limit: 1 },
+    })
+
+    if (response.status !== 200 || !response.body || response.body.length === 0) {
+      return res.status(404).json({ error: "User not found" })
+    }
+
+    const u = response.body[0]
+    res.status(200).json({
+      id: u.id,
+      username: u.username,
+      roles: u.roles || [],
+      fullname: u.fullname || "",
+      status: u.status || "active",
+      employee_id: u.employee_id || null,
+      warehouse_ids: u.warehouse_ids || (u.warehouse_id ? [u.warehouse_id] : []),
+      created_at: u.created_at,
+      updated_at: u.updated_at,
+    })
+  } catch (error) {
+    console.error("getCurrentUser error:", error)
+    res.status(500).json({ error: "Internal server error", details: error.message })
+  }
+}
+
+export async function updateCurrentUserProfile(req, res) {
+  try {
+    const userId = req.user.id
+    const { fullname, password } = req.body
+
+    const updateBody = {}
+    if (fullname !== undefined) updateBody.fullname = fullname
+    if (password) {
+      updateBody.password_hash = await bcrypt.hash(password, 10)
+    }
+
+    const { updateRow } = await import("../../db/supabaseClient.js")
+    const response = await updateRow({
+      resource: USERS_RESOURCE,
+      id: userId,
+      body: updateBody,
+    })
+
+    if (response.status >= 400) {
+      return res.status(response.status).json(response.body)
+    }
+
+    res.status(200).json({ message: "Profile updated successfully", user: response.body })
+  } catch (error) {
+    console.error("updateCurrentUserProfile error:", error)
+    res.status(500).json({ error: "Internal server error", details: error.message })
+  }
+}
+
 export async function register(req, res) {
   const { username, password, roles, status, fullname, employee_id, warehouse_ids } = req.body
 

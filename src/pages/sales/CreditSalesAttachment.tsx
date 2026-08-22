@@ -4,6 +4,7 @@ import { ArrowLeft, Download, Printer, RefreshCw } from "lucide-react"
 import { GlassCard } from "@/components/GlassCard"
 import { useErpStore } from "@/lib/erpStore"
 import { getSalesIssue, type SalesIssue, type SalesIssueItem } from "@/lib/salesIssuesApi"
+import { API_BASE } from "@/lib/apiPersistence"
 
 type AttachmentIssue = SalesIssue & {
   station?: string
@@ -119,8 +120,7 @@ function lineTotal(item: SalesIssueItem) {
 }
 
 async function loadCompanyProfile() {
-  const base = import.meta.env.VITE_API_URL ?? ""
-  const response = await fetch(`${base}/api/company_settings`)
+  const response = await fetch(`${API_BASE}/api/company_settings`)
   if (!response.ok) return null
   const body = await response.json()
   return Array.isArray(body) ? (body[0] as CompanyProfile | undefined) ?? null : null

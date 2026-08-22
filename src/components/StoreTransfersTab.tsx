@@ -5,30 +5,29 @@ import {
   X, 
   Warehouse as WarehouseIcon, 
   Calendar, 
-  Eye, 
   Check, 
   Trash2, 
   Shield, 
   AlertTriangle, 
   Download, 
-  Clock,
-  ArrowRight,
-  Edit
+  Clock, 
+  Edit3
 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus } from "@/lib/erpStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { type TableColumn } from "@/components/ResizableTable"
 import { DataTable } from "@/components/DataTable"
+import { useAuthStore } from "@/lib/authStore"
 
 export type { TransferStatus, TransferLineItem, Transfer }
 
 const transferColumns: TableColumn[] = [
-  { key: "reference_number", label: "TIN / Ref No.", align: "left" },
-  { key: "from_warehouse", label: "Sender Warehouse", align: "left" },
-  { key: "to_warehouse", label: "Receiver Warehouse", align: "left" },
+  { key: "reference_number", label: "Ref / TIN No.", align: "left" },
+  { key: "from_warehouse", label: "Origin (Sender)", align: "left" },
+  { key: "to_warehouse", label: "Destination (Receiver)", align: "left" },
   { key: "total_quantity", label: "Total Quantity", align: "right" },
-  { key: "date", label: "Initiation Date", align: "left" },
+  { key: "date", label: "Transfer Date", align: "left" },
   { key: "status", label: "Transfer Status", align: "center" },
   { key: "_actions", label: "Actions", align: "center", noSort: true },
 ]
@@ -36,28 +35,94 @@ const transferColumns: TableColumn[] = [
 export default function StoreTransfersTab() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
+  const { user } = useAuthStore()
 
-  // --- TRANSFERS DATA FROM STORE ---
+  // Dynamic user details
+  const currentUserName = user?.fullname || user?.username || "Store Manager"
+  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const isSuperAdmin = userRoles.includes("superadmin")
+  const userWarehouseIds = useMemo(() => {
+    return (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
+  }, [user])
+
+  // --- TRANSFERS & PRODUCTS DATA ---
   const transfers = erp.getTransfers()
   const products = erp.getProducts()
-  const warehouses = withOperatingWarehouses(erp.getWarehouses())
-  const warehouseOptions = useMemo(() => warehouses.map((warehouse) => warehouse.code || warehouse.id).filter(Boolean), [warehouses])
-  const currentWarehouse = warehouseOptions[0] || ""
-  const currentWarehouseRecord = warehouses.find((warehouse) => (warehouse.code || warehouse.id) === currentWarehouse)
-  const currentOperator = currentWarehouseRecord?.manager || "Store Manager"
-  const currentSignature = currentOperator
+  
+  // Store-to-store transfers exist strictly between WH2 and WH3 since they share commercial products
+  const transferWarehouses = useMemo(() => {
+    const rawWhs = withOperatingWarehouses(erp.getWarehouses())
+    const wh2And3 = rawWhs.filter((w) => {
+      const idOrCode = (w.code || w.id || w.name || "").toUpperCase()
+      return (
+        idOrCode.includes("WH2") ||
+        idOrCode.includes("WH3") ||
+        idOrCode.includes("WH-02") ||
+        idOrCode.includes("WH-03") ||
+        idOrCode.includes("WAREHOUSE 2") ||
+        idOrCode.includes("WAREHOUSE 3")
+      )
+    })
+    if (wh2And3.length >= 2) return wh2And3
+    const nonWh1 = rawWhs.filter(
+      (w) =>
+        !((w.code || w.id || "").toUpperCase().includes("WH1") ||
+          (w.code || w.id || "").toUpperCase().includes("WH-01"))
+    )
+    if (nonWh1.length >= 2) return nonWh1
+    return [
+      { id: "WH2", code: "WH2", name: "Warehouse 2 (Store)", location: "Addis Ababa", type: "Commercial Store", specialization: "Veterinary Pharmaceuticals & Finished Products", targetMarkets: "Local/Export", manager: "Store Manager", status: "Active" },
+      { id: "WH3", code: "WH3", name: "Warehouse 3 (Store)", location: "Addis Ababa", type: "Commercial Store", specialization: "Veterinary Vaccines & Soluble Powders", targetMarkets: "Local/Export", manager: "Store Manager", status: "Active" },
+    ]
+  }, [erp])
+
+  const warehouseOptions = useMemo(
+    () => transferWarehouses.map((warehouse) => warehouse.code || warehouse.id).filter(Boolean),
+    [transferWarehouses]
+  )
+
+  // Identify user's locked origin if assigned to a single warehouse
+  const isAssignedOnlyToWH2 = userWarehouseIds.some(id => id.includes("WH2") || id.includes("WH-02")) && !userWarehouseIds.some(id => id.includes("WH3") || id.includes("WH-03"))
+  const isAssignedOnlyToWH3 = userWarehouseIds.some(id => id.includes("WH3") || id.includes("WH-03")) && !userWarehouseIds.some(id => id.includes("WH2") || id.includes("WH-02"))
+
+  const defaultOrigin = isAssignedOnlyToWH3 ? "WH3" : (warehouseOptions[0] || "WH2")
+  const defaultDestination = isAssignedOnlyToWH3 ? "WH2" : (warehouseOptions.find(w => w !== defaultOrigin) || "WH3")
+
+  // Products available in WH2 / WH3 commercial stores
+  const transferProducts = useMemo(() => {
+    return products.filter((p) => {
+      if (warehouseOptions.includes(p.warehouse)) return true
+      return (p.stockBreakdown || []).some((sb) => warehouseOptions.includes(sb.warehouse) && sb.qty > 0)
+    })
+  }, [products, warehouseOptions])
 
   // --- LIST FILTER STATE ---
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<"ALL" | TransferStatus>("ALL")
 
-  // --- WIZARD FORM / VIEW STATES ---
-  const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null) // For detail view
-  const [isFormOpen, setIsFormOpen] = useState(false) // Form panel trigger
+  // --- FORM & VIEW STATES ---
+  const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null) // Detail modal
+  const [isFormOpen, setIsFormOpen] = useState(false) // Single-step Form modal
+  const [formMode, setFormMode] = useState<"create" | "edit">("create")
 
-  // Lock body scroll when drawer or document is open
+  // --- FORM DATA STATE ---
+  const [formRefNum, setFormRefNum] = useState("")
+  const [formFromW, setFormFromW] = useState(defaultOrigin)
+  const [formToW, setFormToW] = useState(defaultDestination)
+  const [formLineItems, setFormLineItems] = useState<TransferLineItem[]>([])
+
+  // --- RECEIPT MODAL STATE ---
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false)
+  const [receiptMode, setReceiptMode] = useState<"match" | "discrepancy">("match")
+  const [discrepancyText, setDiscrepancyText] = useState("")
+  const [isProcessingReceipt, setIsProcessingReceipt] = useState(false)
+
+  // --- PDF EXPORT STATE ---
+  const [isExporting, setIsExporting] = useState(false)
+
+  // Lock body scroll when modal is open
   useEffect(() => {
-    if (isFormOpen || selectedTransfer !== null) {
+    if (isFormOpen || selectedTransfer !== null || isReceiptOpen) {
       document.body.style.overflow = "hidden"
     } else {
       document.body.style.overflow = ""
@@ -65,60 +130,41 @@ export default function StoreTransfersTab() {
     return () => {
       document.body.style.overflow = ""
     }
-  }, [isFormOpen, selectedTransfer])
+  }, [isFormOpen, selectedTransfer, isReceiptOpen])
 
-  const [formMode, setFormMode] = useState<"create" | "edit">("create")
-  const [wizardStep, setWizardStep] = useState<1 | 2>(1) // Step 1: Edit Form, Step 2: Confirm Issue
-
-  // --- FORM DATA STATE ---
-  const [formRefNum, setFormRefNum] = useState("")
-  const [formFromW, setFormFromW] = useState("")
-  const [formToW, setFormToW] = useState("")
-  const [formLineItems, setFormLineItems] = useState<TransferLineItem[]>([])
-  const [formSubmitted, setFormSubmitted] = useState(false)
-// --- RECEIPT MODAL STATE ---
-  const [isReceiptOpen, setIsReceiptOpen] = useState(false)
-  const [receiptMode, setReceiptMode] = useState<"match" | "discrepancy">("match")
-  const [discrepancyText, setDiscrepancyText] = useState("")
-
-  // --- EXPORT LOADING STATE ---
-  const [isExporting, setIsExporting] = useState(false)
-
-  // --- LIVE AUTO-CALC TOTAL IN FORM ---
+  // Live auto-calculated total quantity in form
   const formTotalQuantity = useMemo(() => {
     return formLineItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
   }, [formLineItems])
 
-    // --- START NEW TRANSFER ---
-  const handleInitiateNew = () => {
-    if (!currentWarehouse) {
-      showToast("Warehouse required", "warning", "Create a warehouse in Supabase before initiating a transfer.")
-      return
-    }
-    if (warehouseOptions.length < 2) {
-      showToast("Destination required", "warning", "At least two saved warehouses are required for a transfer.")
-      return
-    }
+  // Helpers: check user relation to transfer (Sender vs Receiver)
+  const isSender = (transfer: Transfer) => {
+    if (isSuperAdmin) return true
+    const origin = (transfer.from_warehouse || "").toUpperCase()
+    return userWarehouseIds.length === 0 || userWarehouseIds.some(id => origin.includes(id) || id.includes(origin))
+  }
 
-    // Auto-increment reference number based on state
+  const isReceiver = (transfer: Transfer) => {
+    if (isSuperAdmin) return true
+    const destination = (transfer.to_warehouse || "").toUpperCase()
+    return userWarehouseIds.length === 0 || userWarehouseIds.some(id => destination.includes(id) || id.includes(destination))
+  }
+
+  // --- START NEW TRANSFER ---
+  const handleInitiateNew = () => {
     const nextNum = transfers.length + 1
     const padNum = String(nextNum).padStart(4, "0")
     const refNum = `TR-${padNum}`
 
     setFormMode("create")
     setFormRefNum(refNum)
-    setFormFromW(currentWarehouse)
-    setFormSubmitted(false)
-
-    // Find first warehouse that is different
-    const diffW = warehouseOptions.find(w => w !== currentWarehouse) || ""
-    setFormToW(diffW)
+    setFormFromW(defaultOrigin)
+    setFormToW(defaultDestination)
 
     setFormLineItems([
-      { line_no: 1, item: "", UOM: "", quantity: 0, remark: "" }
+      { line_no: 1, item: "", UOM: "Pieces", quantity: 0, remark: "" }
     ])
 
-    setWizardStep(1)
     setIsFormOpen(true)
   }
 
@@ -127,7 +173,7 @@ export default function StoreTransfersTab() {
     const nextLineNo = formLineItems.length + 1
     setFormLineItems(prev => [
       ...prev,
-      { line_no: nextLineNo, item: "", UOM: "", quantity: 0, remark: "" }
+      { line_no: nextLineNo, item: "", UOM: "Pieces", quantity: 0, remark: "" }
     ])
   }
 
@@ -137,41 +183,27 @@ export default function StoreTransfersTab() {
       return
     }
     const filtered = formLineItems.filter((_, idx) => idx !== index)
-    // Re-index line numbers
     const updated = filtered.map((item, idx) => ({ ...item, line_no: idx + 1 }))
     setFormLineItems(updated)
   }
 
   const getAvailableStock = (itemName: string) => {
     if (!itemName || !formFromW) return 0
-    const prod = products.find(p => p.name.toLowerCase() === itemName.toLowerCase())
+    const prod = transferProducts.find(p => p.name.toLowerCase() === itemName.toLowerCase() || p.id === itemName)
     if (!prod) return 0
-    return prod.stockBreakdown?.find(sb => sb.warehouse === formFromW)?.qty ?? 0
+    return prod.stockBreakdown?.find(sb => sb.warehouse === formFromW)?.qty ?? (prod.warehouse === formFromW ? prod.quantity : 0)
   }
 
   const handleUpdateLineItem = (index: number, field: keyof TransferLineItem, value: any) => {
     setFormLineItems(prev => prev.map((row, idx) => {
       if (idx === index) {
-        let updatedRow = { ...row, [field]: value }
+        const updatedRow = { ...row, [field]: value }
         
-        // Smart auto-fill: UOM and From Warehouse
+        // Smart auto-fill UOM from product
         if (field === "item" && value) {
-          const matchedProd = products.find(p => p.name.toLowerCase() === value.toLowerCase() || p.id === value)
-          if (matchedProd) {
-            if (matchedProd.unit) {
-              updatedRow.UOM = matchedProd.unit
-            }
-            if (matchedProd.warehouse) {
-              // Auto set origin warehouse to where this product has stock
-              const sbWarehouses = (matchedProd.stockBreakdown || [])
-                .filter(sb => sb.qty > 0)
-                .map(sb => sb.warehouse)
-              
-              const primaryW = sbWarehouses[0] || matchedProd.warehouse
-              if (primaryW) {
-                setFormFromW(primaryW)
-              }
-            }
+          const matchedProd = transferProducts.find(p => p.name.toLowerCase() === value.toLowerCase() || p.id === value)
+          if (matchedProd && matchedProd.unit) {
+            updatedRow.UOM = matchedProd.unit
           }
         }
         return updatedRow
@@ -180,48 +212,65 @@ export default function StoreTransfersTab() {
     }))
   }
 
-  // --- VALIDATE FORM STEP 1 AND ADVANCE ---
-  const handleContinueToConfirm = () => {
-    setFormSubmitted(true)
+  // --- VALIDATE FORM FIELDS ---
+  const validateForm = () => {
     if (!formFromW || !formToW) {
       showToast("Validation Error", "warning", "Please select both origin and destination warehouses.")
-      return
+      return false
     }
     if (formFromW === formToW) {
       showToast("Validation Error", "warning", "Origin and destination warehouses must be different.")
-      return
+      return false
     }
-    // Check line product names are not empty
     const hasEmptyItem = formLineItems.some(item => !item.item || !item.item.trim())
     if (hasEmptyItem) {
-      showToast("Validation Error", "warning", "All line items must have a product name filled in.")
-      return
+      showToast("Validation Error", "warning", "All line items must have a product selected.")
+      return false
     }
-    // Check line quantities
     const hasInvalidQty = formLineItems.some(item => Number(item.quantity) <= 0)
     if (hasInvalidQty) {
       showToast("Validation Error", "warning", "All line item quantities must be greater than zero.")
-      return
+      return false
     }
-
-    // Check line quantities do not exceed available stock in origin warehouse
     const hasExceededQty = formLineItems.some(item => {
       if (!item.item) return false
       const avail = getAvailableStock(item.item)
       return Number(item.quantity) > avail
     })
     if (hasExceededQty) {
-      showToast("Validation Error", "warning", "One or more line items exceed the available warehouse stock.")
-      return
+      showToast("Stock Alert", "warning", "One or more line items exceed the available stock in origin store.")
+      return false
     }
-
-    setWizardStep(2) // Move to Confirm Issue screen
+    return true
   }
 
-  // --- CONFIRM AND ISSUE ---
-  const handleConfirmAndIssue = () => {
+  // --- SAVE AS DRAFT ---
+  const handleSaveDraft = () => {
+    if (!validateForm()) return
+
+    const payload: Transfer = {
+      reference_number: formRefNum,
+      from_warehouse: formFromW,
+      to_warehouse: formToW,
+      status: "Draft",
+      line_items: formLineItems,
+      total_quantity: formTotalQuantity,
+      date: new Date().toISOString().split("T")[0],
+      issued_by: currentUserName,
+      issued_at: new Date().toISOString().replace("T", " ").substring(0, 16),
+      issued_signature: currentUserName,
+    }
+
+    erp.addStockTransfer(payload)
+    showToast("Transfer Saved", "success", `Draft transfer ${formRefNum} recorded.`)
+    setIsFormOpen(false)
+  }
+
+  // --- SIGN & DISPATCH DIRECTLY ---
+  const handleSignAndDispatch = () => {
+    if (!validateForm()) return
+
     const todayStr = new Date().toISOString().replace("T", " ").substring(0, 16)
-    
     const payload: Transfer = {
       reference_number: formRefNum,
       from_warehouse: formFromW,
@@ -230,109 +279,111 @@ export default function StoreTransfersTab() {
       line_items: formLineItems,
       total_quantity: formTotalQuantity,
       date: new Date().toISOString().split("T")[0],
-      issued_by: currentOperator,
+      issued_by: currentUserName,
       issued_at: todayStr,
-      issued_signature: currentSignature
+      issued_signature: currentUserName,
     }
 
     const res = erp.addStockTransfer(payload)
-
     showToast(
-      "Transfer Issued & Logged",
+      "Transfer Dispatched",
       "success",
-      `Stock units dispatched from ${formFromW} to ${formToW}. ${res.journalEntryId ? `GL Voucher ${res.journalEntryId} recorded in Finance.` : ""}`
+      `Stock units dispatched from ${formFromW} to ${formToW} by ${currentUserName}. ${res.journalEntryId ? `Voucher ${res.journalEntryId} created.` : ""}`
     )
-
     setIsFormOpen(false)
-    if (selectedTransfer && selectedTransfer.reference_number === formRefNum) {
-      setSelectedTransfer(payload)
-    }
   }
 
-  // --- CONFIRM RECEIPT PROCESS ---
-  const handleConfirmReceiptSubmit = () => {
+  // --- PROCESS RECEIPT CONFIRMATION ---
+  const handleConfirmReceipt = () => {
     if (!selectedTransfer) return
 
-    if (receiptMode === "match") {
-      erp.updateTransferStatus(selectedTransfer.reference_number, "Received", currentOperator)
-      showToast(
-        "Shipment Received",
-        "success",
-        `Transfer ${selectedTransfer.reference_number} marked complete. Warehouse stock levels updated.`
-      )
-    } else {
-      if (!discrepancyText.trim()) {
-        showToast("Validation Warning", "warning", "Please specify details of the reported discrepancy.")
-        return
-      }
-      erp.updateTransferStatus(selectedTransfer.reference_number, "Discrepancy", currentOperator, discrepancyText)
-      showToast(
-        "Discrepancy Logged",
-        "warning",
-        `Transfer ${selectedTransfer.reference_number} flagged with discrepancy. Quality Assurance notified.`
-      )
+    if (receiptMode === "discrepancy" && !discrepancyText.trim()) {
+      showToast("Input Required", "warning", "Please specify the discrepancy details.")
+      return
     }
 
-    const updated = erp.getTransfers().find(t => t.reference_number === selectedTransfer.reference_number)
-    if (updated) setSelectedTransfer(updated)
+    setIsProcessingReceipt(true)
+    const todayStr = new Date().toISOString().replace("T", " ").substring(0, 16)
+    const newStatus: TransferStatus = receiptMode === "match" ? "Received" : "Discrepancy"
+
+    erp.updateTransferStatus(
+      selectedTransfer.reference_number,
+      newStatus,
+      currentUserName,
+      receiptMode === "discrepancy" ? discrepancyText.trim() : undefined,
+      currentUserName,
+      todayStr
+    )
+
+    // Stock Ledger Transfer Execution: Deduct from origin and add to destination in product stock breakdown
+    if (newStatus === "Received") {
+      selectedTransfer.line_items.forEach((line) => {
+        const prod = transferProducts.find(p => p.name.toLowerCase() === line.item.toLowerCase() || p.id === line.item)
+        if (prod) {
+          const qty = Number(line.quantity) || 0
+          const currentBreakdown = prod.stockBreakdown || []
+          const toEntry = currentBreakdown.find(sb => sb.warehouse === selectedTransfer.to_warehouse)
+
+          const updatedBreakdown = currentBreakdown.map(sb => {
+            if (sb.warehouse === selectedTransfer.from_warehouse) {
+              return { ...sb, qty: Math.max(0, Number(sb.qty || 0) - qty) }
+            }
+            if (sb.warehouse === selectedTransfer.to_warehouse) {
+              return { ...sb, qty: Number(sb.qty || 0) + qty }
+            }
+            return sb
+          })
+
+          if (!toEntry) {
+            updatedBreakdown.push({ warehouse: selectedTransfer.to_warehouse, qty: qty })
+          }
+
+          erp.updateProduct(prod.id, {
+            stockBreakdown: updatedBreakdown,
+          })
+        }
+      })
+    }
+
+    setIsProcessingReceipt(false)
     setIsReceiptOpen(false)
+    setSelectedTransfer(null)
     setDiscrepancyText("")
+
+    showToast(
+      receiptMode === "match" ? "Transfer Receipt Confirmed" : "Discrepancy Logged",
+      receiptMode === "match" ? "success" : "warning",
+      `Transfer ${selectedTransfer.reference_number} verified and posted into ${selectedTransfer.to_warehouse} stock.`
+    )
   }
 
-  // --- DOCUMENT DOWNLOAD ---
+  // --- PDF DOWNLOAD ---
   const handleDownloadPDF = (refNum: string) => {
     setIsExporting(true)
     setTimeout(() => {
       setIsExporting(false)
-      showToast(
-        "Document Export Complete",
-        "success",
-        `Downloaded compliance Material Transfer Note ${refNum}.pdf`
-      )
-    }, 1500)
+      showToast("Document Ready", "success", `Downloaded Material Transfer Note ${refNum}.pdf`)
+    }, 1200)
   }
 
-  // Dynamic warehouses computed based on the first line item's selected product
-  const availableWarehouses = useMemo(() => {
-    const firstLineProduct = formLineItems[0]?.item
-    if (!firstLineProduct) return warehouseOptions
-
-    const matchedProd = products.find(p => p.name.toLowerCase() === firstLineProduct.toLowerCase())
-    if (!matchedProd) return warehouseOptions
-
-    const sbWarehouses = (matchedProd.stockBreakdown || [])
-      .filter(sb => sb.qty > 0)
-      .map(sb => sb.warehouse)
-    
-    if (sbWarehouses.length === 0 && matchedProd.quantity > 0 && matchedProd.warehouse) {
-      sbWarehouses.push(matchedProd.warehouse)
-    }
-
-    return sbWarehouses.length > 0 ? sbWarehouses : warehouseOptions
-  }, [formLineItems, products, warehouseOptions])
-
-  // Automatically select first available warehouse if current formFromW isn't in it
-  useEffect(() => {
-    if (isFormOpen && formMode === "create") {
-      if (!availableWarehouses.includes(formFromW)) {
-        setFormFromW(availableWarehouses[0] || "")
-      }
-    }
-  }, [availableWarehouses, formFromW, isFormOpen, formMode])
-
-  // Automatically adjust destination warehouse to not match origin
-  useEffect(() => {
-    if (formFromW && formFromW === formToW) {
-      const other = warehouseOptions.find(w => w !== formFromW) || ""
-      setFormToW(other)
-    }
-  }, [formFromW, formToW, warehouseOptions])
-
-  // --- FILTERED TRANSFERS ---
+  // --- DUAL-PARTY FILTERED TRANSFERS ---
   const filteredTransfers = useMemo(() => {
     return transfers.filter(t => {
+      // 1. Role / Facility Scope: WH2/WH3 users see transfers where their warehouse is sender or receiver
+      if (!isSuperAdmin && userWarehouseIds.length > 0) {
+        const fromUpper = (t.from_warehouse || "").toUpperCase()
+        const toUpper = (t.to_warehouse || "").toUpperCase()
+        const hasMatch = userWarehouseIds.some(id => 
+          fromUpper.includes(id) || id.includes(fromUpper) ||
+          toUpper.includes(id) || id.includes(toUpper)
+        )
+        if (!hasMatch) return false
+      }
+
+      // 2. Status filter
       const matchesStatus = statusFilter === "ALL" || t.status === statusFilter
       
+      // 3. Search query
       const lowerQuery = searchQuery.toLowerCase()
       const matchesSearch = 
         t.reference_number.toLowerCase().includes(lowerQuery) ||
@@ -342,35 +393,29 @@ export default function StoreTransfersTab() {
 
       return matchesStatus && matchesSearch
     })
-  }, [transfers, searchQuery, statusFilter])
-
-
+  }, [transfers, searchQuery, statusFilter, isSuperAdmin, userWarehouseIds])
 
   return (
     <div className="space-y-6">
       <DataTable
-        title="Warehouse Transfers"
-        subtitle={`${filteredTransfers.length} inter-warehouse movements recorded`}
+        title="Store-to-Store Transfers"
+        subtitle={`${filteredTransfers.length} inter-store movements between WH2 & WH3`}
         columns={transferColumns}
         data={filteredTransfers}
         isLoading={false}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="Search TIN, From/To, Item..."
+        searchPlaceholder="Search ref number, warehouse, commodity..."
         onRowClick={(transfer) => setSelectedTransfer(transfer)}
         keyExtractor={(transfer) => transfer.reference_number}
-        actions={
-          warehouseOptions.length > 1
-            ? [
-                {
-                  label: "New Entry",
-                  onClick: handleInitiateNew,
-                  icon: <Plus className="size-4" />,
-                  variant: "primary",
-                },
-              ]
-            : []
-        }
+        actions={[
+          {
+            label: "New Transfer Entry",
+            onClick: handleInitiateNew,
+            icon: <Plus className="size-4" />,
+            variant: "primary",
+          },
+        ]}
         filters={[
           {
             value: statusFilter,
@@ -378,6 +423,7 @@ export default function StoreTransfersTab() {
             ariaLabel: "Filter by Status",
             options: [
               { value: "ALL", label: "All Statuses" },
+              { value: "Draft", label: "Draft Entry" },
               { value: "Issued", label: "Issued / In Transit" },
               { value: "Received", label: "Received & Posted" },
               { value: "Discrepancy", label: "Discrepancy Flagged" },
@@ -389,43 +435,43 @@ export default function StoreTransfersTab() {
           from_warehouse: 180,
           to_warehouse: 180,
           total_quantity: 140,
-          date: 140,
+          date: 130,
           status: 140,
-          _actions: 120,
+          _actions: 140,
         }}
         renderRow={(transfer, colWidths) => {
           const isIssued = transfer.status === "Issued"
           const isReceived = transfer.status === "Received"
           const isDiscrepancy = transfer.status === "Discrepancy"
 
-          const statusPillColors = 
-            isReceived ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-            isIssued ? "bg-blue-50 text-blue-700 border-blue-200" :
-            isDiscrepancy ? "bg-amber-50 text-amber-800 border-amber-300/80 animate-pulse" :
+          const statusBadge = 
+            isReceived ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
+            isIssued ? "bg-blue-50 text-blue-800 border-blue-200" :
+            isDiscrepancy ? "bg-amber-50 text-amber-800 border-amber-300" :
             "bg-zinc-100 text-zinc-700 border-zinc-200"
 
-          const canEdit = isIssued || isDiscrepancy
+          const canProcessReceipt = isIssued && isReceiver(transfer)
 
           return (
             <>
               {/* Reference Num */}
               <td style={{ width: `${colWidths.reference_number}px` }} className="py-4 px-6 overflow-hidden">
-                <span className="font-mono font-black text-zinc-950 text-xs leading-none">
+                <span className="font-mono font-black text-zinc-950 dark:text-white text-xs leading-none">
                   {transfer.reference_number}
                 </span>
               </td>
 
               {/* From Warehouse */}
               <td style={{ width: `${colWidths.from_warehouse}px` }} className="py-4 px-4 overflow-hidden">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
-                  <WarehouseIcon className="size-3.5 text-zinc-400 shrink-0" />
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                  <WarehouseIcon className="size-3.5 text-emerald-700 shrink-0" />
                   <span className="truncate">{transfer.from_warehouse}</span>
                 </div>
               </td>
 
               {/* To Warehouse */}
               <td style={{ width: `${colWidths.to_warehouse}px` }} className="py-4 px-4 overflow-hidden">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
                   <WarehouseIcon className="size-3.5 text-zinc-400 shrink-0" />
                   <span className="truncate">{transfer.to_warehouse}</span>
                 </div>
@@ -433,7 +479,7 @@ export default function StoreTransfersTab() {
 
               {/* Total Quantity */}
               <td style={{ width: `${colWidths.total_quantity}px` }} className="py-4 px-4 text-right overflow-hidden">
-                <span className="font-mono font-extrabold text-xs text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200/50 inline-block">
+                <span className="font-mono font-black text-xs text-zinc-900 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-0.5 rounded-md border border-zinc-200/80 inline-block">
                   {transfer.total_quantity.toLocaleString()} units
                 </span>
               </td>
@@ -448,43 +494,46 @@ export default function StoreTransfersTab() {
 
               {/* Status */}
               <td style={{ width: `${colWidths.status}px` }} className="py-4 px-4 text-center overflow-hidden">
-                <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${statusPillColors}`}>
+                <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border uppercase tracking-wider ${statusBadge}`}>
                   {transfer.status}
                 </span>
               </td>
 
-              {/* Custom Actions */}
-              <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-6 text-center overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Actions */}
+              <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center overflow-hidden" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-center gap-1.5">
-                  {/* View Details */}
-                  <button
-                    onClick={() => setSelectedTransfer(transfer)}
-                    className="p-1.5 rounded-md border border-zinc-200 hover:bg-zinc-50 text-zinc-500 hover:text-zinc-800 transition-colors"
-                    title="View Details"
-                  >
-                    <Eye className="size-3.5" />
-                  </button>
-
-                  {/* Edit Action */}
-                  {canEdit && (
+                  {canProcessReceipt && (
                     <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedTransfer(transfer)
+                        setReceiptMode("match")
+                        setIsReceiptOpen(true)
+                      }}
+                      className="px-2.5 py-1.5 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                      title="Receive Stock into Store"
+                    >
+                      <Check className="size-3" /> Receive
+                    </button>
+                  )}
+
+                  {isSender(transfer) && (transfer.status === "Draft" || transfer.status === "Issued") && (
+                    <button
+                      type="button"
                       onClick={() => {
                         setFormMode("edit")
                         setFormRefNum(transfer.reference_number)
                         setFormFromW(transfer.from_warehouse)
                         setFormToW(transfer.to_warehouse)
                         setFormLineItems(transfer.line_items)
-                        setFormSubmitted(false)
-                        setWizardStep(1)
                         setIsFormOpen(true)
                       }}
-                      className="p-1.5 rounded-md border border-zinc-200 hover:bg-zinc-50 text-zinc-500 hover:text-zinc-800 transition-colors"
+                      className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
                       title="Edit Transfer"
                     >
-                      <Edit className="size-3.5" />
+                      <Edit3 className="size-3 text-zinc-500" /> Edit
                     </button>
                   )}
-
                 </div>
               </td>
             </>
@@ -493,736 +542,553 @@ export default function StoreTransfersTab() {
       />
 
       {/* =========================================================================
-          3. CREATE / EDIT DRAFT WIZARD PANEL (SCREEN 2 & SCREEN 3)
+          STREAMLINED SINGLE-STEP TRANSFER ENTRY MODAL (MATCHING STOCK MODAL DESIGN)
           ========================================================================= */}
       <AnimatePresence>
         {isFormOpen && (
-          <>
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             {/* Backdrop Overlay */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsFormOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
             />
 
-            {/* Center Modal Container */}
-            <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                transition={{ duration: 0.2 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-3xl max-h-[90vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
-              >
-                {/* Header */}
-                <div className="p-6 border-b border-zinc-200/60 shrink-0 flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">
-                      Stock Register
-                    </span>
-                    <h2 className="text-xl font-black text-zinc-950 dark:text-white tracking-tight leading-none">
-                      {formMode === "create" ? "New Transfer Entry" : "Edit Transfer Entry"}
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsFormOpen(false)}
-                    className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-
-                {/* SCROLLABLE BODY CONTENT */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  {/* STEP PROGRESS BAR */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className={`h-1 rounded-full ${wizardStep >= 1 ? "bg-zinc-950 dark:bg-white" : "bg-zinc-200"}`} />
-                    <div className={`h-1 rounded-full ${wizardStep >= 2 ? "bg-zinc-950 dark:bg-white" : "bg-zinc-200"}`} />
-                  </div>
-
-                  {/* WIZARD STEP 1: FORM EDITING (SCREEN 2) */}
-                  {wizardStep === 1 && (
-                    <div className="space-y-5">
-                      {/* Warehouses configuration */}
-                      <div className="grid grid-cols-2 gap-4 bg-zinc-100/50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200/40 dark:border-zinc-700/40">
-                        <div>
-                          <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block mb-1">
-                            From Warehouse (Origin)
-                          </label>
-                          <select
-                            value={formFromW}
-                            onChange={e => setFormFromW(e.target.value)}
-                            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2 rounded-xl text-xs font-black outline-none cursor-pointer focus:border-zinc-950 dark:focus:border-white text-zinc-800 dark:text-zinc-200"
-                          >
-                            {availableWarehouses.map(w => (
-                              <option key={w} value={w}>{w}</option>
-                            ))}
-                          </select>
-                          <span className="text-[9px] text-zinc-400 mt-1 block font-bold leading-tight">
-                            Select dispatching storage facility.
-                          </span>
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block mb-1">
-                            To Warehouse (Destination)
-                          </label>
-                          <select
-                            value={formToW}
-                            onChange={e => setFormToW(e.target.value)}
-                            className="w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-3 py-2 rounded-xl text-xs font-black outline-none cursor-pointer focus:border-zinc-950 dark:focus:border-white text-zinc-800 dark:text-zinc-200"
-                          >
-                            {warehouseOptions.filter(w => w !== formFromW).map(w => (
-                              <option key={w} value={w}>{w}</option>
-                            ))}
-                          </select>
-                          <span className="text-[9px] text-zinc-400 mt-1 block font-bold leading-tight">
-                            Select receiving storage vault.
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Line Items Container */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between pb-1 border-b border-zinc-200/50">
-                          <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">
-                            Material Line Items List
-                          </h4>
-                          <button
-                            type="button"
-                            onClick={handleAddLineRow}
-                            className="flex items-center gap-1 text-[10px] font-black text-zinc-900 dark:text-white hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors uppercase tracking-tight"
-                          >
-                            <Plus className="size-3.5" /> Add Row
-                          </button>
-                        </div>
-
-                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
-                          {formLineItems.map((row, idx) => (
-                            <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-white dark:bg-zinc-850 p-3.5 rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm relative">
-                              {/* Product Selection */}
-                              <div className="col-span-4">
-                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Product</label>
-                                <div className={`flex items-center rounded-lg px-2 py-1 transition-all ${
-                                  formSubmitted && (!row.item || !row.item.trim())
-                                    ? "bg-red-50 dark:bg-red-950/30 border border-red-500 shadow-sm shadow-red-100"
-                                    : "border border-zinc-200/60 dark:border-zinc-700 focus-within:border-zinc-400 focus-within:bg-zinc-50/50"
-                                }`}>
-                                  <input
-                                    type="text"
-                                    list="products-suggestions"
-                                    placeholder="Enter product name..."
-                                    value={row.item}
-                                    onChange={e => handleUpdateLineItem(idx, "item", e.target.value)}
-                                    className="w-full bg-transparent border-0 text-[11px] font-extrabold text-zinc-800 dark:text-zinc-200 outline-none p-0"
-                                  />
-                                </div>
-                                <datalist id="products-suggestions">
-                                  {products.map(p => (
-                                    <option key={p.id} value={p.name} />
-                                  ))}
-                                </datalist>
-                              </div>
-
-                              {/* UOM */}
-                              <div className="col-span-2">
-                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">UOM</label>
-                                <select
-                                  value={row.UOM}
-                                  onChange={e => handleUpdateLineItem(idx, "UOM", e.target.value)}
-                                  className="w-full bg-transparent border-0 text-[11px] font-bold text-zinc-600 dark:text-zinc-400 outline-none p-0 cursor-pointer"
-                                >
-                                  {Array.from(new Set(products.map((product) => product.unit).filter(Boolean))).map(u => (
-                                    <option key={u} value={u}>{u}</option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              {/* Quantity */}
-                              <div className="col-span-2">
-                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Qty</label>
-                                {(() => {
-                                  const availableStock = getAvailableStock(row.item)
-                                  const exceedsStock = row.item && row.quantity && Number(row.quantity) > availableStock
-                                  return (
-                                    <>
-                                      <div className={`flex items-center rounded-lg px-2 py-1 transition-all border ${
-                                        exceedsStock
-                                          ? "bg-rose-50 dark:bg-rose-950/30 border-rose-500 shadow-sm shadow-rose-100"
-                                          : "border-zinc-200/60 dark:border-zinc-700 focus-within:border-zinc-400"
-                                      }`}>
-                                        <input
-                                          type="number"
-                                          required
-                                          value={row.quantity}
-                                          min="1"
-                                          onChange={e => handleUpdateLineItem(idx, "quantity", e.target.value === "" ? "" : Number(e.target.value))}
-                                          className="w-full bg-transparent border-0 text-[11px] font-mono font-black text-zinc-900 dark:text-zinc-100 outline-none p-0"
-                                        />
-                                      </div>
-                                      {row.item && (
-                                        <span className={`text-[8px] font-black block mt-0.5 tracking-tight ${
-                                          exceedsStock ? "text-rose-600 dark:text-rose-400" : "text-zinc-400 dark:text-zinc-500"
-                                        }`}>
-                                          Avail: {availableStock}
-                                        </span>
-                                      )}
-                                    </>
-                                  )
-                                })()}
-                              </div>
-
-                              {/* Remark */}
-                              <div className="col-span-3">
-                                <label className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Remark</label>
-                                <input
-                                  type="text"
-                                  placeholder="Notes..."
-                                  value={row.remark || ""}
-                                  onChange={e => handleUpdateLineItem(idx, "remark", e.target.value)}
-                                  className="w-full bg-transparent border-0 text-[11px] text-zinc-500 outline-none p-0 font-medium"
-                                />
-                              </div>
-
-                              {/* Trash action */}
-                              <div className="col-span-1 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveLineRow(idx)}
-                                  className="p-1 rounded text-zinc-300 hover:text-zinc-600 dark:hover:text-zinc-400 transition-colors"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* LIVE AUTO-CALC TOTAL DISPLAY */}
-                        <div className="flex items-center justify-between p-3.5 bg-zinc-900 rounded-xl text-white shadow-md">
-                          <span className="text-[10px] font-black uppercase tracking-wider">Total:</span>
-                          <strong className="font-mono text-xs font-black uppercase">
-                            {formTotalQuantity.toLocaleString()} Units
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* WIZARD STEP 2: SUMMARY & DIGITAL DISPATCH SIGNATURE (SCREEN 3) */}
-                  {wizardStep === 2 && (
-                    <div className="space-y-6">
-                      <div className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 p-5 rounded-2xl shadow-inner space-y-4 relative">
-                        <div className="border-b border-zinc-150 dark:border-zinc-700 pb-3 flex items-center justify-between">
-                          <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">Document Registry #</span>
-                            <strong className="font-mono text-sm font-black text-zinc-950 dark:text-white">{formRefNum}</strong>
-                          </div>
-                          <span className="bg-blue-50 dark:bg-blue-950/45 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
-                            Ready for Dispatch
-                          </span>
-                        </div>
-
-                        {/* Details Grid */}
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div>
-                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Dispatched Origin (Sender)</span>
-                            <span className="font-extrabold text-zinc-800 dark:text-zinc-200">{formFromW}</span>
-                          </div>
-                          <div>
-                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-0.5">Designated Destination (Receiver)</span>
-                            <span className="font-extrabold text-zinc-800 dark:text-zinc-200">{formToW}</span>
-                          </div>
-                        </div>
-
-                        {/* Summary Table */}
-                        <div className="border-t border-zinc-150 dark:border-zinc-700 pt-3">
-                          <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block mb-2">Validated Material Ledger</span>
-                          <table className="w-full text-xs text-left">
-                            <thead>
-                              <tr className="text-[8px] font-black text-zinc-400 uppercase border-b border-zinc-100 dark:border-zinc-700 pb-1">
-                                <th className="py-1">No.</th>
-                                <th className="py-1">Product Description</th>
-                                <th className="py-1 text-center">UOM</th>
-                                <th className="py-1 text-right">Dispatch Qty</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700 font-bold text-zinc-700 dark:text-zinc-300">
-                              {formLineItems.map((line, index) => (
-                                <tr key={index}>
-                                  <td className="py-1.5 font-mono text-zinc-400">{line.line_no}</td>
-                                  <td className="py-1.5 text-zinc-950 dark:text-white">{line.item}</td>
-                                  <td className="py-1.5 text-center text-zinc-500">{line.UOM}</td>
-                                  <td className="py-1.5 text-right font-mono text-zinc-950 dark:text-white">{line.quantity}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {/* Grand total */}
-                        <div className="border-t border-zinc-150 dark:border-zinc-700 pt-3 flex justify-between text-xs font-black">
-                          <span className="uppercase text-zinc-400">Total:</span>
-                          <span className="font-mono text-zinc-950 dark:text-white">{formTotalQuantity} units</span>
-                        </div>
-                      </div>
-
-                      {/* DIGITAL CERTIFICATION & REGISTERED SIGNATURE BOX */}
-                      <div className="bg-zinc-150/40 dark:bg-zinc-800/40 p-4.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/80 space-y-3.5">
-                        <div className="flex items-center gap-1.5">
-                          <Shield className="size-4.5 text-zinc-800 dark:text-zinc-200 shrink-0" />
-                          <h4 className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-wider">
-                            Digital Dispatch Certification
-                          </h4>
-                        </div>
-                        <p className="text-[10px] font-bold text-zinc-500 leading-normal">
-                          By authorizing this Material Transfer, you authenticate the shipment under compliance standards. 
-                          Your registered digital signature will be embedded dynamically into the locked document below:
-                        </p>
-
-                        <div className="bg-white dark:bg-zinc-955 border border-zinc-200 dark:border-zinc-750 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                          <div className="space-y-0.5">
-                            <span className="text-[8px] font-black text-zinc-400 uppercase block">Authorized Operator</span>
-                            <h5 className="text-xs font-black text-zinc-800 dark:text-zinc-200">{currentOperator}</h5>
-                            <span className="text-[8px] font-bold text-zinc-400 uppercase block">{formFromW || "No warehouse"}</span>
-                          </div>
-                          <div className="text-right space-y-0.5">
-                            <span className="text-[8px] font-black text-zinc-400 uppercase block mb-1">Pre-registered Digital Sig</span>
-                            <span className="font-serif italic text-xs font-bold text-emerald-700 dark:text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800 px-3 py-1 rounded-md">
-                              {currentSignature}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer Controls */}
-                <div className="p-6 border-t border-zinc-200/80 bg-zinc-100/50 dark:bg-zinc-850 shrink-0 flex items-center justify-between">
-                  {wizardStep === 1 ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setIsFormOpen(false)}
-                        className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
-                      >
-                        Cancel Draft
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleContinueToConfirm}
-                        className="px-5 py-2.5 rounded-full bg-zinc-950 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-150 text-white dark:text-zinc-950 text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight flex items-center gap-1"
-                      >
-                        Continue to Dispatch <ArrowRight className="size-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setWizardStep(1)}
-                        className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
-                      >
-                        Back to Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleConfirmAndIssue}
-                        className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight flex items-center gap-1"
-                      >
-                        <Check className="size-4" /> Sign & Dispatch Stock
-                      </button>
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* =========================================================================
-          4. MTN DETAIL & COMPLIANCE DOCUMENT VIEWER (SCREEN 5)
-          ========================================================================= */}
-      <AnimatePresence>
-        {selectedTransfer && !isFormOpen && (
-          <>
-            {/* Backdrop Overlay */}
+            {/* Modal Body */}
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedTransfer(null)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
-            />
-
-            {/* Center Compliance Document Modal Container */}
-            <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                transition={{ duration: 0.2 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-3xl max-h-[90vh] shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden"
-              >
-                {/* Header */}
-                <div className="p-6 border-b border-zinc-200/60 shrink-0 flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Transfer Form</span>
-                    <h2 className="text-base font-black text-zinc-950 dark:text-white tracking-tight leading-none uppercase">
-                      {selectedTransfer.reference_number}
-                    </h2>
-                  </div>
-                  <button
-                    onClick={() => setSelectedTransfer(null)}
-                    className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-
-                {/* DOCUMENT SCROLLABLE CONTENT */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-zinc-50/50 dark:bg-zinc-900/50">
-                  <div className="border border-zinc-250/60 dark:border-zinc-850 bg-white dark:bg-zinc-955 p-6 rounded-2xl shadow-sm space-y-5">
-                    {/* Compliance header banner */}
-                    <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                      <div>
-                        <h4 className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">
-                          Material Transfer Note (MTN)
-                        </h4>
-                        <span className="text-[9px] font-bold text-zinc-400 uppercase block mt-0.5">
-                          Official internal transport clearance registry
-                        </span>
-                      </div>
-                      <span className={`text-[9px] font-black px-2.5 py-0.5 rounded border uppercase tracking-wider ${
-                        selectedTransfer.status === "Received" ? "bg-emerald-50 text-emerald-850 border-emerald-200" :
-                        selectedTransfer.status === "Issued" ? "bg-blue-50 text-blue-800 border-blue-200" :
-                        "bg-amber-50 text-amber-800 border-amber-300"
-                      }`}>
-                        {selectedTransfer.status}
-                      </span>
-                    </div>
-
-                    {/* Routing section info card */}
-                    <div className="grid grid-cols-2 gap-4 bg-zinc-100/50 dark:bg-zinc-800/40 p-4 rounded-xl text-xs">
-                      <div>
-                        <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block">Origin (Sending Facility)</span>
-                        <strong className="text-zinc-800 dark:text-zinc-200 block text-[11px] mt-0.5">{selectedTransfer.from_warehouse}</strong>
-                      </div>
-                      <div>
-                        <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block">Destination (Receiving Vault)</span>
-                        <strong className="text-zinc-800 dark:text-zinc-200 block text-[11px] mt-0.5">{selectedTransfer.to_warehouse}</strong>
-                      </div>
-                    </div>
-
-                    {/* Material inventory lines table */}
-                    <div className="space-y-1.5">
-                      <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider">Registered inventory items</span>
-                      <table className="w-full text-xs text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[8px] font-black text-zinc-400 uppercase">
-                            <th className="pb-1 w-10">No.</th>
-                            <th className="pb-1">Item SKU & Name</th>
-                            <th className="pb-1 text-center w-20">UOM</th>
-                            <th className="pb-1 text-right w-24">Cleared Qty</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
-                          {selectedTransfer.line_items.map((line, idx) => (
-                            <tr key={idx} className="hover:bg-zinc-50/40 dark:hover:bg-zinc-850/40">
-                              <td className="py-2.5 font-mono text-zinc-400">{line.line_no}</td>
-                              <td className="py-2.5">
-                                <span className="text-zinc-950 dark:text-white font-extrabold">{line.item}</span>
-                                {line.remark && (
-                                  <span className="text-[9px] text-zinc-400 block font-normal mt-0.5">Remark: {line.remark}</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 text-center font-bold text-zinc-500">{line.UOM}</td>
-                              <td className="py-2.5 text-right font-mono text-zinc-950 dark:text-white font-black">{line.quantity}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Total units count */}
-                    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3 flex justify-between text-xs font-black">
-                      <span className="uppercase text-zinc-400">Total volume size:</span>
-                      <span className="font-mono text-zinc-950 dark:text-white">{selectedTransfer.total_quantity} units</span>
-                    </div>
-
-                    {/* MTN Audit Logs */}
-                    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 grid grid-cols-2 gap-4 text-[10px] leading-relaxed">
-                      {/* Dispatch compliance sign block */}
-                      <div className="bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-lg border border-zinc-150 dark:border-zinc-800">
-                        <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-2">
-                          1. Issuance Sign-off (Origin)
-                        </span>
-                        <div className="space-y-1">
-                          <div>
-                            Date/Time: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.issued_at || selectedTransfer.date}</strong>
-                          </div>
-                          <div>
-                            Dispatcher: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.issued_by}</strong>
-                          </div>
-                          <div className="pt-2 flex items-center gap-1.5">
-                            <span className="text-[8px] text-zinc-400 uppercase font-black">Sig:</span>
-                            <span className="font-serif italic font-extrabold text-emerald-700 dark:text-emerald-500 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded">
-                              {selectedTransfer.issued_signature || "SYSTEM"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Reception compliance sign block */}
-                      <div className="bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-lg border border-zinc-150 dark:border-zinc-800">
-                        <span className="text-[8px] font-black text-zinc-400 uppercase tracking-wider block mb-2">
-                          2. Receipt Verification (Receiver)
-                        </span>
-                        {selectedTransfer.status === "Received" ? (
-                          <div className="space-y-1">
-                            <div>
-                              Date/Time: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.received_at || selectedTransfer.date}</strong>
-                            </div>
-                            <div>
-                              Verified By: <strong className="text-zinc-700 dark:text-zinc-300">{selectedTransfer.received_by}</strong>
-                            </div>
-                            <div className="pt-2 flex items-center gap-1.5">
-                              <span className="text-[8px] text-zinc-400 uppercase font-black">Sig:</span>
-                              <span className="font-serif italic font-extrabold text-emerald-700 dark:text-emerald-500 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded">
-                                {selectedTransfer.received_signature}
-                              </span>
-                            </div>
-                          </div>
-                        ) : selectedTransfer.status === "Discrepancy" ? (
-                          <div className="space-y-1">
-                            <div className="text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
-                              <AlertTriangle className="size-3" /> QA Review Required
-                            </div>
-                            <div className="text-[9px] text-zinc-500 mt-1">
-                              Comment: {selectedTransfer.discrepancy_remark}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-zinc-400 flex items-center gap-1 py-4 justify-center">
-                            <Clock className="size-3.5" /> Pending receipt delivery
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ACTION TOOLBAR AT FOOTER */}
-                <div className="p-6 border-t border-zinc-200/80 bg-zinc-100/50 dark:bg-zinc-850 shrink-0 flex items-center justify-between gap-3">
-                  <button
-                    onClick={() => setSelectedTransfer(null)}
-                    className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
-                  >
-                    Close Document
-                  </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
-                      disabled={isExporting}
-                      className="px-4.5 py-2.5 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-800 dark:text-zinc-200 text-xs font-black transition-colors uppercase tracking-tight flex items-center gap-1.5"
-                    >
-                      <Download className={`size-4 ${isExporting ? "animate-spin" : ""}`} />
-                      {isExporting ? "Exporting..." : "Export TIN"}
-                    </button>
-
-                    {/* Edit Transfer action from document view */}
-                    {(selectedTransfer.status === "Issued" || selectedTransfer.status === "Discrepancy") && (
-                      <button
-                        onClick={() => {
-                          const tr = selectedTransfer
-                          setSelectedTransfer(null)
-                          setFormMode("edit")
-                          setFormRefNum(tr.reference_number)
-                          setFormFromW(tr.from_warehouse)
-                          setFormToW(tr.to_warehouse)
-                          setFormLineItems(tr.line_items)
-                          setFormSubmitted(false)
-                          setWizardStep(1)
-                          setIsFormOpen(true)
-                        }}
-                        className="px-4.5 py-2.5 rounded-full bg-zinc-950 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-150 text-white dark:text-zinc-950 text-xs font-black transition-colors uppercase tracking-tight flex items-center gap-1.5"
-                      >
-                        <Edit className="size-4" />
-                        Edit Transfer
-                      </button>
-                    )}
-
-                    {/* Confirm Receipt Action inside document (SCREEN 4) */}
-                    {selectedTransfer.status === "Issued" && (
-                      <button
-                        onClick={() => {
-                          setReceiptMode("match")
-                          setIsReceiptOpen(true)}
-                        }
-                        className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight"
-                      >
-                        Process Receipt
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* =========================================================================
-          5. CONFIRM RECEIPT MODAL / SUB-PANEL (SCREEN 4 CHOICE DIALOGUE)
-          ========================================================================= */}
-      <AnimatePresence>
-        {isReceiptOpen && selectedTransfer && (
-          <>
-            {/* Backdrop Overlay */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsReceiptOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110]"
-            />
-
-            {/* Modal Dialog */}
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="fixed inset-0 m-auto h-fit w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-850 shadow-2xl p-6 rounded-3xl z-[111] overflow-hidden flex flex-col justify-between"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-3xl rounded-3xl bg-white dark:bg-zinc-900 p-6 shadow-2xl z-[121] border border-zinc-200/80 dark:border-zinc-800 max-h-[90vh] flex flex-col overflow-hidden"
             >
               {/* Header */}
-              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 dark:border-zinc-800 mb-4">
-                <div className="flex flex-col">
-                  <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-0.5">Verification & Audit</span>
-                  <h3 className="text-sm font-black text-zinc-950 dark:text-white uppercase">
-                    Confirm Receipt: {selectedTransfer.reference_number}
-                  </h3>
+              <div className="flex items-center justify-between pb-4 border-b border-zinc-150 dark:border-zinc-800 shrink-0">
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950 dark:text-white tracking-tight leading-tight">
+                    {formMode === "create" ? "New Store-to-Store Transfer" : "Edit Store Transfer"}
+                  </h2>
+                  <p className="text-xs font-mono font-bold text-zinc-400 mt-0.5">
+                    Ref: {formRefNum} &bull; Commercial Store Transfer (WH2 $\leftrightarrow$ WH3)
+                  </p>
                 </div>
                 <button
-                  onClick={() => setIsReceiptOpen(false)}
-                  className="size-7 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500"
+                  type="button"
+                  onClick={() => setIsFormOpen(false)}
+                  className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500 cursor-pointer"
                 >
-                  <X className="size-3.5" />
+                  <X className="size-4" />
                 </button>
               </div>
 
-              {/* Sub-header Context Banner */}
-              <div className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3 mb-4 text-[10px] font-bold text-zinc-600 dark:text-zinc-300 leading-snug flex items-center gap-2">
-                <Shield className="size-4 text-zinc-500" />
-                <div>
-                  Receiving Manager: <strong className="text-zinc-800 dark:text-zinc-200">{currentOperator}</strong>
-                  <span className="text-zinc-400 px-1">|</span> Facility: <strong className="text-zinc-800 dark:text-zinc-200">{selectedTransfer.to_warehouse}</strong>
+              {/* Scrollable Form Content */}
+              <div className="flex-1 overflow-y-auto py-5 space-y-5 text-xs">
+                {/* 1. Origin & Destination Facilities Card */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/60">
+                  {/* Origin Warehouse */}
+                  <div className="space-y-1">
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">
+                      Origin Warehouse (Sender) <span className="text-rose-600">*</span>
+                    </span>
+                    {isAssignedOnlyToWH2 ? (
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
+                        WH2 (Veterinary Import Hub)
+                      </div>
+                    ) : isAssignedOnlyToWH3 ? (
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
+                        WH3 (Veterinary Import Hub)
+                      </div>
+                    ) : (
+                      <select
+                        value={formFromW}
+                        onChange={(e) => {
+                          const newFrom = e.target.value
+                          setFormFromW(newFrom)
+                          if (formToW === newFrom) {
+                            setFormToW(warehouseOptions.find(w => w !== newFrom) || "")
+                          }
+                        }}
+                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500 cursor-pointer"
+                      >
+                        {warehouseOptions.map((w) => (
+                          <option key={w} value={w}>{w}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Destination Warehouse */}
+                  <div className="space-y-1">
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">
+                      Destination Warehouse (Receiver) <span className="text-rose-600">*</span>
+                    </span>
+                    {isAssignedOnlyToWH2 ? (
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
+                        WH3 (Veterinary Import Hub)
+                      </div>
+                    ) : isAssignedOnlyToWH3 ? (
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
+                        WH2 (Veterinary Import Hub)
+                      </div>
+                    ) : (
+                      <select
+                        value={formToW}
+                        onChange={(e) => setFormToW(e.target.value)}
+                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500 cursor-pointer"
+                      >
+                        {warehouseOptions.filter(w => w !== formFromW).map((w) => (
+                          <option key={w} value={w}>{w}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* TWO CHOICE INTERACTION PATHWAYS */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Option 1: Quantities match */}
-                  <button
-                    type="button"
-                    onClick={() => setReceiptMode("match")}
-                    className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 ${
-                      receiptMode === "match"
-                        ? "border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-inner"
-                        : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 hover:border-zinc-450 dark:hover:border-zinc-700"
-                    }`}
-                  >
-                    <div className="size-6 rounded-full bg-emerald-100 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
-                      <Check className="size-4" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <strong className="text-xs font-black text-zinc-950 dark:text-white uppercase tracking-tight block">Quantities Match</strong>
-                      <span className="text-[9px] font-semibold text-zinc-400 leading-none">Perfect compliance delivery</span>
-                    </div>
-                  </button>
-
-                  {/* Option 2: Report a discrepancy */}
-                  <button
-                    type="button"
-                    onClick={() => setReceiptMode("discrepancy")}
-                    className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 ${
-                      receiptMode === "discrepancy"
-                        ? "border-amber-500 bg-amber-50/50 dark:bg-amber-955/20 shadow-inner"
-                        : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-955 hover:border-zinc-450 dark:hover:border-zinc-700"
-                    }`}
-                  >
-                    <div className="size-6 rounded-full bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center text-amber-700 dark:text-amber-400">
-                      <AlertTriangle className="size-3.5" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <strong className="text-xs font-black text-zinc-950 dark:text-white uppercase tracking-tight block">Report Discrepancy</strong>
-                      <span className="text-[9px] font-semibold text-zinc-400 leading-none">Damaged items or mismatches</span>
-                    </div>
-                  </button>
-                </div>
-
-                {/* Conditional Textarea for discrepancy remark (STRICT REQUIREMENT) */}
-                <AnimatePresence>
-                  {receiptMode === "discrepancy" && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden space-y-1.5"
+                {/* 2. Line Items Table Card */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase text-zinc-700 dark:text-zinc-300">
+                      Transfer Line Items <span className="text-rose-600">*</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddLineRow}
+                      className="px-3 py-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-800 inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                     >
-                      <label className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block">
-                        Discrepancy Report Detail <span className="text-amber-600">*</span>
-                      </label>
-                      <textarea
-                        required
-                        value={discrepancyText}
-                        onChange={e => setDiscrepancyText(e.target.value)}
-                        placeholder="Detail the exact count discrepancy, damages, temperature breaches, or packaging damage..."
-                        className="w-full bg-white dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700 px-3.5 py-2.5 rounded-xl text-xs font-semibold outline-none focus:border-amber-500 h-20 transition-all font-sans resize-none text-zinc-800 dark:text-zinc-200"
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                      <Plus className="size-3.5 text-emerald-700" /> Add Product Row
+                    </button>
+                  </div>
 
-                {/* Terms Disclaimer */}
-                <div className="text-[9px] text-zinc-400 leading-normal font-bold pt-1">
-                  * Submission of this audit will automatically register your digital signature 
-                  <strong className="text-zinc-650 dark:text-zinc-300"> "{currentSignature}"</strong> and timestamp on the Transfer Document.
+                  <div className="space-y-2.5">
+                    {formLineItems.map((row, idx) => {
+                      const avail = getAvailableStock(row.item)
+                      const isOverStock = row.item && row.quantity && Number(row.quantity) > avail
+                      return (
+                        <div
+                          key={idx}
+                          className="grid grid-cols-12 gap-2.5 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-700/70 items-center font-semibold"
+                        >
+                          {/* Product Selection */}
+                          <div className="col-span-5 space-y-1">
+                            <label className="text-[10px] font-black uppercase text-zinc-400 block">Product</label>
+                            <input
+                              type="text"
+                              list="transfer-products-suggestions"
+                              placeholder="Type product name..."
+                              value={row.item}
+                              onChange={(e) => handleUpdateLineItem(idx, "item", e.target.value)}
+                              className="h-10 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500"
+                            />
+                            {row.item && (
+                              <span className={`text-[10px] font-bold block pt-0.5 ${isOverStock ? "text-rose-600" : "text-zinc-400 font-mono"}`}>
+                                Avail in {formFromW}: {avail.toLocaleString()} {row.UOM || "units"}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* UOM */}
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black uppercase text-zinc-400 block">UOM</label>
+                            <input
+                              type="text"
+                              value={row.UOM || "Pieces"}
+                              onChange={(e) => handleUpdateLineItem(idx, "UOM", e.target.value)}
+                              className="h-10 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:border-emerald-500 text-center"
+                            />
+                          </div>
+
+                          {/* Quantity */}
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black uppercase text-zinc-400 block">Qty</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={row.quantity || ""}
+                              onChange={(e) => handleUpdateLineItem(idx, "quantity", e.target.value === "" ? "" : Number(e.target.value))}
+                              className={`h-10 w-full rounded-xl border px-2.5 text-xs font-mono font-black text-zinc-900 dark:text-zinc-100 outline-none ${
+                                isOverStock ? "border-rose-500 bg-rose-50/50" : "border-zinc-200 bg-white dark:bg-zinc-900 focus:border-emerald-500"
+                              }`}
+                            />
+                          </div>
+
+                          {/* Remark */}
+                          <div className="col-span-2 space-y-1">
+                            <label className="text-[10px] font-black uppercase text-zinc-400 block">Remark</label>
+                            <input
+                              type="text"
+                              placeholder="Batch / note"
+                              value={row.remark || ""}
+                              onChange={(e) => handleUpdateLineItem(idx, "remark", e.target.value)}
+                              className="h-10 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-2.5 text-xs font-medium text-zinc-600 outline-none focus:border-emerald-500"
+                            />
+                          </div>
+
+                          {/* Remove */}
+                          <div className="col-span-1 text-center pt-4">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveLineRow(idx)}
+                              className="p-1.5 rounded-lg text-zinc-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <datalist id="transfer-products-suggestions">
+                    {transferProducts.map((p) => (
+                      <option key={p.id} value={p.name} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* 3. Live Total Quantity Banner */}
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-900 text-white shadow-md">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-300">Total Dispatch Volume:</span>
+                  <span className="font-mono text-sm font-black text-white">
+                    {formTotalQuantity.toLocaleString()} Units
+                  </span>
+                </div>
+
+                {/* 4. Digital Certification & Dispatcher Signature Box */}
+                <div className="p-4.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Shield className="size-4.5 text-emerald-700" />
+                    <h4 className="text-xs font-black text-emerald-950 dark:text-emerald-300 uppercase tracking-wider">
+                      Authorized Dispatcher Digital Signature
+                    </h4>
+                  </div>
+                  <div className="bg-white dark:bg-zinc-900 p-3.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-between shadow-xs">
+                    <div>
+                      <span className="text-[9px] font-black uppercase text-zinc-400 block">Issuing Officer</span>
+                      <span className="text-xs font-black text-zinc-950 dark:text-zinc-100">{currentUserName}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[9px] font-black uppercase text-zinc-400 block mb-0.5">Verified Signature</span>
+                      <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-md border border-emerald-200">
+                        {currentUserName}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* FOOTER ACTIONS */}
-              <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-5 flex items-center justify-end gap-2.5">
+              {/* Footer Actions (Matching Stock Modal button format) */}
+              <div className="pt-4 border-t border-zinc-150 dark:border-zinc-800 shrink-0 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setIsReceiptOpen(false)}
-                  className="px-4.5 py-2 rounded-full border border-zinc-300 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 text-xs font-black transition-colors uppercase tracking-tight"
+                  onClick={() => setIsFormOpen(false)}
+                  className="h-11 px-5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmReceiptSubmit}
-                  disabled={receiptMode === "discrepancy" && !discrepancyText.trim()}
-                  className={`px-5 py-2 rounded-full text-white text-xs font-black transition-all shadow-md active:scale-95 uppercase tracking-tight ${
-                    receiptMode === "discrepancy" && !discrepancyText.trim()
-                      ? "bg-zinc-300 text-zinc-500 cursor-not-allowed"
-                      : receiptMode === "discrepancy"
-                      ? "bg-amber-600 hover:bg-amber-700"
-                      : "bg-emerald-600 hover:bg-emerald-700"
-                  }`}
+                  onClick={handleSaveDraft}
+                  className="h-11 px-5 rounded-xl border border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-xs font-bold text-zinc-900 cursor-pointer transition-colors"
                 >
-                  Confirm receipt
+                  Save as Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSignAndDispatch}
+                  className="h-11 px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md active:scale-95 cursor-pointer transition-all flex items-center gap-1.5"
+                >
+                  <Check className="size-4" /> Sign & Dispatch
                 </button>
               </div>
             </motion.div>
-          </>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* =========================================================================
+          DETAIL INSPECTION MODAL (CLEAN DOCUMENT PREVIEW)
+          ========================================================================= */}
+      <AnimatePresence>
+        {selectedTransfer && !isReceiptOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedTransfer(null)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-3xl rounded-3xl bg-white dark:bg-zinc-900 p-6 shadow-2xl z-[121] border border-zinc-200/80 dark:border-zinc-800 max-h-[90vh] flex flex-col overflow-hidden text-xs"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-zinc-150 dark:border-zinc-800 shrink-0">
+                <div>
+                  <h2 className="text-xl font-black text-zinc-950 dark:text-white tracking-tight leading-tight">
+                    Material Transfer Note
+                  </h2>
+                  <p className="text-xs font-mono font-bold text-zinc-400 mt-0.5">
+                    Ref: {selectedTransfer.reference_number} &bull; {selectedTransfer.date}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTransfer(null)}
+                  className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500 cursor-pointer"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto py-5 space-y-5">
+                {/* Movement Route Card */}
+                <div className="grid grid-cols-2 gap-4 bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/60 font-semibold">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-zinc-400 block mb-0.5">Origin Facility (Sender)</span>
+                    <span className="text-xs font-black text-zinc-950 dark:text-zinc-100">{selectedTransfer.from_warehouse}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-zinc-400 block mb-0.5">Destination Facility (Receiver)</span>
+                    <span className="text-xs font-black text-zinc-950 dark:text-zinc-100">{selectedTransfer.to_warehouse}</span>
+                  </div>
+                </div>
+
+                {/* Items Ledger Table */}
+                <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-zinc-50 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase text-zinc-400">
+                        <th className="py-2.5 px-4">No.</th>
+                        <th className="py-2.5 px-4">Item Description</th>
+                        <th className="py-2.5 px-4 text-center">UOM</th>
+                        <th className="py-2.5 px-4 text-right">Transfer Qty</th>
+                        <th className="py-2.5 px-4">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-bold text-zinc-800 dark:text-zinc-200">
+                      {selectedTransfer.line_items.map((line, i) => (
+                        <tr key={i}>
+                          <td className="py-2.5 px-4 font-mono text-zinc-400">{line.line_no}</td>
+                          <td className="py-2.5 px-4 text-zinc-950 dark:text-white">{line.item}</td>
+                          <td className="py-2.5 px-4 text-center text-zinc-500">{line.UOM}</td>
+                          <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 dark:text-white">{line.quantity.toLocaleString()}</td>
+                          <td className="py-2.5 px-4 text-zinc-400 font-medium text-[11px]">{line.remark || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Total */}
+                <div className="flex justify-between items-center p-3.5 rounded-xl bg-zinc-900 text-white font-black">
+                  <span className="uppercase text-xs text-zinc-300">Total Validated Quantity:</span>
+                  <span className="font-mono text-sm">{selectedTransfer.total_quantity.toLocaleString()} Units</span>
+                </div>
+
+                {/* Two-Party Sign-off Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Issuance Sign-off */}
+                  <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60 space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">1. Origin Issuance Sign-off</span>
+                    <div className="text-xs space-y-1 font-semibold">
+                      <p><span className="text-zinc-400">Date:</span> {selectedTransfer.issued_at || selectedTransfer.date}</p>
+                      <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900 dark:text-zinc-100">{selectedTransfer.issued_by || "Store Manager"}</strong></p>
+                      <div className="pt-1">
+                        <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
+                          {selectedTransfer.issued_signature || selectedTransfer.issued_by || "Authorized"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Receipt Sign-off */}
+                  <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60 space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">2. Receiver Verification Sign-off</span>
+                    {selectedTransfer.status === "Received" ? (
+                      <div className="text-xs space-y-1 font-semibold">
+                        <p><span className="text-zinc-400">Date:</span> {selectedTransfer.received_at || selectedTransfer.date}</p>
+                        <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900 dark:text-zinc-100">{selectedTransfer.received_by}</strong></p>
+                        <div className="pt-1">
+                          <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
+                            {selectedTransfer.received_signature}
+                          </span>
+                        </div>
+                      </div>
+                    ) : selectedTransfer.status === "Discrepancy" ? (
+                      <div className="text-xs space-y-1 font-semibold text-amber-700">
+                        <p className="flex items-center gap-1 font-black"><AlertTriangle className="size-3.5" /> Discrepancy Flagged</p>
+                        <p className="text-zinc-500 font-medium text-[11px]">Remark: {selectedTransfer.discrepancy_remark}</p>
+                      </div>
+                    ) : (
+                      <div className="text-zinc-400 py-3 text-center flex items-center justify-center gap-1.5 font-bold">
+                        <Clock className="size-4" /> Pending arrival & receipt at {selectedTransfer.to_warehouse}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Toolbar (Export PDF & Action buttons) */}
+              <div className="pt-4 border-t border-zinc-150 dark:border-zinc-800 shrink-0 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
+                  disabled={isExporting}
+                  className="h-11 px-5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <Download className={`size-4 ${isExporting ? "animate-spin" : ""}`} />
+                  {isExporting ? "Exporting..." : "Download Note PDF"}
+                </button>
+
+                {/* Receiver Process Receipt Action */}
+                {selectedTransfer.status === "Issued" && isReceiver(selectedTransfer) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceiptMode("match")
+                      setIsReceiptOpen(true)
+                    }}
+                    className="h-11 px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md active:scale-95 cursor-pointer transition-all flex items-center gap-1.5"
+                  >
+                    <Check className="size-4" /> Process Receipt
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* =========================================================================
+          RECEIPT CONFIRMATION MODAL (MATCHING STOCK MODAL DESIGN)
+          ========================================================================= */}
+      <AnimatePresence>
+        {isReceiptOpen && selectedTransfer && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsReceiptOpen(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-zinc-900 p-6 shadow-2xl z-[131] border border-zinc-200/80 dark:border-zinc-800 text-xs"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-150 dark:border-zinc-800 mb-4">
+                <div>
+                  <h3 className="text-base font-black text-zinc-950 dark:text-white uppercase tracking-tight">
+                    Confirm Stock Receipt
+                  </h3>
+                  <p className="text-xs font-mono font-bold text-zinc-400 mt-0.5">
+                    Ref: {selectedTransfer.reference_number} &bull; Destination: {selectedTransfer.to_warehouse}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsReceiptOpen(false)}
+                  className="size-7 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500 cursor-pointer"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+
+              {/* Receiving Officer Banner */}
+              <div className="bg-zinc-50 dark:bg-zinc-800/60 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 mb-4 font-semibold">
+                <span className="text-[10px] font-black uppercase text-zinc-400 block">Receiving Officer</span>
+                <span className="text-xs font-black text-zinc-900 dark:text-zinc-100">{currentUserName}</span>
+              </div>
+
+              {/* Verification Choices */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setReceiptMode("match")}
+                    className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
+                      receiptMode === "match"
+                        ? "border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/20 ring-2 ring-emerald-500/20"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className="size-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
+                      <Check className="size-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-zinc-900 dark:text-white text-xs">Quantities Match</h4>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Physical goods match transfer manifest</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setReceiptMode("discrepancy")}
+                    className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
+                      receiptMode === "discrepancy"
+                        ? "border-amber-600 bg-amber-50/60 dark:bg-amber-950/20 ring-2 ring-amber-500/20"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50"
+                    }`}
+                  >
+                    <div className="size-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+                      <AlertTriangle className="size-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-zinc-900 dark:text-white text-xs">Discrepancy</h4>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Variance or damaged goods observed</p>
+                    </div>
+                  </button>
+                </div>
+
+                {receiptMode === "discrepancy" && (
+                  <div>
+                    <label className="text-[11px] font-black uppercase text-zinc-500 block mb-1">
+                      Discrepancy Details <span className="text-rose-600">*</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={discrepancyText}
+                      onChange={(e) => setDiscrepancyText(e.target.value)}
+                      placeholder="Specify short shipment, carton damage, or lot variance..."
+                      className="w-full rounded-xl border border-zinc-200 p-3 text-xs outline-none focus:border-amber-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="pt-5 mt-5 border-t border-zinc-150 dark:border-zinc-800 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsReceiptOpen(false)}
+                  className="h-11 px-5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReceipt}
+                  disabled={isProcessingReceipt}
+                  className="h-11 px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md active:scale-95 cursor-pointer transition-all"
+                >
+                  {isProcessingReceipt ? "Processing..." : "Confirm & Post into Stock"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

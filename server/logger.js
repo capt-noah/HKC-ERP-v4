@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import jwt from "jsonwebtoken"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -9,16 +10,28 @@ const logsDir = path.join(__dirname, "logs")
 const accessLogPath = path.join(logsDir, "access.log")
 const errorLogPath = path.join(logsDir, "error.log")
 
-// Ensure server/logs directory and access.log exist
+// Ensure server/logs directory exists
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true })
 }
-if (!fs.existsSync(accessLogPath)) {
-  fs.writeFileSync(accessLogPath, `[${new Date().toISOString()}] [INFO] HKC ERP Request Logger initialized.\n`, "utf8")
-}
 
 function formatTimestamp(date = new Date()) {
-  return date.toISOString()
+  const pad = (n, len = 2) => String(n).padStart(len, "0")
+  const y = date.getFullYear()
+  const m = pad(date.getMonth() + 1)
+  const d = pad(date.getDate())
+
+  let hours = date.getHours()
+  const ampm = hours >= 12 ? "PM" : "AM"
+  hours = hours % 12
+  hours = hours ? hours : 12 // the hour '0' should be '12'
+  const hh = pad(hours)
+
+  const mm = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
+  const ms = pad(date.getMilliseconds(), 3)
+
+  return `${y}-${m}-${d} ${hh}:${mm}:${ss}.${ms} ${ampm}`
 }
 
 function writeToFile(filePath, content) {
@@ -29,33 +42,134 @@ function writeToFile(filePath, content) {
   }
 }
 
+function extractUserFromReq(req) {
+  const url = req.originalUrl || req.url || ""
+
+  // 1. If req.user is populated by JWT middleware
+  if (req.user) {
+    const roles = req.user.roles || (req.user.role ? [req.user.role] : [])
+    return {
+      username: req.user.username || "token-user",
+      role: roles.length ? roles.join(",") : "authenticated",
+    }
+  }
+
+  // 2. Check Authorization Bearer header if req.user is not yet attached
+  try {
+    const authHeader = req.headers["authorization"]
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1]
+      const payload = jwt.decode(token)
+      if (payload && typeof payload === "object") {
+        const roles = payload.roles || (payload.role ? [payload.role] : [])
+        return {
+          username: payload.username || "token-user",
+          role: roles.length ? roles.join(",") : "authenticated",
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Login attempt
+  if (req.body && typeof req.body === "object" && req.body.username) {
+    return {
+      username: String(req.body.username),
+      role: "auth",
+    }
+  }
+
+  // 4. Health checks
+  if (url === "/health" || url === "/api/health") {
+    return {
+      username: "system",
+      role: "health",
+    }
+  }
+
+  // 5. Static Assets
+  if (url.startsWith("/assets/") || /\.(js|css|png|jpg|jpeg|svg|ico|woff2?|json)$/i.test(url)) {
+    return {
+      username: "asset",
+      role: "static",
+    }
+  }
+
+  // 6. SPA / Browser Page Navigation (e.g. GET /admin, GET /sales, GET /finance)
+  if (!url.startsWith("/api/")) {
+    return {
+      username: "browser",
+      role: "page",
+    }
+  }
+
+  // 7. Unauthenticated API request
+  return {
+    username: "unauthenticated",
+    role: "guest",
+  }
+}
+
+// ANSI Colors for formatted console output
+const C = {
+  reset: "\x1b[0m",
+  dim: "\x1b[90m",
+  bold: "\x1b[1m",
+  cyan: "\x1b[36m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  red: "\x1b[31m",
+  magenta: "\x1b[35m",
+  blue: "\x1b[34m",
+  bgRed: "\x1b[41m\x1b[37m\x1b[1m",
+}
+
+function getMethodColor(method) {
+  switch (method) {
+    case "GET": return C.cyan
+    case "POST": return C.green
+    case "PUT":
+    case "PATCH": return C.yellow
+    case "DELETE": return C.red
+    default: return C.magenta
+  }
+}
+
+function getStatusColor(status) {
+  if (status >= 500) return C.bgRed
+  if (status >= 400) return C.yellow
+  if (status >= 300) return C.cyan
+  if (status >= 200) return C.green
+  return C.reset
+}
+
 export const logger = {
   info(message, meta = {}) {
     const timestamp = formatTimestamp()
     const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : ""
-    const logLine = `[${timestamp}] [INFO] ${message}${metaStr}`
-    console.log(logLine)
-    writeToFile(accessLogPath, logLine)
+    const plainLine = `[${timestamp}] [INFO] ${message}${metaStr}`
+    const consoleLine = `${C.dim}[${timestamp}]${C.reset} ${C.green}[INFO]${C.reset} ${message}${metaStr}`
+    console.log(consoleLine)
+    writeToFile(accessLogPath, plainLine)
   },
 
   error(message, error = null) {
     const timestamp = formatTimestamp()
     const errDetails = error instanceof Error ? `${error.message}\n${error.stack}` : error ? JSON.stringify(error) : ""
-    const logLine = `[${timestamp}] [ERROR] ${message} ${errDetails}`.trim()
-    console.error(logLine)
-    writeToFile(errorLogPath, logLine)
-    writeToFile(accessLogPath, logLine)
+    const plainLine = `[${timestamp}] [ERROR] ${message} ${errDetails}`.trim()
+    const consoleLine = `${C.dim}[${timestamp}]${C.reset} ${C.red}[ERROR]${C.reset} ${C.bold}${message}${C.reset} ${errDetails}`.trim()
+    console.error(consoleLine)
+    writeToFile(errorLogPath, plainLine)
+    writeToFile(accessLogPath, plainLine)
   },
 
   /**
    * Express request logging middleware.
-   * Logs every incoming HTTP request to console (for Render) and appends to server/logs/access.log
+   * Format: [Timestamp 12hr] [Role] [Username] Method URL Status Duration
    */
   requestLogger(req, res, next) {
     const start = process.hrtime()
     const method = req.method
     const url = req.originalUrl || req.url
-    const ip = (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "127.0.0.1").split(",")[0].trim()
 
     const logRequest = () => {
       res.removeListener("finish", logRequest)
@@ -65,18 +179,27 @@ export const logger = {
       const durationMs = (diff[0] * 1e3 + diff[1] * 1e-6).toFixed(1)
       const status = res.statusCode
       const timestamp = formatTimestamp()
-      const logLine = `[${timestamp}] ${method} ${url} ${status} ${durationMs}ms - ${ip}`
+      const userInfo = extractUserFromReq(req)
 
-      // Output colorized line to stdout/stderr for Render log viewer
+      const timeStr = `${C.dim}[${timestamp}]${C.reset}`
+      const roleStr = `${C.cyan}[${userInfo.role}]${C.reset}`
+      const userStr = `${C.green}[${userInfo.username}]${C.reset}`
+      const methodStr = `${getMethodColor(method)}${C.bold}${method}${C.reset}`
+      const urlStr = `${C.bold}${url}${C.reset}`
+      const statusStr = `${getStatusColor(status)}${status}${C.reset}`
+      const durationStr = `${C.dim}${durationMs}ms${C.reset}`
+
+      const consoleLine = `${timeStr} ${roleStr} ${userStr} ${methodStr} ${urlStr} ${statusStr} ${durationStr}`
+      const plainLine = `[${timestamp}] [${userInfo.role}] [${userInfo.username}] ${method} ${url} ${status} ${durationMs}ms`
+
       if (status >= 400) {
-        console.error(`\x1b[31m${logLine}\x1b[0m`)
-        writeToFile(errorLogPath, `${logLine} - UA: ${req.headers["user-agent"] || "-"}`)
+        console.error(consoleLine)
+        writeToFile(errorLogPath, `${plainLine} - UA: ${req.headers["user-agent"] || "-"}`)
       } else {
-        console.log(`\x1b[32m${logLine}\x1b[0m`)
+        console.log(consoleLine)
       }
 
-      // Append clean log line to server/logs/access.log
-      writeToFile(accessLogPath, logLine)
+      writeToFile(accessLogPath, plainLine)
     }
 
     res.on("finish", logRequest)
