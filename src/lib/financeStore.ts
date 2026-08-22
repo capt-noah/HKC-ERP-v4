@@ -327,11 +327,17 @@ class FinanceStore {
   private taxRules: TaxRule[] = []
 
   private listeners = new Set<() => void>()
-  private _isLoading = true
+  private _isLoading = false
   private _loadError: string | null = null
+  private _isLoaded = false
+  private _loadInProgress = false
 
   constructor() {
-    void this.loadFromApi()
+    // Eager constructor load removed to prevent firing 19+ requests on import/startup
+  }
+
+  public isLoaded(): boolean {
+    return this._isLoaded
   }
 
   private clearFinanceState() {
@@ -351,11 +357,20 @@ class FinanceStore {
     this.taxRules = []
   }
 
-  private async loadFromApi() {
-    if (!useAuthStore.getState().token) {
+  public async loadFromApi(force = false) {
+    const user = useAuthStore.getState().user
+    const roles = user?.roles || []
+    const isAuthorized = roles.includes("finance_manager") || roles.includes("superadmin")
+
+    if (!useAuthStore.getState().token || !isAuthorized) {
       this._isLoading = false
       return
     }
+
+    if (this._isLoaded && !force) return
+    if (this._loadInProgress) return
+
+    this._loadInProgress = true
     this._isLoading = true
     this._loadError = null
     this.listeners.forEach((l) => l())
@@ -687,14 +702,20 @@ class FinanceStore {
         console.error("[FinanceSync] Cross-module sync error (GL not modified):", syncErr)
       }
 
-      this._isLoading = false
+      this._isLoaded = true
       this._loadError = null
-      this.listeners.forEach((l) => l())
     } catch (error) {
       console.error("Failed to load finance data from Supabase.", error)
       this.clearFinanceState()
+      const msg = error instanceof Error ? error.message : "Could not connect to the server. Finance data is unavailable."
+      if (/token|expired|jwt/i.test(msg)) {
+        this._loadError = null
+      } else {
+        this._loadError = msg
+      }
+    } finally {
       this._isLoading = false
-      this._loadError = error instanceof Error ? error.message : "Could not connect to the server. Finance data is unavailable."
+      this._loadInProgress = false
       this.listeners.forEach((l) => l())
     }
   }

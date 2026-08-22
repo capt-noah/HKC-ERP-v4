@@ -5,6 +5,49 @@ import bcrypt from "bcrypt"
 
 export const crudRouter = Router()
 
+// Module-level RBAC middleware
+crudRouter.use("/:resource", (req, res, next) => {
+  const resource = getResource(req.params.resource)
+  if (!resource) {
+    return next()
+  }
+
+  const user = req.user
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" })
+  }
+
+  const userRoles = user.roles || (user.role ? [user.role] : [])
+  if (userRoles.includes("superadmin")) {
+    return next()
+  }
+
+  const mod = resource.module
+  let isAllowed = false
+
+  if (mod === "inventory" && userRoles.includes("inventory_admin")) isAllowed = true
+  if (mod === "sales" && (userRoles.includes("sales_manager") || userRoles.includes("hkc_docs_manager"))) isAllowed = true
+  if (mod === "finance" && userRoles.includes("finance_manager")) isAllowed = true
+  if (mod === "hr" && userRoles.includes("hr_manager")) isAllowed = true
+  if (mod === "admin" && userRoles.includes("superadmin")) isAllowed = true
+
+  // Allow inventory_admin read-only access to suppliers & purchase_orders for receiving goods
+  if (userRoles.includes("inventory_admin") && (req.params.resource === "suppliers" || req.params.resource === "purchase_orders")) {
+    if (req.method === "GET") {
+      isAllowed = true
+    }
+  }
+
+  if (!isAllowed) {
+    return res.status(403).json({
+      error: `Forbidden: role [${userRoles.join(", ")}] cannot access [${mod}] resource '${req.params.resource}'.`,
+      code: "FORBIDDEN",
+    })
+  }
+
+  next()
+})
+
 crudRouter.get("/:resource", async (req, res, next) => {
   try {
     const resource = getResource(req.params.resource)

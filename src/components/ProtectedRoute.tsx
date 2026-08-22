@@ -14,16 +14,50 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, isAuthenticated } = useAuthStore()
   const location = useLocation()
+  const authenticated = isAuthenticated()
 
   useEffect(() => {
-    if (isAuthenticated()) {
-      void erpStore.reloadFromApi()
-      void financeStore.reloadFromApi()
-      void hrStore.reloadFromApi()
-    }
-  }, [isAuthenticated])
+    if (!authenticated || !user) return
 
-  if (!isAuthenticated() || !user) {
+    const roles = user.roles || []
+    const isSuper = roles.includes("superadmin")
+    const pathname = location.pathname
+
+    // Route-aware and role-scoped store loading
+    if (pathname.startsWith("/inventory")) {
+      if (isSuper || roles.includes("inventory_admin")) {
+        void erpStore.loadInventoryData()
+      }
+    } else if (pathname.startsWith("/sales")) {
+      if (isSuper || roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) {
+        void erpStore.loadSalesData()
+      }
+    } else if (pathname.startsWith("/finance")) {
+      if (isSuper || roles.includes("finance_manager")) {
+        void financeStore.loadFromApi()
+      }
+    } else if (pathname.startsWith("/hr")) {
+      if (isSuper || roles.includes("hr_manager")) {
+        void hrStore.loadFromApi()
+      }
+    } else if (pathname.startsWith("/admin") || pathname === "/") {
+      if (isSuper) {
+        // Superadmin on overview/admin page: load domains lazily
+        void erpStore.loadInventoryData()
+        void erpStore.loadSalesData()
+        void financeStore.loadFromApi()
+        void hrStore.loadFromApi()
+      } else {
+        // Single-role users: load only their assigned domain
+        if (roles.includes("inventory_admin")) void erpStore.loadInventoryData()
+        if (roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) void erpStore.loadSalesData()
+        if (roles.includes("finance_manager")) void financeStore.loadFromApi()
+        if (roles.includes("hr_manager")) void hrStore.loadFromApi()
+      }
+    }
+  }, [authenticated, user, location.pathname])
+
+  if (!authenticated || !user) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 

@@ -7,12 +7,12 @@ export function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(" ")[1]
 
   if (!token) {
-    return res.status(401).json({ error: "Access token missing" })
+    return res.status(401).json({ error: "Access token missing", code: "TOKEN_EXPIRED" })
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      return res.status(403).json({ error: "Invalid or expired token" })
+      return res.status(401).json({ error: "Invalid or expired token", code: "TOKEN_EXPIRED" })
     }
     req.user = user
     next()

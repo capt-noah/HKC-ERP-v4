@@ -29,6 +29,7 @@ import Leave from "@/pages/hr/Leave"
 import UserManagement from "@/pages/admin/UserManagement"
 import PartnersRegistry from "@/pages/admin/PartnersRegistry"
 import AdminSettings from "@/pages/admin/AdminSettings"
+import NotFound from "@/pages/NotFound"
 
 import { Toaster } from "sonner"
 
@@ -119,7 +120,7 @@ export function App() {
       <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={["superadmin"]}><AdminSettings /></ProtectedRoute>} />
 
       {/* Catch-all route */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
     </>
   )

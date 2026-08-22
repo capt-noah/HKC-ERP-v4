@@ -1,9 +1,9 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useAuthStore } from "@/lib/authStore"
 import { API_BASE } from "@/lib/apiPersistence"
 import { useFeedback } from "@/context/FeedbackContext"
-import { KeyRound, User, Loader2, Eye, EyeOff } from "lucide-react"
+import { KeyRound, User, Loader2, Eye, EyeOff, AlertCircle } from "lucide-react"
 
 export default function Login() {
   const [username, setUsername] = useState("")
@@ -15,7 +15,10 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const from = location.state?.from?.pathname || "/"
+  const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const isSessionExpired = queryParams.get("expired") === "1" || location.state?.expired === true
+  const fromParam = queryParams.get("from")
+  const from = location.state?.from?.pathname || fromParam || "/"
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -91,6 +94,13 @@ export default function Login() {
           </div>
           <h2 className="text-3xl font-extrabold text-black tracking-tight">HKC Trading</h2>
           <p className="mt-2 text-sm font-semibold text-zinc-500">Sign in to your dashboard</p>
+
+          {isSessionExpired && (
+            <div className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-800 text-xs font-semibold flex items-center gap-2.5 text-left animate-in fade-in slide-in-from-top-2 duration-300">
+              <AlertCircle className="size-4 shrink-0 text-amber-600" />
+              <span>Your session has expired. Please sign in again to continue.</span>
+            </div>
+          )}
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="space-y-4">

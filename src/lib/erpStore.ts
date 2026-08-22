@@ -394,90 +394,203 @@ class ErpStore {
   private stockMovements: StockMovementLog[] = []
 
   private listeners = new Set<() => void>()
-  private loading = true
+  private loading = false
   private _loadError: string | null = null
+  private _inventoryLoaded = false
+  private _salesLoaded = false
+  private _inventoryLoading = false
+  private _salesLoading = false
 
   constructor() {
-    this.loadFromApi()
+    // Eager constructor load removed to prevent firing 10+ requests on import/startup
   }
 
-  private async loadFromApi() {
-    if (!useAuthStore.getState().token) {
-      this.loading = false
-      return
-    }
+  public isInventoryLoaded(): boolean {
+    return this._inventoryLoaded
+  }
+
+  public isSalesLoaded(): boolean {
+    return this._salesLoaded
+  }
+
+  /**
+   * Scoped loader for Inventory Module (Warehouses, Inventory Products, Transfers, Movements)
+   * Optional read-only load of Suppliers & Purchase Orders for stock receiving operations.
+   */
+  public async loadInventoryData(force = false): Promise<void> {
+    if (!useAuthStore.getState().token) return
+    if (this._inventoryLoaded && !force) return
+    if (this._inventoryLoading) return
+
+    this._inventoryLoading = true
     this.loading = true
     this._loadError = null
     this.listeners.forEach((l) => l())
+
     try {
       const [
         warehouses,
         products,
+        transfers,
+        stockMovements,
+        suppliers,
+        purchaseOrders,
+      ] = await Promise.all([
+        loadResource<Warehouse>("warehouses"),
+        loadResource<Product>("inventory_products"),
+        loadResource<PersistedTransfer>("store_transfers"),
+        loadResource<StockMovementLog>("stock_movements"),
+        loadResource<Supplier>("suppliers").catch(() => []),
+        loadResource<PurchaseOrder>("purchase_orders").catch(() => []),
+      ])
+
+      this.warehouses = warehouses
+      this.products = products.map((product) => this.withInventoryValue(product))
+      this.transfers = transfers.map(({ id: _id, ...transfer }) => transfer as Transfer)
+      this.stockMovements = stockMovements
+      if (suppliers.length > 0) this.suppliers = suppliers
+      if (purchaseOrders.length > 0) this.purchaseOrders = purchaseOrders
+
+      this._inventoryLoaded = true
+      this._loadError = null
+    } catch (error) {
+      console.error("Failed to load Inventory data from Supabase.", error)
+      const msg = error instanceof Error ? error.message : "Could not connect to the server. Inventory data is unavailable."
+      if (/token|expired|jwt/i.test(msg)) {
+        this._loadError = null
+      } else {
+        this._loadError = msg
+      }
+    } finally {
+      this._inventoryLoading = false
+      this.loading = this._salesLoading
+      this.listeners.forEach((l) => l())
+    }
+  }
+
+  /**
+   * Scoped loader for Sales Module (Sales Orders, Quotations, Delivery Notes, Customers, Suppliers)
+   */
+  public async loadSalesData(force = false): Promise<void> {
+    if (!useAuthStore.getState().token) return
+    if (this._salesLoaded && !force) return
+    if (this._salesLoading) return
+
+    this._salesLoading = true
+    this.loading = true
+    this._loadError = null
+    this.listeners.forEach((l) => l())
+
+    try {
+      const [
         salesOrders,
         purchaseOrders,
         customers,
         suppliers,
         quotations,
         deliveryNotes,
-        transfers,
-        stockMovements,
       ] = await Promise.all([
-        loadResource<Warehouse>("warehouses"),
-        loadResource<Product>("inventory_products"),
         loadResource<SalesOrder>("sales_orders"),
         loadResource<PurchaseOrder>("purchase_orders"),
         loadResource<Customer>("customers"),
         loadResource<Supplier>("suppliers"),
         loadResource<Quotation>("quotations"),
         loadResource<DeliveryNote>("delivery_notes"),
-        loadResource<PersistedTransfer>("store_transfers"),
-        loadResource<StockMovementLog>("stock_movements"),
       ])
 
-      this.warehouses = warehouses
-      this.products = products.map((product) => this.withInventoryValue(product))
       this.salesOrders = salesOrders
       this.purchaseOrders = purchaseOrders
       this.customers = customers
       this.suppliers = suppliers
       this.quotations = quotations
       this.deliveryNotes = deliveryNotes
-      this.transfers = transfers.map(({ id: _id, ...transfer }) => transfer as Transfer)
-      this.stockMovements = stockMovements
+
+      this._salesLoaded = true
       this._loadError = null
     } catch (error) {
-      console.error("Failed to load ERP data from Supabase.", error)
-      // Explicitly clear all state so stale data is not shown
-      this.warehouses = []
-      this.products = []
-      this.salesOrders = []
-      this.purchaseOrders = []
-      this.customers = []
-      this.suppliers = []
-      this.quotations = []
-      this.deliveryNotes = []
-      this.transfers = []
-      this.stockMovements = []
-      this._loadError = error instanceof Error ? error.message : "Could not connect to the server. ERP data is unavailable."
+      console.error("Failed to load Sales data from Supabase.", error)
+      const msg = error instanceof Error ? error.message : "Could not connect to the server. Sales data is unavailable."
+      if (/token|expired|jwt/i.test(msg)) {
+        this._loadError = null
+      } else {
+        this._loadError = msg
+      }
     } finally {
-      this.loading = false
+      this._salesLoading = false
+      this.loading = this._inventoryLoading
       this.listeners.forEach((l) => l())
     }
   }
 
+  /**
+   * Role-aware loader: loads inventory, sales, or both depending on the active user's roles or explicit scope.
+   */
+  public async loadFromApi(scope?: "inventory" | "sales" | "all") {
+    const user = useAuthStore.getState().user
+    const roles = user?.roles || []
+
+    if (!user || roles.length === 0) return
+
+    if (scope === "inventory") {
+      await this.loadInventoryData(true)
+      return
+    }
+    if (scope === "sales") {
+      await this.loadSalesData(true)
+      return
+    }
+    if (scope === "all" || roles.includes("superadmin")) {
+      await Promise.all([this.loadInventoryData(true), this.loadSalesData(true)])
+      return
+    }
+
+    const tasks: Promise<void>[] = []
+    if (roles.includes("inventory_admin")) {
+      tasks.push(this.loadInventoryData(true))
+    }
+    if (roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) {
+      tasks.push(this.loadSalesData(true))
+    }
+
+    if (tasks.length > 0) {
+      await Promise.all(tasks)
+    }
+  }
+
   private saveToApi() {
-    return persistResources([
-      { resource: "warehouses", items: this.warehouses },
-      { resource: "inventory_products", items: this.products },
-      { resource: "sales_orders", items: this.salesOrders },
-      { resource: "purchase_orders", items: this.purchaseOrders },
-      { resource: "customers", items: this.customers },
-      { resource: "suppliers", items: this.suppliers },
-      { resource: "quotations", items: this.quotations },
-      { resource: "delivery_notes", items: this.deliveryNotes },
-      { resource: "store_transfers", items: this.transfers.map((transfer) => ({ id: transfer.reference_number, ...transfer })) },
-      { resource: "stock_movements", items: this.stockMovements },
-    ])
+    const user = useAuthStore.getState().user
+    const roles = user?.roles || []
+    const isSuperadmin = roles.includes("superadmin")
+    const isInventoryAdmin = roles.includes("inventory_admin") || isSuperadmin
+    const isSalesManager = roles.includes("sales_manager") || roles.includes("hkc_docs_manager") || isSuperadmin
+
+    const toPersist: Array<{ resource: string; items: Array<{ id?: string }> }> = []
+
+    if (this._inventoryLoaded && isInventoryAdmin) {
+      toPersist.push(
+        { resource: "warehouses", items: this.warehouses },
+        { resource: "inventory_products", items: this.products },
+        { resource: "store_transfers", items: this.transfers.map((t) => ({ id: t.reference_number, ...t })) },
+        { resource: "stock_movements", items: this.stockMovements }
+      )
+    }
+
+    if (this._salesLoaded && isSalesManager) {
+      toPersist.push(
+        { resource: "sales_orders", items: this.salesOrders },
+        { resource: "purchase_orders", items: this.purchaseOrders },
+        { resource: "customers", items: this.customers },
+        { resource: "suppliers", items: this.suppliers },
+        { resource: "quotations", items: this.quotations },
+        { resource: "delivery_notes", items: this.deliveryNotes }
+      )
+    }
+
+    if (toPersist.length === 0) {
+      return Promise.resolve()
+    }
+
+    return persistResources(toPersist)
   }
 
   public subscribe(listener: () => void) {
@@ -490,7 +603,7 @@ class ErpStore {
   }
 
   public isLoading() {
-    return this.loading
+    return this.loading || this._inventoryLoading || this._salesLoading
   }
 
   public getLoadError(): string | null {

@@ -37,8 +37,8 @@ masterRouter.use("/api", salesRouter)
 masterRouter.use("/api", financeRouter)
 masterRouter.use("/api", crudRouter)
 
-// Catch-all 404
-masterRouter.use((_req, res) => {
+// Catch-all 404 for unmatched /api routes only
+masterRouter.use("/api", (_req, res) => {
   res.status(404).json({
     error: "Not found",
     hint: "Use /api for the resource registry or /api/:resource for table routes.",

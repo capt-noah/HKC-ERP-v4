@@ -40,7 +40,7 @@ export async function login(req, res) {
       return res.status(401).json({ error: "Invalid credentials" })
     }
 
-    // Generate JWT
+    // Generate JWT (30 days expiration)
     const token = jwt.sign(
       {
         id: user.id,
@@ -50,7 +50,7 @@ export async function login(req, res) {
         warehouse_ids: user.warehouse_ids || [],
       },
       JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "30d" }
     )
 
     // Log login activity asynchronously

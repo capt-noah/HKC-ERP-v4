@@ -304,17 +304,38 @@ class HRStore {
     this.expenseClaims = []
     this.appraisals = []
     this.trainingPrograms = []
-    this.loadFromApi()
+    // Eager constructor load removed to prevent firing 11+ requests on import/startup
+  }
+
+  private _isLoaded = false
+  private _isLoading = false
+
+  public isLoaded(): boolean {
+    return this._isLoaded
+  }
+
+  public isLoading(): boolean {
+    return this._isLoading
   }
 
   public async reloadFromApi() {
-    await this.loadFromApi()
+    await this.loadFromApi(true)
   }
 
-  private async loadFromApi() {
-    if (!useAuthStore.getState().token) {
+  public async loadFromApi(force = false) {
+    const user = useAuthStore.getState().user
+    const roles = user?.roles || []
+    const isAuthorized = roles.includes("hr_manager") || roles.includes("superadmin")
+
+    if (!useAuthStore.getState().token || !isAuthorized) {
       return
     }
+
+    if (this._isLoaded && !force) return
+    if (this._isLoading) return
+
+    this._isLoading = true
+    this.listeners.forEach((l) => l())
     try {
       const [
         departments,
@@ -355,9 +376,12 @@ class HRStore {
       this.expenseClaims = expenseClaims
       this.appraisals = appraisals
       this.trainingPrograms = trainingPrograms
-      this.listeners.forEach((l) => l())
+      this._isLoaded = true
     } catch (error) {
       console.error("Failed to load HR data from Supabase.", error)
+    } finally {
+      this._isLoading = false
+      this.listeners.forEach((l) => l())
     }
   }
 

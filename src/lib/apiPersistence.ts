@@ -1,3 +1,5 @@
+import { handleAuthExpiry } from "./authStore"
+
 type Identified = { id?: string }
 
 // In dev, API_BASE is empty and Vite's proxy forwards /api/* to the local server.
@@ -62,7 +64,8 @@ export async function loadResource<T>(resource: string): Promise<T[]> {
   const body = await parseResponse(response)
 
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 || (response.status === 403 && typeof body === "object" && body && "error" in body && /token|expired/i.test(String(body.error)))) {
+      handleAuthExpiry()
       return []
     }
     throw new Error(errorMessage(body, `Failed to load ${resource}.`))

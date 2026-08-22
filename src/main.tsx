@@ -6,24 +6,47 @@ import "./index.css"
 import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { FeedbackProvider } from "@/context/FeedbackContext.tsx"
-import { useAuthStore } from "@/lib/authStore"
+import { useAuthStore, isTokenExpired, handleAuthExpiry } from "@/lib/authStore"
+import { requestMonitor, evaluateRoleScoping } from "@/lib/requestMonitor"
+import { RequestMonitorHUD } from "@/components/RequestMonitorHUD"
 
-// Intercept all fetch requests globally to inject the JWT auth header
+// Intercept all fetch requests globally to inject the JWT auth header & handle 401/expired tokens
 const originalFetch = window.fetch
 window.fetch = async (input, init) => {
+  const startTime = performance.now()
   const url = typeof input === "string" 
     ? input 
     : input instanceof URL 
       ? input.toString() 
       : input.url
 
-  if (url.includes("/api/")) {
+  const isApiRequest = url.includes("/api/")
+  const isAuthLogin = url.includes("/api/auth/login")
+  const method = init?.method || "GET"
+
+  // Extract clean resource identifier (e.g. "inventory_products" from "/api/inventory_products?query=...")
+  let resourceName = "api"
+  if (isApiRequest) {
+    const apiPart = url.split("/api/")[1] || ""
+    resourceName = apiPart.split("?")[0].split("/")[0] || "api"
+  }
+
+  if (isApiRequest) {
     init = init || {}
     init.cache = "no-store"
 
-    if (!url.includes("/api/auth/login")) {
+    if (!isAuthLogin) {
       const token = useAuthStore.getState().token
       if (token) {
+        // Proactively check if token is expired before dispatching request
+        if (isTokenExpired(token)) {
+          handleAuthExpiry()
+          return new Response(JSON.stringify({ error: "Token expired", code: "TOKEN_EXPIRED" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          })
+        }
+
         if (!init.headers) {
           init.headers = {}
         }
@@ -40,7 +63,46 @@ window.fetch = async (input, init) => {
       }
     }
   }
-  return originalFetch(input, init)
+
+  const response = await originalFetch(input, init)
+  const durationMs = performance.now() - startTime
+
+  // Record telemetry for all API calls
+  if (isApiRequest) {
+    const user = useAuthStore.getState().user
+    const userRoles = user?.roles || []
+    const roleStatus = evaluateRoleScoping(resourceName, userRoles)
+
+    requestMonitor.recordRequest({
+      url,
+      resourceName,
+      method,
+      status: response.status,
+      durationMs,
+      timestamp: new Date().toISOString(),
+      roleStatus,
+      userRoles,
+      initiatedBy: window.location.pathname,
+    })
+  }
+
+  // React to 401 Unauthorized or Token Expiry responses by immediately logging out and redirecting
+  if (isApiRequest && !isAuthLogin && (response.status === 401 || response.status === 403)) {
+    // If 403, verify if it's token-related or role-related
+    if (response.status === 401) {
+      handleAuthExpiry()
+    } else if (response.status === 403) {
+      try {
+        const cloned = response.clone()
+        const body = await cloned.json()
+        if (body?.error && /token|expired|jwt/i.test(String(body.error))) {
+          handleAuthExpiry()
+        }
+      } catch {}
+    }
+  }
+
+  return response
 }
 
 
@@ -50,6 +112,7 @@ createRoot(document.getElementById("root")!).render(
       <ThemeProvider defaultTheme="light">
         <FeedbackProvider>
           <App />
+          <RequestMonitorHUD />
         </FeedbackProvider>
       </ThemeProvider>
     </BrowserRouter>
