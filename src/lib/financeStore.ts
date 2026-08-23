@@ -63,6 +63,8 @@ export interface Invoice {
   id: string
   invoice_number: string
   sales_order_id?: string
+  sales_issue_id?: string
+  fs_no?: string
   customer_name: string
   issue_date: string
   due_date: string
@@ -70,8 +72,11 @@ export interface Invoice {
   line_items: InvoiceLineItem[]
   subtotal: number
   tax_amount: number
+  tax_rate?: number
   discount_amount?: number
   payment_terms?: string
+  notes?: string
+  attachments?: any[]
   total: number
   amount_paid: number
   balance_due: number
@@ -448,40 +453,70 @@ class FinanceStore {
         accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumulated_depreciation ?? 0),
         netBookValue: Number(fa.netBookValue ?? fa.cost ?? 0),
       }))
-      this.taxRules = taxRules.map((t: any) => ({
-        ...t,
-        id: t.id,
-        name: t.name || "Tax Rule",
-        ratePercent: Number(t.ratePercent ?? t.rate ?? 0),
-        type: t.type || "VAT/GST",
-        accountCode: t.accountCode ?? t.gl_account_code ?? "",
-        isInclusive: Boolean(t.isInclusive ?? t.is_inclusive ?? false),
-        description: t.description || "",
-      }))
+      const initialTaxRules: TaxRule[] = [
+        { id: "TAX-01", name: "Standard VAT", ratePercent: 15, type: "VAT/GST", accountCode: "2210", isInclusive: false, description: "Standard Value Added Tax (15%)" },
+        { id: "TAX-02", name: "Withholding Tax (TDS)", ratePercent: 3, type: "Withholding Tax (TDS)", accountCode: "2200", isInclusive: false, description: "Withholding Tax on Payments (3%)" },
+        { id: "TAX-03", name: "Zero-Rated / Exempt", ratePercent: 0, type: "VAT/GST", accountCode: "2210", isInclusive: false, description: "Zero-Rated or Exempt Supplies (0%)" }
+      ]
 
-      // CROSS-MODULE LIVE FINANCE SYNC ENGINE:
-      // Fetch source module records and ensure all posted transactions appear in Finance GL.
-      // Safety rules:
-      //   1. Never run if Chart of Accounts is not loaded (prevents empty-account fallbacks)
-      //   2. Never persist incomplete journal entries (entry without lines)
-      //   3. Skip any transaction with amount <= 0
-      try {
-        if (this.accounts.length === 0) {
-          // COA not loaded yet — skip sync entirely to avoid corrupting GL with wrong account IDs
-          console.warn("[FinanceSync] Chart of Accounts not loaded. Skipping cross-module sync.")
-        } else {
-          const [salesIssues, , purchaseOrders, expenseClaims, payrollRecords] = await Promise.all([
-            loadResource<any>("sales_issues").catch(() => []),
-            loadResource<any>("sales_orders").catch(() => []),
-            loadResource<any>("purchase_orders").catch(() => []),
-            loadResource<any>("expense_claims").catch(() => []),
-            loadResource<any>("payroll_records").catch(() => []),
-          ])
+      if (Array.isArray(taxRules) && taxRules.length > 0) {
+        this.taxRules = taxRules.map((t: any) => ({
+          ...t,
+          id: t.id,
+          name: t.name || "Tax Rule",
+          ratePercent: Number(t.ratePercent ?? t.rate ?? 0),
+          type: t.type || "VAT/GST",
+          accountCode: t.accountCode ?? t.gl_account_code ?? "",
+          isInclusive: Boolean(t.isInclusive ?? t.is_inclusive ?? false),
+          description: t.description || "",
+        }))
+      } else {
+        this.taxRules = initialTaxRules
+      }
 
-          let hasNewSync = false
+      // Trigger cross-module live finance sync
+      await this.syncCrossModule()
 
-          // Helper: look up a specific account by code. Returns null if not found — callers must check.
-          const acc = (code: string) => this.accounts.find((a) => a.code === code) ?? null
+      this._isLoaded = true
+      this._loadError = null
+    } catch (error) {
+      console.error("Failed to load finance data from Supabase.", error)
+      this.clearFinanceState()
+      const msg = error instanceof Error ? error.message : "Could not connect to the server. Finance data is unavailable."
+      if (/token|expired|jwt/i.test(msg)) {
+        this._loadError = null
+      } else {
+        this._loadError = msg
+      }
+      this._isLoaded = true
+    } finally {
+      this._isLoading = false
+      this.notify()
+    }
+  }
+
+  /**
+   * Cross-Module Live Finance Sync Engine
+   */
+  public async syncCrossModule(customSalesIssues?: any[], customPurchaseOrders?: any[]) {
+    try {
+      const [fetchedSI, , fetchedPO, fetchedEC, fetchedPR] = await Promise.all([
+        loadResource<any>("sales_issues").catch(() => []),
+        loadResource<any>("sales_orders").catch(() => []),
+        loadResource<any>("purchase_orders").catch(() => []),
+        loadResource<any>("expense_claims").catch(() => []),
+        loadResource<any>("payroll_records").catch(() => []),
+      ])
+
+      const salesIssues = customSalesIssues || fetchedSI
+      const purchaseOrders = customPurchaseOrders || fetchedPO
+      const expenseClaims = fetchedEC
+      const payrollRecords = fetchedPR
+
+      let hasNewSync = false
+
+      // Helper: look up a specific account by code. Returns null if not found.
+      const acc = (code: string) => this.accounts.find((a) => a.code === code) ?? null
 
           // A. Sync Sales Issues → Sales Revenue & COGS GL Entries
           salesIssues.forEach((si: any) => {
@@ -559,6 +594,58 @@ class FinanceStore {
                 )
                 hasNewSync = true
               }
+            }
+
+            // ── Invoices record sync ──
+            const invId = `INV-SI-${si.id}`
+            const isCash = si.payment_type !== "Credit"
+            const existingInvIdx = this.invoices.findIndex(
+              (inv) => inv.id === invId || inv.invoice_number === `INV-${si.fs_no}` || inv.sales_issue_id === si.id
+            )
+
+            const lineItems: InvoiceLineItem[] = Array.isArray(si.items) && si.items.length > 0
+              ? si.items.map((i: any) => ({
+                  description: i.item_name || "Issued Item",
+                  quantity: Number(i.quantity || 1),
+                  unit_price: Number(i.unit_price || 0),
+                  line_total: Number(i.amount || (i.quantity || 1) * (i.unit_price || 0)),
+                }))
+              : [{ description: `Sales Issue ${si.fs_no || si.id}`, quantity: 1, unit_price: totalAmt, line_total: totalAmt }]
+
+            const mappedInvoice: Invoice = {
+              id: invId,
+              invoice_number: `INV-${si.fs_no || si.reference_no || si.id}`,
+              customer_name: si.customer_name || "Customer",
+              issue_date: si.sale_date || new Date().toISOString().split("T")[0],
+              due_date: si.sale_date || new Date().toISOString().split("T")[0],
+              currency: "ETB",
+              line_items: lineItems,
+              subtotal: totalAmt,
+              tax_amount: Number(si.vat_amount || 0),
+              tax_rate: Number(si.vat_rate || (totalAmt > 0 && si.vat_amount ? Math.round((Number(si.vat_amount) / totalAmt) * 100) : 15)),
+              discount_amount: Number(si.discount_amount || 0),
+              payment_terms: isCash ? "Cash" : "Credit (Net 30)",
+              total: totalAmt,
+              amount_paid: isCash ? totalAmt : 0,
+              balance_due: isCash ? 0 : totalAmt,
+              status: isCash ? "Paid" : "Sent",
+              sales_issue_id: si.id,
+              fs_no: si.fs_no,
+            }
+
+            if (existingInvIdx >= 0) {
+              const current = this.invoices[existingInvIdx]
+              if (isCash && (current.status !== "Paid" || current.balance_due > 0)) {
+                this.invoices[existingInvIdx] = {
+                  ...current,
+                  amount_paid: totalAmt,
+                  balance_due: 0,
+                  status: "Paid",
+                  payment_terms: "Cash",
+                }
+              }
+            } else {
+              this.invoices.push(mappedInvoice)
             }
           })
 
@@ -689,36 +776,18 @@ class FinanceStore {
                   { id: `${jeId}-1`, journal_entry_id: jeId, account_id: salaryAcc.id, debit_amount: payAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
                   { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || null, party_name: pr.employee_name || null }
                 )
-                hasNewSync = true
               }
             }
           })
 
           if (hasNewSync) {
             this.saveToApi().catch((err) => console.error("[FinanceSync] Failed to persist synced GL records:", err))
+            this.notify()
           }
-        }
       } catch (syncErr) {
         console.error("[FinanceSync] Cross-module sync error (GL not modified):", syncErr)
       }
-
-      this._isLoaded = true
-      this._loadError = null
-    } catch (error) {
-      console.error("Failed to load finance data from Supabase.", error)
-      this.clearFinanceState()
-      const msg = error instanceof Error ? error.message : "Could not connect to the server. Finance data is unavailable."
-      if (/token|expired|jwt/i.test(msg)) {
-        this._loadError = null
-      } else {
-        this._loadError = msg
-      }
-    } finally {
-      this._isLoading = false
-      this._loadInProgress = false
-      this.listeners.forEach((l) => l())
     }
-  }
 
   private saveToApi() {
     return persistResources([
@@ -1174,7 +1243,7 @@ class FinanceStore {
 
   // --- Invoice & Payment Actions ---
   public createInvoice(invoiceData: Omit<Invoice, "id" | "amount_paid" | "balance_due">): Invoice {
-    const newId = `inv-${Date.now().toString().slice(-4)}`
+    const newId = `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const subtotal = invoiceData.line_items.reduce((s, item) => s + item.line_total, 0)
     const discount = invoiceData.discount_amount || 0
     const netSubtotal = Math.max(0, subtotal - discount)
@@ -1192,6 +1261,7 @@ class FinanceStore {
       line_items: invoiceData.line_items,
       subtotal,
       tax_amount: tax,
+      tax_rate: invoiceData.tax_rate !== undefined ? invoiceData.tax_rate : (netSubtotal > 0 && tax > 0 ? Math.round((tax / netSubtotal) * 100) : 0),
       discount_amount: discount,
       payment_terms: invoiceData.payment_terms || "Net 30",
       total,
@@ -1208,9 +1278,13 @@ class FinanceStore {
       const salesAcc = this.accounts.find((a) => a.code === "4000") || this.accounts[0]
       const taxAcc = this.accounts.find((a) => a.code === "2210") || this.accounts[0]
 
+      const arAccId = arAcc?.id || "acc-1200"
+      const salesAccId = salesAcc?.id || "acc-4000"
+      const taxAccId = taxAcc?.id || salesAccId
+
       const rawLines: Array<{ account_id: string; debit_amount: number; credit_amount: number; party_type?: any; party_id?: string; party_name?: string }> = [
         {
-          account_id: arAcc.id,
+          account_id: arAccId,
           debit_amount: total,
           credit_amount: 0,
           party_type: "Customer",
@@ -1218,7 +1292,7 @@ class FinanceStore {
           party_name: invoiceData.customer_name,
         },
         {
-          account_id: salesAcc.id,
+          account_id: salesAccId,
           debit_amount: 0,
           credit_amount: netSubtotal,
         },
@@ -1226,7 +1300,7 @@ class FinanceStore {
 
       if (tax > 0) {
         rawLines.push({
-          account_id: taxAcc ? taxAcc.id : salesAcc.id,
+          account_id: taxAccId,
           debit_amount: 0,
           credit_amount: tax,
         })
@@ -1315,6 +1389,28 @@ class FinanceStore {
     this.notify()
   }
 
+  public updateInvoice(id: string, updates: Partial<Invoice>): Invoice | null {
+    let updated: Invoice | null = null
+    this.invoices = this.invoices.map((inv) => {
+      if (inv.id === id || inv.invoice_number === id) {
+        updated = { ...inv, ...updates }
+        return updated
+      }
+      return inv
+    })
+    if (updated) {
+      persistResources([{ resource: "invoices", items: this.invoices }])
+      this.notify()
+    }
+    return updated
+  }
+
+  public deleteInvoice(id: string) {
+    this.invoices = this.invoices.filter((i) => i.id !== id && i.invoice_number !== id)
+    void deleteResource("invoices", id)
+    this.notify()
+  }
+
   public recordPayment(paymentData: {
     linked_invoice_id: string | null
     amount: number
@@ -1324,7 +1420,7 @@ class FinanceStore {
     reference: string
     direction: "Received" | "Made"
   }): { payment: Payment; invoice?: Invoice } {
-    const payId = `PAY-${Date.now().toString().slice(-4)}`
+    const payId = `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const newPayment: Payment = {
       id: payId,
       direction: paymentData.direction,
@@ -1367,6 +1463,8 @@ class FinanceStore {
       // Post corresponding Journal Entry
       const cashAcc = this.accounts.find((a) => a.code === "1000") || this.accounts[0]
       const arAcc = this.accounts.find((a) => a.code === "1200") || this.accounts[0]
+      const cashAccId = cashAcc?.id || "acc-1000"
+      const arAccId = arAcc?.id || "acc-1200"
 
       this.postJournalEntry(
         {
@@ -1379,9 +1477,9 @@ class FinanceStore {
           exchange_rate: 1.0,
         },
         [
-          { account_id: cashAcc.id, debit_amount: paymentData.amount, credit_amount: 0 },
+          { account_id: cashAccId, debit_amount: paymentData.amount, credit_amount: 0 },
           {
-            account_id: arAcc.id,
+            account_id: arAccId,
             debit_amount: 0,
             credit_amount: paymentData.amount,
             party_type: "Customer",
@@ -2198,6 +2296,11 @@ class FinanceStore {
     return [...this.taxRules]
   }
 
+  public getDefaultVatRate(): number {
+    const vatRule = this.taxRules.find((t) => t.type === "VAT/GST" && Number(t.ratePercent || 0) > 0) || this.taxRules.find((t) => t.type === "VAT/GST")
+    return vatRule ? Number(vatRule.ratePercent) : 15
+  }
+
   public addTaxRule(rule: Omit<TaxRule, "id">): TaxRule {
     const newId = `TAX-${String(this.taxRules.length + 1).padStart(2, "0")}`
     const ratePercent = Number(rule.ratePercent || 0)
@@ -2212,6 +2315,7 @@ class FinanceStore {
       is_inclusive: Boolean(rule.isInclusive),
     } as any
     this.taxRules = [...this.taxRules, newRule]
+    persistResources([{ resource: "tax_rules", items: this.taxRules }])
     this.notify()
     return newRule
   }
@@ -2231,12 +2335,14 @@ class FinanceStore {
         is_inclusive: updated.isInclusive !== undefined ? updated.isInclusive : t.isInclusive,
       } as any
     })
+    persistResources([{ resource: "tax_rules", items: this.taxRules }])
     this.notify()
   }
 
   public deleteTaxRule(id: string): { success: boolean; error?: string } {
     this.taxRules = this.taxRules.filter((t) => t.id !== id)
     void deleteResource("tax_rules", id)
+    persistResources([{ resource: "tax_rules", items: this.taxRules }])
     this.notify()
     return { success: true }
   }

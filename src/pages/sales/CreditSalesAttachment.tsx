@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Download, Printer, RefreshCw } from "lucide-react"
 import { GlassCard } from "@/components/GlassCard"
 import { useErpStore } from "@/lib/erpStore"
 import { getSalesIssue, type SalesIssue, type SalesIssueItem } from "@/lib/salesIssuesApi"
 import { API_BASE } from "@/lib/apiPersistence"
+import {
+  printSalesIssueDocument,
+  exportSalesIssueToExcel,
+  type PrintSalesIssueOptions,
+} from "@/lib/exportUtils"
 
 type AttachmentIssue = SalesIssue & {
   station?: string
@@ -45,16 +50,6 @@ function money(value: number) {
 function formatDate(value?: string) {
   if (!value) return "-"
   return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "2-digit" }).format(new Date(value))
-}
-
-function formatDateTime(value = new Date()) {
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(value)
 }
 
 const smallNumbers = [
@@ -135,7 +130,6 @@ export default function CreditSalesAttachment() {
   const [company, setCompany] = useState<CompanyProfile | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const generatedAt = useMemo(() => new Date(), [issue?.id, issue?.updated_at, issue?.total_amount])
 
   useEffect(() => {
     let cancelled = false
@@ -187,13 +181,40 @@ export default function CreditSalesAttachment() {
   const discount = Number(issue?.discount_amount ?? issue?.discount ?? 0)
   const grandTotal = subtotal + vat - discount
 
-  const printDocument = (title = "Credit Sales Attachment") => {
-    const previousTitle = document.title
-    document.title = `${title} - ${issue?.fs_no || issue?.reference_no || "Sales Issue"}`
-    window.print()
-    window.setTimeout(() => {
-      document.title = previousTitle
-    }, 500)
+  const printOptions: PrintSalesIssueOptions = {
+    fsNo: issue?.fs_no || "",
+    referenceNo: issue?.reference_no || "",
+    saleDate: issue?.sale_date || "",
+    customerName: issue?.customer_name || "",
+    tin: customer?.tin || (customer as any)?.tinNumber || "",
+    address: customer?.address || [customer?.region, customer?.country].filter(Boolean).join(", ") || "",
+    accountNo: customer?.accountNumber || (customer as any)?.account_no || issue?.customer_id || "",
+    station: (issue as any)?.station || warehouse?.location || "Headquarters Store",
+    store: (issue as any)?.store || warehouse?.name || issue?.warehouse_id || "WH1",
+    paymentType: issue?.payment_type || "Cash",
+    items: rows.map((item) => {
+      const product = products.find((p) => p.id === item.item_id || p.name === item.item_name)
+      return {
+        id: item.id,
+        itemName: item.item_name || product?.name || item.item_id || "Product",
+        batchNo: item.batch_no || product?.batch || "BATCH-MAIN",
+        packagingUnit: item.packaging_unit || product?.unit || "Box",
+        quantity: Number(item.quantity || 0),
+        unitPrice: Number(item.unit_price || 0),
+        amount: Number(item.amount || item.quantity * item.unit_price || 0),
+      }
+    }),
+    subtotal,
+    vat,
+    discount,
+    grandTotal,
+    amountInWords: numberToWords(grandTotal),
+    company: {
+      name: companyName || "Habtom Kebede Veterinary Drug Import",
+      address: company?.address || "Addis Ababa, Ethiopia",
+      phone: companyPhone || "+251 911 12 21 02",
+      tin: companyTin || "0002847591",
+    },
   }
 
   return (
@@ -207,22 +228,22 @@ export default function CreditSalesAttachment() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => printDocument("Credit Sales Attachment")}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-zinc-950 px-4 text-xs font-black uppercase tracking-wide text-white"
+              onClick={() => printSalesIssueDocument(printOptions)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-zinc-950 px-4 text-xs font-black uppercase tracking-wide text-white hover:bg-zinc-800 transition-all cursor-pointer"
             >
-              <Printer className="size-4" /> Print
+              <Printer className="size-4" /> Print / Save PDF
             </button>
             <button
               type="button"
-              onClick={() => printDocument("Credit Sales Attachment PDF")}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black uppercase tracking-wide text-zinc-800"
+              onClick={() => exportSalesIssueToExcel(printOptions)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black uppercase tracking-wide text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
             >
-              <Download className="size-4" /> Download PDF
+              <Download className="size-4" /> Export Excel
             </button>
             <button
               type="button"
               onClick={() => navigate("/sales/sales-issued")}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black uppercase tracking-wide text-zinc-700"
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black uppercase tracking-wide text-zinc-700 hover:bg-zinc-50 transition-all cursor-pointer"
             >
               <ArrowLeft className="size-4" /> Back to Sales Issue
             </button>
@@ -250,12 +271,16 @@ export default function CreditSalesAttachment() {
                 {company?.address && <p>{company.address}</p>}
                 {companyPhone && <p>Telephone: {companyPhone}</p>}
                 {companyTin && <p>TIN Number: {companyTin}</p>}
+                <div className="mt-3">
+                  <p className="credit-attachment-label">Document Number</p>
+                  <p className="credit-attachment-docno">CSA-{issue.fs_no || issue.reference_no}</p>
+                </div>
               </div>
               <div className="text-right">
-                <p className="credit-attachment-label">Document Number</p>
-                <p className="credit-attachment-docno">CSA-{issue.fs_no || issue.reference_no}</p>
-                <p className="credit-attachment-label mt-3">Generated Date & Time</p>
-                <p className="font-bold">{formatDateTime(generatedAt)}</p>
+                <p className="credit-attachment-label">Reference Number</p>
+                <p className="credit-attachment-docno">{issue.reference_no || "-"}</p>
+                <p className="credit-attachment-label mt-3">FS Number</p>
+                <p className="credit-attachment-docno">{issue.fs_no || "-"}</p>
               </div>
             </header>
 
@@ -318,10 +343,20 @@ export default function CreditSalesAttachment() {
 
             <section className="credit-attachment-lower">
               <div className="credit-attachment-payment">
-                <p className="credit-attachment-section-title">Payment Information</p>
-                <div className="credit-attachment-payment-method">
-                  <span className={issue.payment_type === "Cash" ? "active" : ""}>Cash</span>
-                  <span className={issue.payment_type === "Credit" ? "active" : ""}>Credit</span>
+                <p className="credit-attachment-section-title">Payment Terms / Method</p>
+                <div className="flex items-center gap-8 my-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center size-4 border-2 border-black rounded-[2px] text-[11px] font-black leading-none ${issue.payment_type === "Cash" ? "bg-black text-white" : "bg-white text-transparent"}`}>
+                      ✓
+                    </span>
+                    <span className="text-xs font-black uppercase tracking-wider text-black">Cash</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center size-4 border-2 border-black rounded-[2px] text-[11px] font-black leading-none ${issue.payment_type === "Credit" ? "bg-black text-white" : "bg-white text-transparent"}`}>
+                      ✓
+                    </span>
+                    <span className="text-xs font-black uppercase tracking-wider text-black">Credit</span>
+                  </div>
                 </div>
                 <p className="credit-attachment-label mt-4">Amount In Words</p>
                 <p className="credit-attachment-words">{numberToWords(grandTotal)}</p>
@@ -334,14 +369,6 @@ export default function CreditSalesAttachment() {
                 <div className="grand"><span>Grand Total</span><strong>{money(grandTotal)}</strong></div>
               </div>
             </section>
-
-            <footer className="credit-attachment-footer">
-              <div><span>Prepared By</span></div>
-              <div><span>Approved By</span></div>
-              <div><span>Customer Signature</span></div>
-              <div><span>Company Stamp</span></div>
-              <p>Printed Date & Time: {formatDateTime()}</p>
-            </footer>
           </section>
         )}
       </main>

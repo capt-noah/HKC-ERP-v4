@@ -2,13 +2,13 @@ import { useState, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
-  Printer, 
   X, 
   Pencil, 
   Upload, 
   Paperclip,
   Eye,
-  Trash2
+  Trash2,
+  Download
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -22,6 +22,7 @@ import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { numberToBirrWords } from "@/lib/numberToWords"
+import PurchaseOrderPrintModal from "@/components/purchase/PurchaseOrderPrintModal"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -86,7 +87,7 @@ export default function PurchaseOrders() {
     chequeNo: 130,
     amount: 160,
     status: 110,
-    _actions: 130,
+    _actions: 170,
   }
 
   const columns: TableColumn[] = [
@@ -507,18 +508,20 @@ export default function PurchaseOrders() {
               <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
                 <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                   <button
+                    type="button"
                     onClick={() => handleOpenEditModal(po)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
                     title="Edit Voucher"
                   >
                     <Pencil className="size-3 text-zinc-700" /> Edit
                   </button>
                   <button
+                    type="button"
                     onClick={() => setPrintingPo(po)}
-                    className="p-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200/80 transition-all"
-                    title="Print Voucher"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                    title="Export Payment Voucher"
                   >
-                    <Printer className="size-3.5" />
+                    <Download className="size-3 text-zinc-700" /> Export
                   </button>
                 </div>
               </td>
@@ -1189,152 +1192,11 @@ export default function PurchaseOrders() {
       />
 
       {/* PRINTABLE OFFICIAL VOUCHER SLIP MODAL */}
-      <AnimatePresence>
-        {printingPo && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-8 max-w-3xl w-full shadow-2xl border border-zinc-200 my-8 flex flex-col gap-6 text-zinc-900"
-            >
-              {/* Header Action Bar */}
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3 no-print">
-                <div className="flex items-center gap-2">
-                  <Printer className="size-4 text-zinc-600" />
-                  <span className="font-bold text-xs text-zinc-600">Cheque Payment Voucher Slip</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => window.print()}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-950 text-white font-bold text-xs hover:bg-zinc-800"
-                  >
-                    <Printer className="size-3.5" /> Print Voucher
-                  </button>
-                  <button
-                    onClick={() => setPrintingPo(null)}
-                    className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600"
-                  >
-                    <X className="size-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Official Voucher Printable Area */}
-              <div className="p-6 border-2 border-zinc-900 rounded-2xl flex flex-col gap-5 bg-white">
-                {/* Header */}
-                <div className="text-center border-b-2 border-zinc-900 pb-4">
-                  <h2 className="text-xl font-black uppercase tracking-wider">
-                    HABTOM KEBEDE CHIMSA IMPORT & EXPORT
-                  </h2>
-                  <p className="text-xs font-bold text-zinc-600 uppercase tracking-widest mt-0.5">
-                    CHEQUE PAYMENT VOUCHER
-                  </p>
-                </div>
-
-                {/* Top Info Grid */}
-                <div className="grid grid-cols-2 gap-4 text-xs font-semibold">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-zinc-600">Voucher No:</span>
-                    <span className="font-mono font-black text-zinc-950 border-b border-zinc-400 pb-0.5 flex-1">
-                      {printingPo.voucherNo || printingPo.poNumber}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-zinc-600">Date:</span>
-                    <span className="font-semibold text-zinc-950 border-b border-zinc-400 pb-0.5 flex-1">
-                      {printingPo.date}
-                    </span>
-                  </div>
-                  <div className="col-span-2 flex items-center gap-2">
-                    <span className="font-bold text-zinc-600">Paid To:</span>
-                    <span className="font-bold text-zinc-950 border-b border-zinc-400 pb-0.5 flex-1">
-                      {printingPo.paidTo || printingPo.supplier}
-                    </span>
-                  </div>
-                  <div className="col-span-2 flex items-center gap-2">
-                    <span className="font-bold text-zinc-600">Reason for Payment:</span>
-                    <span className="font-medium text-zinc-900 border-b border-zinc-400 pb-0.5 flex-1">
-                      {printingPo.reasonForPayment || printingPo.category || "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-zinc-600">Cheque No:</span>
-                    <span className="font-mono font-bold text-zinc-950 border-b border-zinc-400 pb-0.5 flex-1">
-                      {printingPo.chequeNo || "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-zinc-600">Amount in Figure:</span>
-                    <span className="font-mono font-black text-zinc-950 border-b border-zinc-400 pb-0.5 flex-1">
-                      ETB {Number(printingPo.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Amount in words */}
-                <div className="text-xs flex items-center gap-2 border-t border-b border-zinc-200 py-2">
-                  <span className="font-bold text-zinc-600 shrink-0">Amount in Words:</span>
-                  <span className="font-bold text-zinc-950 italic flex-1 border-b border-zinc-300 pb-0.5">
-                    {printingPo.amountInWords || numberToBirrWords(printingPo.amount)}
-                  </span>
-                </div>
-
-                {/* Account Entries Table */}
-                <table className="w-full text-xs border border-zinc-900 border-collapse">
-                  <thead>
-                    <tr className="bg-zinc-100 border-b border-zinc-900 font-bold">
-                      <th className="border-r border-zinc-900 py-1.5 px-2 text-left w-[120px]">Account No.</th>
-                      <th className="border-r border-zinc-900 py-1.5 px-2 text-left">Description</th>
-                      <th className="border-r border-zinc-900 py-1.5 px-2 text-right w-[110px]">Debit</th>
-                      <th className="py-1.5 px-2 text-right w-[110px]">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.isArray(printingPo.accountEntries) && printingPo.accountEntries.length > 0 ? (
-                      printingPo.accountEntries.map((row, idx) => (
-                        <tr key={idx} className="border-b border-zinc-300">
-                          <td className="border-r border-zinc-900 py-1.5 px-2 font-mono font-bold">{row.accountCode}</td>
-                          <td className="border-r border-zinc-900 py-1.5 px-2">{row.description || printingPo.reasonForPayment || "—"}</td>
-                          <td className="border-r border-zinc-900 py-1.5 px-2 text-right font-mono font-semibold">
-                            {row.debit > 0 ? Number(row.debit).toLocaleString("en-US", { minimumFractionDigits: 2 }) : ""}
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono font-semibold">
-                            {row.credit > 0 ? Number(row.credit).toLocaleString("en-US", { minimumFractionDigits: 2 }) : ""}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr className="border-b border-zinc-300">
-                        <td className="border-r border-zinc-900 py-1.5 px-2 font-mono font-bold">{printingPo.targetAccountCode || "1410"}</td>
-                        <td className="border-r border-zinc-900 py-1.5 px-2">{printingPo.reasonForPayment || "Payment"}</td>
-                        <td className="border-r border-zinc-900 py-1.5 px-2 text-right font-mono font-semibold">
-                          {Number(printingPo.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono font-semibold"></td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-
-                {/* Attached Files List */}
-                {Array.isArray(printingPo.attachments) && printingPo.attachments.length > 0 && (
-                  <div className="text-xs border border-zinc-200 rounded-xl p-3 bg-zinc-50/60">
-                    <span className="font-bold text-zinc-700 block mb-1">Attached Supporting Documents:</span>
-                    <div className="flex flex-wrap gap-2">
-                      {printingPo.attachments.map((att, idx) => (
-                        <span key={idx} className="font-medium text-zinc-600 bg-white px-2 py-0.5 rounded border border-zinc-200">
-                          {typeof att === "string" ? `File ${idx + 1}` : att.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <PurchaseOrderPrintModal
+        isOpen={!!printingPo}
+        po={printingPo}
+        onClose={() => setPrintingPo(null)}
+      />
 
       {/* DOCUMENT / FILE PREVIEW MODAL */}
       <DocumentPreviewModal

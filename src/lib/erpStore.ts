@@ -1294,8 +1294,9 @@ class ErpStore {
     // Auto-create Customer AR Invoice & Double-Entry GL Entry in Finance Store
     try {
       const invId = `INV-2026-${Date.now().toString().slice(-4)}`
-      const taxAmt = Math.round(so.amount * 0.15)
-      const totalAmt = Math.round(so.amount * 1.15)
+      const vatRate = financeStore.getDefaultVatRate()
+      const taxAmt = Math.round(so.amount * (vatRate / 100))
+      const totalAmt = so.amount + taxAmt
 
       financeStore.createInvoice({
         invoice_number: invId,
@@ -1311,6 +1312,7 @@ class ErpStore {
         })),
         subtotal: so.amount,
         tax_amount: taxAmt,
+        tax_rate: vatRate,
         discount_amount: 0,
         payment_terms: "Net 30",
         total: totalAmt,
@@ -1495,7 +1497,7 @@ class ErpStore {
   // Create Sales Invoice in Finance Store from Sales Order
   public createSalesInvoiceForSalesOrder(
     soId: string,
-    taxPercent = 15,
+    taxPercent?: number,
     paymentTerms = "Net 30"
   ): { success: boolean; error?: string; invoiceId?: string } {
     const so = this.salesOrders.find((s) => s.id === soId)
@@ -1505,8 +1507,9 @@ class ErpStore {
       return { success: false, error: "An invoice has already been generated for this Sales Order." }
     }
 
+    const appliedTaxPercent = taxPercent !== undefined ? taxPercent : financeStore.getDefaultVatRate()
     const subtotal = so.amount
-    const taxAmount = Math.round((subtotal * (taxPercent / 100)) * 100) / 100
+    const taxAmount = Math.round((subtotal * (appliedTaxPercent / 100)) * 100) / 100
     const total = subtotal + taxAmount
 
     const lineItems = so.items.map((i) => ({
@@ -1532,6 +1535,7 @@ class ErpStore {
       line_items: lineItems,
       subtotal,
       tax_amount: taxAmount,
+      tax_rate: appliedTaxPercent,
       discount_amount: 0,
       payment_terms: paymentTerms,
       total,
@@ -1905,13 +1909,14 @@ class ErpStore {
   // Create Supplier Purchase Invoice (Accounts Payable / AP Ledger in Finance)
   public createPurchaseInvoiceForPO(
     poId: string,
-    taxPercent = 15,
+    taxPercent?: number,
     paymentTerms = "Net 30"
   ): { success: boolean; error?: string; invoiceId?: string; journalEntryId?: string } {
     const po = this.purchaseOrders.find((p) => p.id === poId)
     if (!po) return { success: false, error: "Purchase Order not found." }
 
-    const taxAmount = Math.round((po.amount * (taxPercent / 100)) * 100) / 100
+    const appliedTaxPercent = taxPercent !== undefined ? taxPercent : financeStore.getDefaultVatRate()
+    const taxAmount = Math.round((po.amount * (appliedTaxPercent / 100)) * 100) / 100
     const totalAmount = po.amount + taxAmount
 
     // Post AP Journal Entry:

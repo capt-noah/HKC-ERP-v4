@@ -18,6 +18,7 @@ import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
+import { useFinanceStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { type TableColumn } from "@/components/ResizableTable"
@@ -164,9 +165,12 @@ export default function SalesOrders() {
   const [deletingOrder, setDeletingOrder] = useState<SalesOrder | null>(null)
   const [isNewQuotationOpen, setIsNewQuotationOpen] = useState(false)
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
+  const financeStore = useFinanceStore()
+  const taxRules = financeStore.getTaxRules()
+  const defaultVat = financeStore.getDefaultVatRate()
 
   // Billing form state
-  const [taxPercent, setTaxPercent] = useState(0)
+  const [taxPercent, setTaxPercent] = useState(defaultVat)
   const [paymentTerms, setPaymentTerms] = useState("")
 
   // New Sales Order Form State
@@ -182,6 +186,7 @@ export default function SalesOrders() {
   // Staged Attachments
   const [stagedTradePaperName, setStagedTradePaperName] = useState("")
   const [stagedTradePaperUrl, setStagedTradePaperUrl] = useState("")
+  const [isNewlyUploadedTradeLicense, setIsNewlyUploadedTradeLicense] = useState(false)
   const [stagedPaymentAdviceName, setStagedPaymentAdviceName] = useState("")
   const [stagedPaymentAdviceUrl, setStagedPaymentAdviceUrl] = useState("")
 
@@ -869,14 +874,33 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Tax Percent</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={taxPercent}
-                    onChange={(e) => setTaxPercent(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                  />
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Tax Template / Rate</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      onChange={(e) => {
+                        const found = taxRules.find((r) => r.id === e.target.value)
+                        if (found) setTaxPercent(Number(found.ratePercent))
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                    >
+                      <option value="">Select Template...</option>
+                      {taxRules.map((rule) => (
+                        <option key={rule.id} value={rule.id}>
+                          {rule.name} ({rule.ratePercent}%)
+                        </option>
+                      ))}
+                    </select>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        value={taxPercent}
+                        onChange={(e) => setTaxPercent(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none pr-8"
+                      />
+                      <span className="absolute right-3 top-2 text-xs font-bold text-zinc-400">%</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -1175,11 +1199,48 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
                           <FileText className="size-3.5 text-emerald-600" /> Trade License / Business Permit
                         </span>
-                        {stagedTradePaperName ? (
-                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Pre-attached</span>
-                        ) : (
-                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Required</span>
-                        )}
+                        {(() => {
+                          const selectedCust = customers.find(c => c.id === newCustomerId || c.name.toLowerCase() === customerSearchInput.toLowerCase())
+                          const evaluation = selectedCust ? getTradeLicenseStatus(selectedCust) : { status: "missing", daysRemaining: 0 }
+
+                          if (isNewlyUploadedTradeLicense && stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
+                              </span>
+                            )
+                          }
+
+                          if (evaluation.status === "expired" && stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <AlertTriangle className="size-3 text-rose-600" /> Expired License
+                              </span>
+                            )
+                          }
+
+                          if (evaluation.status === "valid" && stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
+                              </span>
+                            )
+                          }
+
+                          if (!stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                Required
+                              </span>
+                            )
+                          }
+
+                          return (
+                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                              Pre-attached
+                            </span>
+                          )
+                        })()}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
                         <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
@@ -1194,6 +1255,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 reader.onload = () => {
                                   setStagedTradePaperName(f.name)
                                   setStagedTradePaperUrl(reader.result as string)
+                                  setIsNewlyUploadedTradeLicense(true)
                                 }
                                 reader.readAsDataURL(f)
                               }
@@ -1550,11 +1612,48 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
                           <FileText className="size-3.5 text-emerald-600" /> Trade License / Business Permit
                         </span>
-                        {stagedTradePaperName ? (
-                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
-                        ) : (
-                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Missing</span>
-                        )}
+                        {(() => {
+                          const selectedCust = customers.find(c => c.id === editingOrder.customerId || c.name === editingOrder.customer)
+                          const evaluation = selectedCust ? getTradeLicenseStatus(selectedCust) : { status: "missing", daysRemaining: 0 }
+
+                          if (isNewlyUploadedTradeLicense && stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
+                              </span>
+                            )
+                          }
+
+                          if (evaluation.status === "expired" && stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <AlertTriangle className="size-3 text-rose-600" /> Expired License
+                              </span>
+                            )
+                          }
+
+                          if (evaluation.status === "valid" && stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
+                              </span>
+                            )
+                          }
+
+                          if (!stagedTradePaperName) {
+                            return (
+                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                Missing
+                              </span>
+                            )
+                          }
+
+                          return (
+                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                              Attached
+                            </span>
+                          )
+                        })()}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
                         <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
@@ -1569,6 +1668,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 reader.onload = () => {
                                   setStagedTradePaperName(f.name)
                                   setStagedTradePaperUrl(reader.result as string)
+                                  setIsNewlyUploadedTradeLicense(true)
                                 }
                                 reader.readAsDataURL(f)
                               }

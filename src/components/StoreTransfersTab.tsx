@@ -112,6 +112,7 @@ export default function StoreTransfersTab() {
   const [formLineItems, setFormLineItems] = useState<TransferLineItem[]>([])
 
   // --- RECEIPT MODAL STATE ---
+  const [receivingTransfer, setReceivingTransfer] = useState<Transfer | null>(null)
   const [isReceiptOpen, setIsReceiptOpen] = useState(false)
   const [receiptMode, setReceiptMode] = useState<"match" | "discrepancy">("match")
   const [discrepancyText, setDiscrepancyText] = useState("")
@@ -122,7 +123,7 @@ export default function StoreTransfersTab() {
 
   // Lock body scroll when modal is open
   useEffect(() => {
-    if (isFormOpen || selectedTransfer !== null || isReceiptOpen) {
+    if (isFormOpen || selectedTransfer !== null || isReceiptOpen || receivingTransfer !== null) {
       document.body.style.overflow = "hidden"
     } else {
       document.body.style.overflow = ""
@@ -130,7 +131,7 @@ export default function StoreTransfersTab() {
     return () => {
       document.body.style.overflow = ""
     }
-  }, [isFormOpen, selectedTransfer, isReceiptOpen])
+  }, [isFormOpen, selectedTransfer, isReceiptOpen, receivingTransfer])
 
   // Live auto-calculated total quantity in form
   const formTotalQuantity = useMemo(() => {
@@ -293,9 +294,9 @@ export default function StoreTransfersTab() {
     setIsFormOpen(false)
   }
 
-  // --- PROCESS RECEIPT CONFIRMATION ---
+  // --- CONFIRM RECEIPT (MATCH OR DISCREPANCY) ---
   const handleConfirmReceipt = () => {
-    if (!selectedTransfer) return
+    if (!receivingTransfer) return
 
     if (receiptMode === "discrepancy" && !discrepancyText.trim()) {
       showToast("Input Required", "warning", "Please specify the discrepancy details.")
@@ -307,7 +308,7 @@ export default function StoreTransfersTab() {
     const newStatus: TransferStatus = receiptMode === "match" ? "Received" : "Discrepancy"
 
     erp.updateTransferStatus(
-      selectedTransfer.reference_number,
+      receivingTransfer.reference_number,
       newStatus,
       currentUserName,
       receiptMode === "discrepancy" ? discrepancyText.trim() : undefined,
@@ -317,25 +318,25 @@ export default function StoreTransfersTab() {
 
     // Stock Ledger Transfer Execution: Deduct from origin and add to destination in product stock breakdown
     if (newStatus === "Received") {
-      selectedTransfer.line_items.forEach((line) => {
+      receivingTransfer.line_items.forEach((line) => {
         const prod = transferProducts.find(p => p.name.toLowerCase() === line.item.toLowerCase() || p.id === line.item)
         if (prod) {
           const qty = Number(line.quantity) || 0
           const currentBreakdown = prod.stockBreakdown || []
-          const toEntry = currentBreakdown.find(sb => sb.warehouse === selectedTransfer.to_warehouse)
+          const toEntry = currentBreakdown.find(sb => sb.warehouse === receivingTransfer.to_warehouse)
 
           const updatedBreakdown = currentBreakdown.map(sb => {
-            if (sb.warehouse === selectedTransfer.from_warehouse) {
+            if (sb.warehouse === receivingTransfer.from_warehouse) {
               return { ...sb, qty: Math.max(0, Number(sb.qty || 0) - qty) }
             }
-            if (sb.warehouse === selectedTransfer.to_warehouse) {
+            if (sb.warehouse === receivingTransfer.to_warehouse) {
               return { ...sb, qty: Number(sb.qty || 0) + qty }
             }
             return sb
           })
 
           if (!toEntry) {
-            updatedBreakdown.push({ warehouse: selectedTransfer.to_warehouse, qty: qty })
+            updatedBreakdown.push({ warehouse: receivingTransfer.to_warehouse, qty: qty })
           }
 
           erp.updateProduct(prod.id, {
@@ -345,15 +346,18 @@ export default function StoreTransfersTab() {
       })
     }
 
+    const refNum = receivingTransfer.reference_number
+    const destWh = receivingTransfer.to_warehouse
+
     setIsProcessingReceipt(false)
     setIsReceiptOpen(false)
-    setSelectedTransfer(null)
+    setReceivingTransfer(null)
     setDiscrepancyText("")
 
     showToast(
       receiptMode === "match" ? "Transfer Receipt Confirmed" : "Discrepancy Logged",
       receiptMode === "match" ? "success" : "warning",
-      `Transfer ${selectedTransfer.reference_number} verified and posted into ${selectedTransfer.to_warehouse} stock.`
+      `Transfer ${refNum} verified and posted into ${destWh} stock.`
     )
   }
 
@@ -505,8 +509,10 @@ export default function StoreTransfersTab() {
                   {canProcessReceipt && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedTransfer(transfer)
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedTransfer(null)
+                        setReceivingTransfer(transfer)
                         setReceiptMode("match")
                         setIsReceiptOpen(true)
                       }}
@@ -668,11 +674,20 @@ export default function StoreTransfersTab() {
                       return (
                         <div
                           key={idx}
-                          className="grid grid-cols-12 gap-2.5 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-700/70 items-center font-semibold"
+                          className="grid grid-cols-12 gap-2.5 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-700/70 items-start font-semibold"
                         >
                           {/* Product Selection */}
                           <div className="col-span-5 space-y-1">
-                            <label className="text-[10px] font-black uppercase text-zinc-400 block">Product</label>
+                            <div className="flex items-center min-h-[16px]">
+                              <label className="text-[10px] font-black uppercase text-zinc-400 block truncate">
+                                Product
+                                {row.item && (
+                                  <span className={`ml-1 font-bold lowercase ${isOverStock ? "text-rose-600" : "text-zinc-500 font-mono"}`}>
+                                    (avail: {avail.toLocaleString()} {row.UOM || "units"})
+                                  </span>
+                                )}
+                              </label>
+                            </div>
                             <input
                               type="text"
                               list="transfer-products-suggestions"
@@ -681,16 +696,13 @@ export default function StoreTransfersTab() {
                               onChange={(e) => handleUpdateLineItem(idx, "item", e.target.value)}
                               className="h-10 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500"
                             />
-                            {row.item && (
-                              <span className={`text-[10px] font-bold block pt-0.5 ${isOverStock ? "text-rose-600" : "text-zinc-400 font-mono"}`}>
-                                Avail in {formFromW}: {avail.toLocaleString()} {row.UOM || "units"}
-                              </span>
-                            )}
                           </div>
 
                           {/* UOM */}
                           <div className="col-span-2 space-y-1">
-                            <label className="text-[10px] font-black uppercase text-zinc-400 block">UOM</label>
+                            <div className="flex items-center min-h-[16px]">
+                              <label className="text-[10px] font-black uppercase text-zinc-400 block">UOM</label>
+                            </div>
                             <input
                               type="text"
                               value={row.UOM || "Pieces"}
@@ -701,7 +713,9 @@ export default function StoreTransfersTab() {
 
                           {/* Quantity */}
                           <div className="col-span-2 space-y-1">
-                            <label className="text-[10px] font-black uppercase text-zinc-400 block">Qty</label>
+                            <div className="flex items-center min-h-[16px]">
+                              <label className="text-[10px] font-black uppercase text-zinc-400 block">Qty</label>
+                            </div>
                             <input
                               type="number"
                               min="1"
@@ -715,7 +729,9 @@ export default function StoreTransfersTab() {
 
                           {/* Remark */}
                           <div className="col-span-2 space-y-1">
-                            <label className="text-[10px] font-black uppercase text-zinc-400 block">Remark</label>
+                            <div className="flex items-center min-h-[16px]">
+                              <label className="text-[10px] font-black uppercase text-zinc-400 block">Remark</label>
+                            </div>
                             <input
                               type="text"
                               placeholder="Batch / note"
@@ -726,11 +742,13 @@ export default function StoreTransfersTab() {
                           </div>
 
                           {/* Remove */}
-                          <div className="col-span-1 text-center pt-4">
+                          <div className="col-span-1 space-y-1 flex flex-col items-center">
+                            <div className="min-h-[16px]" />
                             <button
                               type="button"
                               onClick={() => handleRemoveLineRow(idx)}
-                              className="p-1.5 rounded-lg text-zinc-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              className="h-10 w-10 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 flex items-center justify-center transition-colors cursor-pointer"
+                              title="Remove row"
                             >
                               <Trash2 className="size-4" />
                             </button>
@@ -811,7 +829,7 @@ export default function StoreTransfersTab() {
           DETAIL INSPECTION MODAL (CLEAN DOCUMENT PREVIEW)
           ========================================================================= */}
       <AnimatePresence>
-        {selectedTransfer && !isReceiptOpen && (
+        {selectedTransfer && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
@@ -953,6 +971,9 @@ export default function StoreTransfersTab() {
                   <button
                     type="button"
                     onClick={() => {
+                      const t = selectedTransfer
+                      setSelectedTransfer(null)
+                      setReceivingTransfer(t)
                       setReceiptMode("match")
                       setIsReceiptOpen(true)
                     }}
@@ -971,13 +992,16 @@ export default function StoreTransfersTab() {
           RECEIPT CONFIRMATION MODAL (MATCHING STOCK MODAL DESIGN)
           ========================================================================= */}
       <AnimatePresence>
-        {isReceiptOpen && selectedTransfer && (
+        {isReceiptOpen && receivingTransfer && (
           <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsReceiptOpen(false)}
+              onClick={() => {
+                setIsReceiptOpen(false)
+                setReceivingTransfer(null)
+              }}
               className="absolute inset-0 bg-black/40 backdrop-blur-xs"
             />
 
@@ -995,12 +1019,15 @@ export default function StoreTransfersTab() {
                     Confirm Stock Receipt
                   </h3>
                   <p className="text-xs font-mono font-bold text-zinc-400 mt-0.5">
-                    Ref: {selectedTransfer.reference_number} &bull; Destination: {selectedTransfer.to_warehouse}
+                    Ref: {receivingTransfer.reference_number} &bull; Destination: {receivingTransfer.to_warehouse}
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsReceiptOpen(false)}
+                  onClick={() => {
+                    setIsReceiptOpen(false)
+                    setReceivingTransfer(null)
+                  }}
                   className="size-7 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500 cursor-pointer"
                 >
                   <X className="size-3.5" />
@@ -1073,7 +1100,10 @@ export default function StoreTransfersTab() {
               <div className="pt-5 mt-5 border-t border-zinc-150 dark:border-zinc-800 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setIsReceiptOpen(false)}
+                  onClick={() => {
+                    setIsReceiptOpen(false)
+                    setReceivingTransfer(null)
+                  }}
                   className="h-11 px-5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 cursor-pointer transition-colors"
                 >
                   Cancel

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Edit3, Eye, FileText, Plus, Printer, Send, Trash2, X, Check, Download, AlertTriangle, Lock } from "lucide-react"
-import { useNavigate } from "react-router-dom"
+import { Pencil, FileText, Plus, Send, Trash2, X, Check, Download, AlertTriangle, Lock, Upload, CheckCircle2 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -13,6 +12,9 @@ import { financeStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+import { EditModalHeader } from "@/components/EditModalHeader"
+import SalesIssuePrintModal from "@/components/sales/SalesIssuePrintModal"
 
 export interface ShipmentDocAttachment {
   id: string
@@ -43,8 +45,20 @@ async function fetchShipmentDocs(recordId: string, recordType: string): Promise<
   }
   return []
 }
+
+async function uploadShipmentDoc(doc: Partial<ShipmentDocAttachment>): Promise<ShipmentDocAttachment> {
+  const res = await fetch(`${API_BASE}/api/shipment-documents`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(doc),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to upload shipment document.')
+  }
+  return res.json()
+}
+
 import {
-  cancelSalesIssue,
   createSalesIssue,
   deleteSalesIssue,
   getAvailableBatches,
@@ -79,8 +93,6 @@ function blankItem(): SalesIssueItem {
   return { item_id: "", item_name: "", batch_id: "", batch_no: "", packaging_unit: "", available_quantity: 0, quantity: 0, unit_price: 0, amount: 0 }
 }
 
-
-
 function SalesIssuedSkeletonRows() {
   return (
     <>
@@ -103,7 +115,6 @@ function SalesIssuedSkeletonRows() {
 }
 
 export default function SalesIssued() {
-  const navigate = useNavigate()
   const erp = useErpStore()
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
@@ -117,9 +128,9 @@ export default function SalesIssued() {
   const [batchFilter, setBatchFilter] = useState("ALL")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [selected, setSelected] = useState<SalesIssue | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<SalesIssue | null>(null)
+  const [printingIssue, setPrintingIssue] = useState<SalesIssue | null>(null)
   const [batchOptions, setBatchOptions] = useState<Record<number, AvailableBatch[]>>({})
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([])
 
@@ -131,6 +142,14 @@ export default function SalesIssued() {
   const [warehouseId, setWarehouseId] = useState("")
   const [paymentType, setPaymentType] = useState<PaymentType>("Cash")
   const [items, setItems] = useState<SalesIssueItem[]>([blankItem()])
+
+  // Staged documentation & payment advice
+  const [stagedPaymentAdviceName, setStagedPaymentAdviceName] = useState("")
+  const [stagedPaymentAdviceUrl, setStagedPaymentAdviceUrl] = useState("")
+  const [stagedTradePaperName, setStagedTradePaperName] = useState("")
+  const [stagedTradePaperUrl, setStagedTradePaperUrl] = useState("")
+  const [previewDocUrl, setPreviewDocUrl] = useState("")
+  const [previewDocName, setPreviewDocName] = useState("")
 
   const salesOrders = erp.getSalesOrders()
 
@@ -172,6 +191,11 @@ export default function SalesIssued() {
       setCustomerName("")
       setWarehouseId("")
       setReferenceNo("")
+      setPaymentType("Cash")
+      setStagedPaymentAdviceName("")
+      setStagedPaymentAdviceUrl("")
+      setStagedTradePaperName("")
+      setStagedTradePaperUrl("")
       setItems([blankItem()])
       return
     }
@@ -184,6 +208,25 @@ export default function SalesIssued() {
     setPaymentType(firstSo.paymentType === "Credit" ? "Credit" : "Cash")
     setReferenceNo("")
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
+
+    // Pull attached docs from referenced sales orders
+    const soDocs = soAttachmentsMap[firstSo.id] || []
+    const tradeDoc = soDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+    const adviceDoc = soDocs.find((d) => d.document_type === "Payment Advice")
+    if (tradeDoc) {
+      setStagedTradePaperName(tradeDoc.file_name)
+      setStagedTradePaperUrl(tradeDoc.file_url)
+    } else {
+      setStagedTradePaperName("")
+      setStagedTradePaperUrl("")
+    }
+    if (adviceDoc) {
+      setStagedPaymentAdviceName(adviceDoc.file_name)
+      setStagedPaymentAdviceUrl(adviceDoc.file_url)
+    } else {
+      setStagedPaymentAdviceName("")
+      setStagedPaymentAdviceUrl("")
+    }
 
     const pulledItems: SalesIssueItem[] = []
     activeOrders.forEach((order) => {
@@ -247,6 +290,10 @@ export default function SalesIssued() {
   const openCreate = (preselectedSo?: any) => {
     setEditing(null)
     setFsNo("")
+    setStagedPaymentAdviceName("")
+    setStagedPaymentAdviceUrl("")
+    setStagedTradePaperName("")
+    setStagedTradePaperUrl("")
 
     const isRealSo = Boolean(preselectedSo && typeof preselectedSo === "object" && Array.isArray(preselectedSo.items))
     setReferenceNo("")
@@ -258,6 +305,20 @@ export default function SalesIssued() {
       setWarehouseId(matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse))
       setSelectedSoIds([preselectedSo.id])
       setPaymentType(preselectedSo.paymentType === "Credit" ? "Credit" : "Cash")
+
+      // Pull attached docs from sales order
+      const soDocs = soAttachmentsMap[preselectedSo.id] || []
+      const tradeDoc = soDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+      const adviceDoc = soDocs.find((d) => d.document_type === "Payment Advice")
+      if (tradeDoc) {
+        setStagedTradePaperName(tradeDoc.file_name)
+        setStagedTradePaperUrl(tradeDoc.file_url)
+      }
+      if (adviceDoc) {
+        setStagedPaymentAdviceName(adviceDoc.file_name)
+        setStagedPaymentAdviceUrl(adviceDoc.file_url)
+      }
+
       const pulledItems: SalesIssueItem[] = (preselectedSo.items || []).map((line: any) => {
         const prod = products.find((p) => p.id === line.productId || p.name === line.name)
         const batchNo = prod?.batch || "BATCH-MAIN"
@@ -299,8 +360,8 @@ export default function SalesIssued() {
 
   const openEdit = async (issue: SalesIssue) => {
     const statusLower = (issue.status || "").toLowerCase()
-    if (statusLower === "posted") {
-      showToast("Posted record locked", "warning", "Posted sales issues cannot be edited directly.")
+    if (statusLower === "cancelled") {
+      showToast("Cancelled record locked", "warning", "Cancelled sales issues cannot be edited.")
       return
     }
     try {
@@ -324,6 +385,24 @@ export default function SalesIssued() {
       setCustomerName(detail.customer_name || (detail as any).customer || detail.customer_id || issue.customer_name || "")
       setWarehouseId(normalizedWarehouseId)
       setPaymentType(((detail.payment_type || (detail as any).paymentType || issue.payment_type || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
+
+      // Fetch existing documents for this sales issue and its referenced sales orders
+      const issueDocs = await fetchShipmentDocs(issue.id, "sales_issue")
+      let adviceDoc = issueDocs.find((d) => d.document_type === "Payment Advice")
+      let tradeDoc = issueDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+
+      if (!adviceDoc && issue.reference_no) {
+        const refDocs = await fetchShipmentDocs(issue.reference_no, "sales_order")
+        adviceDoc = refDocs.find((d) => d.document_type === "Payment Advice")
+        if (!tradeDoc) {
+          tradeDoc = refDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+        }
+      }
+
+      setStagedPaymentAdviceName(adviceDoc?.file_name || "")
+      setStagedPaymentAdviceUrl(adviceDoc?.file_url || "")
+      setStagedTradePaperName(tradeDoc?.file_name || "")
+      setStagedTradePaperUrl(tradeDoc?.file_url || "")
 
       const rawItems = (detail.items && detail.items.length > 0) ? detail.items : (issue.items && issue.items.length > 0) ? issue.items : [blankItem()]
       const populatedItems = rawItems.map((item) => {
@@ -367,41 +446,52 @@ export default function SalesIssued() {
     })
     setItems(next)
 
-    if (patch.item_id || patch.batch_no) {
-      const itemId = patch.item_id || next[index].item_id
-      if (itemId && warehouseId) {
-        try {
-          const batches = await getAvailableBatches(itemId, canonicalWarehouseId(warehouseId))
-          setBatchOptions((current) => ({ ...current, [index]: batches }))
-        } catch {
-          setBatchOptions((current) => ({ ...current, [index]: [] }))
-        }
-      }
+    if (patch.item_id && warehouseId) {
+      const batches = await getAvailableBatches(patch.item_id, canonicalWarehouseId(warehouseId)).catch(() => [])
+      setBatchOptions((current) => ({ ...current, [index]: batches }))
     }
   }
 
-  const handleWarehouseChange = (value: string) => {
-    setWarehouseId(canonicalWarehouseId(value))
-    setItems([blankItem()])
-    setBatchOptions({})
+  const handleWarehouseChange = async (nextWarehouseId: string) => {
+    setWarehouseId(nextWarehouseId)
+    const options = await Promise.all(
+      items.map((item) =>
+        item.item_id ? getAvailableBatches(item.item_id, canonicalWarehouseId(nextWarehouseId)).catch(() => []) : Promise.resolve([])
+      )
+    )
+    setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
   }
 
   const handleSave = async () => {
-    if (!fsNo.trim() || !saleDate || !customerName.trim() || !warehouseId) {
-      showToast("Missing details", "warning", "FS No, date, customer, and warehouse are required.")
+    if (!fsNo.trim()) {
+      showToast("FS No required", "warning", "Provide an FS number.")
       return
     }
-    const invalidItem = items.find((item) => {
-      const hasItem = Boolean(item.item_id || item.item_name)
-      const hasBatch = Boolean(item.batch_no)
-      const validQty = Number(item.quantity) > 0
-      const validPrice = Number(item.unit_price) >= 0
-      return !hasItem || !hasBatch || !validQty || !validPrice
-    })
-    if (invalidItem) {
-      showToast("Check item rows", "warning", "Each row needs an item, batch number, valid quantity (> 0), and price.")
+    if (!saleDate) {
+      showToast("Date required", "warning", "Select a sale date.")
       return
     }
+    if (!customerName.trim()) {
+      showToast("Customer required", "warning", "Customer name cannot be empty.")
+      return
+    }
+    if (!warehouseId) {
+      showToast("Warehouse required", "warning", "Pick an active warehouse.")
+      return
+    }
+
+    const isPostedEdit = editing && (editing.status || "").toLowerCase() === "posted"
+
+    if (!isPostedEdit) {
+      const invalidItem = items.some((item) => {
+        return !item.item_id || !item.batch_no || Number(item.quantity) <= 0 || Number(item.unit_price) < 0
+      })
+      if (invalidItem) {
+        showToast("Check item rows", "warning", "Each row needs an item, batch number, valid quantity (> 0), and price.")
+        return
+      }
+    }
+
     const enteredCustomer = customerName.trim()
     const payload = {
       id: editing?.id,
@@ -419,18 +509,66 @@ export default function SalesIssued() {
         batch_id: item.batch_id || item.batch_no || "BATCH-MAIN",
       })),
     }
-    try {
-      if (editing) await updateSalesIssue(editing.id, payload)
-      else await createSalesIssue(payload)
 
-      // Mark linked Sales Orders as Fully Delivered to prevent duplicate issue creation
+    try {
+      if (editing) {
+        await updateSalesIssue(editing.id, payload)
+      } else {
+        await createSalesIssue(payload)
+      }
+
+      // Persist newly attached Payment Advice if uploaded
+      if (stagedPaymentAdviceName && stagedPaymentAdviceUrl) {
+        const issueId = editing?.id || payload.id || fsNo.trim()
+        try {
+          await uploadShipmentDoc({
+            record_id: issueId,
+            record_type: "sales_order",
+            document_type: "Payment Advice",
+            file_name: stagedPaymentAdviceName,
+            file_size: 102400,
+            file_url: stagedPaymentAdviceUrl,
+            uploaded_at: new Date().toISOString(),
+            uploaded_by: "Sales Officer",
+          })
+        } catch (docErr) {
+          console.warn("Payment advice upload notice:", docErr)
+        }
+      }
+
+      // If converted from Credit to Cash, also update referenced Sales Orders in ERP store and linked Invoice in Finance
+      if (editing && paymentType === "Cash") {
+        const refStr = editing.reference_no || ""
+        const linkedOrders = salesOrders.filter((so) => refStr.includes(so.id) || so.id === editing.reference_no)
+        linkedOrders.forEach((so) => {
+          if (so.paymentType !== "Cash") {
+            erp.updateSalesOrder({ ...so, paymentType: "Cash" })
+          }
+        })
+
+        const totalAmt = Number(editing.total_amount || 0)
+        financeStore.updateInvoice(`INV-SI-${editing.id}`, {
+          status: "Paid",
+          amount_paid: totalAmt,
+          balance_due: 0,
+          payment_terms: "Cash",
+        })
+      }
+
+      // Mark linked Sales Orders as Fully Delivered / Shipped to prevent duplicate issue creation
       if (selectedSoIds.length > 0) {
         selectedSoIds.forEach((soId) => {
           erp.updateSalesOrderStage(soId, "Shipped")
         })
       }
 
-      showToast("Sales Issue Saved", "success", `Sales issue ${fsNo} saved successfully.`)
+      showToast(
+        "Sales Issue Saved",
+        "success",
+        isPostedEdit
+          ? `Sales issue ${fsNo} payment terms updated to ${paymentType}${stagedPaymentAdviceName ? " with Payment Advice attached." : "."}`
+          : `Sales issue ${fsNo} saved successfully.`
+      )
       setFormOpen(false)
       await load()
     } catch (err) {
@@ -519,24 +657,6 @@ export default function SalesIssued() {
     })
   }
 
-  const doCancel = (issue: SalesIssue) => {
-    confirm({
-      title: "Cancel Sales Issue?",
-      message: `Cancel ${issue.fs_no}? Cancelled records must not reduce stock.`,
-      isDestructive: true,
-      confirmLabel: "Cancel Issue",
-      onConfirm: async () => {
-        try {
-          await cancelSalesIssue(issue.id)
-          showToast("Sales issue cancelled", "success", `${issue.fs_no} cancelled.`)
-          await load()
-        } catch (err) {
-          showToast("Cancel failed", "warning", err instanceof Error ? err.message : "Could not cancel sales issue.")
-        }
-      },
-    })
-  }
-
   const salesTable = useResizableTable<SalesIssue>(salesIssueColumns, rows, {
     fs_no: 120,
     reference_no: 130,
@@ -547,12 +667,10 @@ export default function SalesIssued() {
     total_quantity: 110,
     unit_price: 110,
     total_amount: 120,
-    _actions: 140,
+    _actions: 210,
   })
 
-  const openAttachment = (issue: SalesIssue) => {
-    navigate(`/sales/sales-issued/${encodeURIComponent(issue.id)}/attachment`, { state: { issue } })
-  }
+  const isPostedEditing = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
 
   return (
     <div className="min-h-screen page-gradient">
@@ -629,14 +747,35 @@ export default function SalesIssued() {
                     <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{Number(row.total_quantity).toLocaleString()}</td>
                     <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
                     <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
-                    <td style={{ width: `${salesTable.colWidths._actions}px` }} className="px-3 py-3 pr-4 truncate">
-                      <div className="flex items-center gap-1 justify-center">
-                        <button onClick={() => setSelected(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="View"><Eye className="size-3.5" /></button>
-                        <button disabled={row.status !== "Draft"} onClick={() => void openEdit(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-35" title="Edit"><Edit3 className="size-3.5" /></button>
-                        <button onClick={() => openAttachment(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Print Attachment"><Printer className="size-3.5" /></button>
-                        {row.status === "Draft" && <button onClick={() => doPost(row)} className="rounded-lg border border-emerald-200 p-1.5 text-emerald-700 hover:bg-emerald-50" title="Post and deduct stock"><Send className="size-3.5" /></button>}
-                        {row.status === "Draft" && <button onClick={() => doDelete(row)} className="rounded-lg border border-rose-200 p-1.5 text-rose-700 hover:bg-rose-50" title="Delete"><Trash2 className="size-3.5" /></button>}
-                        {row.status === "Draft" && <button onClick={() => doCancel(row)} className="rounded-lg border border-zinc-200 p-1.5 text-zinc-600 hover:bg-zinc-50" title="Cancel"><X className="size-3.5" /></button>}
+                    <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
+                      <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          disabled={row.status === "Cancelled"}
+                          onClick={() => void openEdit(row)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer"
+                          title="Edit Sales Issue"
+                        >
+                          <Pencil className="size-3 text-zinc-700" /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPrintingIssue(row)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                          title="Export Sales Issue Voucher"
+                        >
+                          <Download className="size-3 text-zinc-700" /> Export
+                        </button>
+                        {row.status === "Draft" && (
+                          <button
+                            type="button"
+                            onClick={() => doPost(row)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Post and deduct stock"
+                          >
+                            <Send className="size-3 text-emerald-700" /> Post
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -656,11 +795,39 @@ export default function SalesIssued() {
         {formOpen && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             <motion.div className="absolute inset-0 bg-black/35 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setFormOpen(false)} />
-            <motion.div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
-              <div className="mb-5 flex items-start justify-between">
-                <div><h2 className="text-xl font-black">{editing ? "Edit Sales Issue" : "Add Sales Issue"}</h2><p className="text-xs font-semibold text-zinc-500">Amount is calculated automatically per row.</p></div>
-                <button onClick={() => setFormOpen(false)} className="rounded-xl border border-zinc-200 p-2"><X className="size-4" /></button>
-              </div>
+            <motion.div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+              {editing ? (
+                <EditModalHeader
+                  title={isPostedEditing ? `Edit Posted Sales Issue (${editing.fs_no})` : `Edit Sales Issue (${editing.fs_no})`}
+                  subtitle={isPostedEditing ? "Update payment settlement terms from Credit to Cash and attach Payment Advice." : "Amount is calculated automatically per row."}
+                  onClose={() => setFormOpen(false)}
+                  onRequestDelete={editing.status === "Draft" ? () => doDelete(editing) : undefined}
+                  deleteLabel="Delete Sales Issue"
+                />
+              ) : (
+                <div className="mb-5 flex items-start justify-between">
+                  <div>
+                    <h2 className="text-xl font-black text-zinc-950">Add Sales Issue</h2>
+                    <p className="text-xs font-semibold text-zinc-500">Amount is calculated automatically per row.</p>
+                  </div>
+                  <button onClick={() => setFormOpen(false)} className="rounded-xl border border-zinc-200 p-2 hover:bg-zinc-100 transition-colors">
+                    <X className="size-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* POSTED SETTLEMENT NOTICE BANNER */}
+              {isPostedEditing && (
+                <div className="mb-5 p-3.5 bg-blue-50 border border-blue-200 rounded-2xl text-blue-900 text-xs font-semibold flex items-center gap-2.5">
+                  <AlertTriangle className="size-4 text-blue-700 shrink-0" />
+                  <div>
+                    <span className="font-black uppercase tracking-wider block">Posted Record: Stock Deductions Locked</span>
+                    <span className="text-[11px] text-blue-800 block mt-0.5">
+                      Batch stock quantities and accounting journal vouchers are already posted. You can update payment terms (e.g. convert from <strong>Credit</strong> to <strong>Cash</strong>) and attach <strong>Payment Advice</strong>.
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* PULL PENDING SALES ORDERS PICKER BAR */}
               {!editing && pendingSalesOrders.length > 0 && (
@@ -673,7 +840,7 @@ export default function SalesIssued() {
                       </span>
                     </div>
                     <span className="text-[10px] font-bold text-emerald-700">
-                      Select 1 or multiple orders to auto-fill contract items
+                      Select 1 or multiple orders to auto-fill contract items & documents
                     </span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
@@ -743,88 +910,255 @@ export default function SalesIssued() {
                   </div>
                 </div>
               )}
+
+              {/* PRIMARY HEADER INPUTS */}
               <div className="grid gap-4 md:grid-cols-3">
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">FS Number</span>
-                  <input value={fsNo} onChange={(e) => setFsNo(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                  <input
+                    disabled={isPostedEditing}
+                    value={fsNo}
+                    onChange={(e) => setFsNo(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
+                  />
                 </label>
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Ref Number</span>
-                  <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                  <input
+                    disabled={isPostedEditing}
+                    value={referenceNo}
+                    onChange={(e) => setReferenceNo(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
+                  />
                 </label>
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Date</span>
-                  <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                  <input
+                    type="date"
+                    disabled={isPostedEditing}
+                    value={saleDate}
+                    onChange={(e) => setSaleDate(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
+                  />
                 </label>
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Customer</span>
-                  <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold" />
+                  <input
+                    disabled={isPostedEditing}
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
+                  />
                 </label>
                 <label className="space-y-1">
                   <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Warehouse</span>
-                  <select value={warehouseId} onChange={(e) => handleWarehouseChange(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold">
+                  <select
+                    disabled={isPostedEditing}
+                    value={warehouseId}
+                    onChange={(e) => handleWarehouseChange(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
+                  >
                     <option value="">Select warehouse</option>
                     {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name || w.code || w.id}</option>)}
                   </select>
                 </label>
                 <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Payment Type</span>
-                  <select value={paymentType} onChange={(e) => setPaymentType(e.target.value as PaymentType)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold"><option>Cash</option><option>Credit</option></select>
+                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Payment Terms</span>
+                  <select
+                    value={paymentType}
+                    onChange={(e) => setPaymentType(e.target.value as PaymentType)}
+                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-bold bg-white text-zinc-900 cursor-pointer outline-none focus:border-emerald-500"
+                  >
+                    <option value="Cash">Cash (Immediate Settlement)</option>
+                    <option value="Credit">Credit (Receivable)</option>
+                  </select>
                 </label>
               </div>
+
+              {/* DOCUMENTATION & PAYMENT ADVICE ATTACHMENTS SECTION */}
+              <div className="mt-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-wider text-zinc-800 block">
+                      Order Documentation & Payment Advice
+                    </span>
+                    <span className="text-[11px] font-semibold text-zinc-500 block mt-0.5">
+                      {paymentType === "Cash"
+                        ? "Payment Advice is mandatory / recommended for Cash sales proof"
+                        : "Payment Advice is optional for Credit sales (can be attached upon settlement)"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Trade License (read-only preview or inherit) */}
+                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                        <FileText className="size-3.5 text-emerald-600" /> Customer Trade License
+                      </span>
+                      {stagedTradePaperName ? (
+                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                          Attached
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                          Not on file
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between pt-1 text-xs">
+                      <span className="text-[11px] font-mono text-zinc-600 truncate">
+                        {stagedTradePaperName || "No file attached from order"}
+                      </span>
+                      {stagedTradePaperUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewDocUrl(stagedTradePaperUrl)
+                            setPreviewDocName(stagedTradePaperName || "Trade License")
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          View Doc ↗
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Payment Advice Dropzone */}
+                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                        <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
+                      </span>
+                      {stagedPaymentAdviceName ? (
+                        <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                          Attached
+                        </span>
+                      ) : (
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paymentType === "Cash" ? "text-amber-700 bg-amber-50" : "text-zinc-500 bg-zinc-100"}`}>
+                          {paymentType === "Cash" ? "Required for Cash" : "Optional"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                        <Upload className="size-3" /> Select File
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) {
+                              const reader = new FileReader()
+                              reader.onload = () => {
+                                setStagedPaymentAdviceName(f.name)
+                                setStagedPaymentAdviceUrl(reader.result as string)
+                              }
+                              reader.readAsDataURL(f)
+                            }
+                          }}
+                        />
+                      </label>
+                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                        {stagedPaymentAdviceName || "No slip uploaded"}
+                      </span>
+                      {stagedPaymentAdviceUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewDocUrl(stagedPaymentAdviceUrl)
+                            setPreviewDocName(stagedPaymentAdviceName || "Payment Advice")
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          View Doc ↗
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ITEM ROWS */}
               <div className="mt-6 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-black uppercase tracking-wide text-zinc-500">Item Rows</h3>
-                  <button onClick={() => setItems((current) => [...current, blankItem()])} className="inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 px-3 text-xs font-black"><Plus className="size-4" /> Add Item Row</button>
+                  <h3 className="text-xs font-black uppercase tracking-wide text-zinc-500">
+                    {isPostedEditing ? "Item Rows (Locked)" : "Item Rows"}
+                  </h3>
+                  {!isPostedEditing && (
+                    <button onClick={() => setItems((current) => [...current, blankItem()])} className="inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 px-3 text-xs font-black"><Plus className="size-4" /> Add Item Row</button>
+                  )}
                 </div>
                 {items.map((item, index) => (
                   <div key={index} className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-xs font-black text-zinc-500">Row {index + 1}</span>
-                      <button disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35" title="Remove row"><Trash2 className="size-3.5" /></button>
+                      {!isPostedEditing && (
+                        <button disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35" title="Remove row"><Trash2 className="size-3.5" /></button>
+                      )}
                     </div>
                     <div className="grid gap-3 md:grid-cols-12">
                       <label className="md:col-span-6">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Item</span>
-                        <select disabled={!warehouseId} value={item.item_id} onChange={(e) => { const product = selectableProducts.find((p) => p.id === e.target.value); void updateItem(index, { item_id: e.target.value, item_name: product?.name || "", packaging_unit: product?.unit || "", unit_price: product?.sellingPrice || 0, batch_id: "", batch_no: "", available_quantity: 0 }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100">
-                          <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>{selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
+                        {isPostedEditing ? (
+                          <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-700 font-mono">
+                            {item.item_name}
+                          </div>
+                        ) : (
+                          <select disabled={!warehouseId} value={item.item_id} onChange={(e) => { const product = selectableProducts.find((p) => p.id === e.target.value); void updateItem(index, { item_id: e.target.value, item_name: product?.name || "", packaging_unit: product?.unit || "", unit_price: product?.sellingPrice || 0, batch_id: "", batch_no: "", available_quantity: 0 }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100">
+                            <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>{selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        )}
                       </label>
                       <label className="md:col-span-2">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Batch No</span>
-                        <select
-                          value={item.batch_no}
-                          onChange={(e) => {
-                            const rawOpts = batchOptions[index] || []
-                            const batch = rawOpts.find((b) => b.batch_no === e.target.value)
-                            void updateItem(index, {
-                              batch_no: e.target.value,
-                              batch_id: e.target.value,
-                              packaging_unit: batch?.packaging_unit || item.packaging_unit,
-                              available_quantity: batch?.available_quantity || item.available_quantity || 1000,
-                              unit_price: batch?.unit_price ?? item.unit_price,
-                            })
-                          }}
-                          className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold"
-                        >
-                          <option value="">Select batch</option>
-                          {(() => {
-                            const opts = batchOptions[index] || []
-                            const hasSelected = opts.some((b) => b.batch_no === item.batch_no)
-                            const displayOpts = item.batch_no && !hasSelected
-                              ? [{ batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
-                              : opts
-                            return displayOpts.map((b) => (
-                              <option key={b.batch_no} value={b.batch_no}>
-                                {b.batch_no}
-                              </option>
-                            ))
-                          })()}
-                        </select>
+                        {isPostedEditing ? (
+                          <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-700 font-mono">
+                            {item.batch_no || "—"}
+                          </div>
+                        ) : (
+                          <select
+                            value={item.batch_no}
+                            onChange={(e) => {
+                              const rawOpts = batchOptions[index] || []
+                              const batch = rawOpts.find((b) => b.batch_no === e.target.value)
+                              void updateItem(index, {
+                                batch_no: e.target.value,
+                                batch_id: e.target.value,
+                                packaging_unit: batch?.packaging_unit || item.packaging_unit,
+                                available_quantity: batch?.available_quantity || item.available_quantity || 1000,
+                                unit_price: batch?.unit_price ?? item.unit_price,
+                              })
+                            }}
+                            className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold"
+                          >
+                            <option value="">Select batch</option>
+                            {(() => {
+                              const opts = batchOptions[index] || []
+                              const hasSelected = opts.some((b) => b.batch_no === item.batch_no)
+                              const displayOpts = item.batch_no && !hasSelected
+                                ? [{ batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
+                                : opts
+                              return displayOpts.map((b) => (
+                                <option key={b.batch_no} value={b.batch_no}>
+                                  {b.batch_no}
+                                </option>
+                              ))
+                            })()}
+                          </select>
+                        )}
                       </label>
                       <label className="md:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Qty</span>
-                        <input type="number" min="1" value={item.quantity} onChange={(e) => void updateItem(index, { quantity: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold" />
+                        {isPostedEditing ? (
+                          <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-mono font-black text-zinc-700">
+                            {item.quantity}
+                          </div>
+                        ) : (
+                          <input type="number" min="1" value={item.quantity} onChange={(e) => void updateItem(index, { quantity: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold" />
+                        )}
                       </label>
                       <label className="md:col-span-1">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Price</span>
@@ -838,8 +1172,11 @@ export default function SalesIssued() {
                   </div>
                 ))}
               </div>
+
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs font-bold text-zinc-500">Posting deducts the selected batch quantity from inventory in one server transaction.</div>
+                <div className="text-xs font-bold text-zinc-500">
+                  {isPostedEditing ? "Stock balances are already updated in GL ledger." : "Posting deducts the selected batch quantity from inventory in one server transaction."}
+                </div>
                 <div className="flex gap-4 text-sm font-black"><span>Total Quantity: {totalQuantity.toLocaleString()}</span><span>Grand Total: {money(grandTotal)}</span></div>
               </div>
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
@@ -851,18 +1188,20 @@ export default function SalesIssued() {
         )}
       </AnimatePresence>
 
-      {selected && (
-        <div className="fixed bottom-6 right-6 z-[90] w-96 rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl">
-          <div className="flex items-start justify-between"><h3 className="font-black">{selected.fs_no}</h3><button onClick={() => setSelected(null)}><X className="size-4" /></button></div>
-          <p className="mt-2 text-xs font-bold text-zinc-500">{selected.reference_no} · {selected.customer_name}</p>
-          <div className="mt-4 rounded-xl bg-zinc-50 p-4 text-sm font-black">Total: ETB {money(selected.total_amount)}</div>
-          <div className="mt-4 grid gap-2">
-            <button onClick={() => openAttachment(selected)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 text-xs font-black text-white"><FileText className="size-4" /> View Attachment</button>
-            <button onClick={() => openAttachment(selected)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-black text-zinc-800"><Printer className="size-4" /> Print Attachment</button>
-            <button onClick={() => openAttachment(selected)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-800"><FileText className="size-4" /> Generate Attachment</button>
-          </div>
-        </div>
-      )}
+      {/* Document preview modal for inspecting trade licenses & payment advices */}
+      <DocumentPreviewModal
+        isOpen={!!previewDocUrl}
+        onClose={() => setPreviewDocUrl("")}
+        fileUrl={previewDocUrl}
+        fileName={previewDocName}
+      />
+
+      {/* Sales Issue Export & Print Modal */}
+      <SalesIssuePrintModal
+        isOpen={!!printingIssue}
+        issue={printingIssue}
+        onClose={() => setPrintingIssue(null)}
+      />
     </div>
   )
 }

@@ -4,7 +4,7 @@ type Identified = { id?: string }
 
 // In local dev & Plesk single-server deployments, API_BASE is empty so requests use relative paths (/api/...)
 // In separate frontend deployments (e.g. Vercel), VITE_API_URL is set to the remote backend URL (e.g. https://hkc-erp-api.onrender.com).
-const rawApiUrl = (import.meta.env.VITE_API_URL ?? "").trim()
+const rawApiUrl = (typeof import.meta !== "undefined" && import.meta.env ? (import.meta.env.VITE_API_URL ?? "") : "").trim()
 export const API_BASE = (rawApiUrl === "http://localhost:3000" || rawApiUrl === "http://127.0.0.1:3000" || !rawApiUrl) ? "" : rawApiUrl.replace(/\/$/, "")
 
 function itemId(item: Identified, fallbackIndex: number) {

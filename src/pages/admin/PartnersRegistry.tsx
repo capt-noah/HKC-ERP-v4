@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ShieldCheck,
   AlertCircle,
+  AlertTriangle,
   Phone,
   Mail,
   Globe,
@@ -59,7 +60,7 @@ export default function PartnersRegistry() {
   const [custCategory, setCustCategory] = useState("Commercial Union")
   const [custTradePaperName, setCustTradePaperName] = useState("")
   const [custTradePaperUrl, setCustTradePaperUrl] = useState("")
-
+  const [isNewlyUploadedCustLicense, setIsNewlyUploadedCustLicense] = useState(false)
 
   // Preview states
   const [previewUrl, setPreviewUrl] = useState("")
@@ -89,6 +90,7 @@ export default function PartnersRegistry() {
     setCustCategory("Commercial Union")
     setCustTradePaperName("")
     setCustTradePaperUrl("")
+    setIsNewlyUploadedCustLicense(false)
     setEditingCustomer(null)
     setShowAddCustomerModal(true)
   }
@@ -105,6 +107,7 @@ export default function PartnersRegistry() {
     setCustCategory(c.category || "Commercial Union")
     setCustTradePaperName(c.tradePaperFileName || "")
     setCustTradePaperUrl(c.tradePaperUrl || "")
+    setIsNewlyUploadedCustLicense(false)
     setShowAddCustomerModal(true)
   }
 
@@ -152,6 +155,7 @@ export default function PartnersRegistry() {
       } else {
         setCustTradePaperName(file.name)
         setCustTradePaperUrl(url)
+        setIsNewlyUploadedCustLicense(true)
       }
     }
     reader.readAsDataURL(file)
@@ -690,12 +694,54 @@ export default function PartnersRegistry() {
                   <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-800">Trade License / Business Permit</span>
-                      {custTradePaperName && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="size-3" /> Attached
-                        </span>
-                      )}
+                      {(() => {
+                        if (!custTradePaperName) {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                              Not Attached
+                            </span>
+                          )
+                        }
+
+                        if (isNewlyUploadedCustLicense) {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
+                            </span>
+                          )
+                        }
+
+                        if (editingCustomer) {
+                          const evaluation = getTradeLicenseStatus(editingCustomer)
+                          if (evaluation.status === "expired") {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
+                                <AlertTriangle className="size-3 text-rose-600" /> Expired License
+                              </span>
+                            )
+                          }
+                          if (evaluation.status === "valid") {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
+                              </span>
+                            )
+                          }
+                        }
+
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="size-3" /> Attached
+                          </span>
+                        )
+                      })()}
                     </div>
+                    {editingCustomer && getTradeLicenseStatus(editingCustomer).status === "expired" && !isNewlyUploadedCustLicense && custTradePaperName && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
+                        <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
+                        <span>This trade license has expired (&gt;30 days). Please select a renewed file to upload.</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 pt-1">
                       <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
                         <Upload className="size-3" /> Select File
