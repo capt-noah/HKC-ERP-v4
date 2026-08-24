@@ -181,6 +181,35 @@
   z-index: 1;
 }
 
+/* Subtle, high-end organic dotted background pattern overlay and interactive floating shapes */
+.page-gradient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.15;
+  background-image: 
+    radial-gradient(circle, #27272a 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Elegant floating vector line circle in background */
+.page-gradient::after {
+  content: "";
+  position: absolute;
+  top: 15%;
+  right: -5%;
+  width: 500px;
+  height: 500px;
+  border: 1px dashed rgba(0, 0, 0, 0.04);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  animation: slow-spin 120s linear infinite;
+  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.01);
+}
+
 .page-gradient-dark {
   background:
     radial-gradient(circle at 15% 25%, rgba(34, 197, 94, 0.06) 0%, transparent 45%),
@@ -190,6 +219,33 @@
   position: relative;
   overflow-x: hidden;
   z-index: 1;
+}
+
+.page-gradient-dark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  background-image: 
+    radial-gradient(circle, #ffffff 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.page-gradient-dark::after {
+  content: "";
+  position: absolute;
+  top: 15%;
+  right: -5%;
+  width: 500px;
+  height: 500px;
+  border: 1px dashed rgba(255, 255, 255, 0.03);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  animation: slow-spin 120s linear infinite;
+  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.01);
 }
 
 /* Animations for background elements */
