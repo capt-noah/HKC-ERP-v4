@@ -72,7 +72,7 @@ export function DataTable<T>({
   const sortedData = sorted()
 
   return (
-    <GlassCard className="flex flex-col overflow-hidden p-0 border border-zinc-200/80 shadow-md">
+    <GlassCard className="flex flex-col overflow-hidden p-0">
       {/* Header Toolbar */}
       <div className="px-6 pt-6 mb-4">
         <FinanceTableToolbar

@@ -101,8 +101,10 @@ export function FloatingNav({
         {/* 1. Left Pill: Brand Logo */}
         <div
           className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-full shrink-0 transition-all shadow-sm",
-            isDark ? "glass-nav-dark text-white" : "glass-nav text-zinc-950"
+            "flex items-center gap-2.5 px-5 py-2.5 rounded-full border shadow-sm shrink-0",
+            isDark 
+              ? "glass-nav-dark border-white/10 text-white" 
+              : "glass-nav border-white/80 text-black"
           )}
         >
           {brandIcon ?? (
@@ -124,8 +126,10 @@ export function FloatingNav({
             /* Multi-module / Super Admin user: Switch between modules */
             <div
               className={cn(
-                "flex items-center gap-1 p-1.5 rounded-full shrink-0 overflow-x-auto no-scrollbar shadow-sm",
-                isDark ? "glass-nav-dark" : "glass-nav"
+                "flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
+                isDark 
+                  ? "glass-nav-dark border-white/10" 
+                  : "glass-nav border-white/80"
               )}
             >
               {visibleSections.map((section) => {
@@ -154,8 +158,10 @@ export function FloatingNav({
             /* Single-role user: Promote sub-pages directly into the primary top FloatingNav */
             <div
               className={cn(
-                "flex items-center gap-1 p-1.5 rounded-full shrink-0 overflow-x-auto no-scrollbar shadow-sm",
-                isDark ? "glass-nav-dark" : "glass-nav"
+                "flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
+                isDark 
+                  ? "glass-nav-dark border-white/10" 
+                  : "glass-nav border-white/80"
               )}
             >
               {visibleChildren.map((child) => {
@@ -185,8 +191,10 @@ export function FloatingNav({
           {/* 3. Right Pill: Actions (Notification, User Profile) */}
           <div
             className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-full shrink-0 shadow-sm",
-              isDark ? "glass-nav-dark" : "glass-nav"
+              "flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm shrink-0",
+              isDark 
+                ? "glass-nav-dark border-white/10" 
+                : "glass-nav border-white/80"
             )}
           >
             {rightActions ?? (
