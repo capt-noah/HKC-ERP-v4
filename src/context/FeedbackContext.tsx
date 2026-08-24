@@ -2,6 +2,8 @@ import { createContext, useContext, useState, type ReactNode } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { LoadingDots } from "@/components/ui/LoadingDots"
+import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 
 // Toast structure
 export interface FeedbackToast {
@@ -45,6 +47,7 @@ interface FeedbackProviderProps {
 export function FeedbackProvider({ children }: FeedbackProviderProps) {
   const [toasts, setToasts] = useState<FeedbackToast[]>([])
   const [confirmation, setConfirmation] = useState<FeedbackConfirmation | null>(null)
+  const [isConfirming, setIsConfirming] = useState(false)
 
   const showToast = (message: string, type: FeedbackToast["type"] = "success", description?: string) => {
     const id = Math.random().toString(36).substring(2, 9)
@@ -60,14 +63,20 @@ export function FeedbackProvider({ children }: FeedbackProviderProps) {
     setConfirmation(options)
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (confirmation) {
-      confirmation.onConfirm()
-      setConfirmation(null)
+      try {
+        setIsConfirming(true)
+        await Promise.resolve(confirmation.onConfirm())
+        setConfirmation(null)
+      } finally {
+        setIsConfirming(false)
+      }
     }
   }
 
   const handleCancel = () => {
+    if (isConfirming) return
     if (confirmation) {
       if (confirmation.onCancel) confirmation.onCancel()
       setConfirmation(null)
@@ -138,6 +147,7 @@ export function FeedbackProvider({ children }: FeedbackProviderProps) {
       <AnimatePresence>
         {confirmation && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <BodyScrollLock />
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -180,22 +190,24 @@ export function FeedbackProvider({ children }: FeedbackProviderProps) {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                 <button
                   type="button"
+                  disabled={isConfirming}
                   onClick={handleCancel}
-                  className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 active:scale-95 transition-all cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                 >
                   {confirmation.cancelLabel || "Cancel"}
                 </button>
                 <button
                   type="button"
+                  disabled={isConfirming}
                   onClick={handleConfirm}
                   className={cn(
-                    "px-5 py-2.5 rounded-xl text-white text-xs font-extrabold shadow-md active:scale-95 transition-all cursor-pointer",
+                    "min-w-[90px] inline-flex items-center justify-center px-5 py-2.5 rounded-xl text-white text-xs font-extrabold shadow-md active:scale-95 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed",
                     confirmation.isDestructive
                       ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/20"
                       : "bg-emerald-700 hover:bg-emerald-800 shadow-emerald-900/20"
                   )}
                 >
-                  {confirmation.confirmLabel || "Confirm"}
+                  {isConfirming ? <LoadingDots color="bg-white" size="sm" /> : (confirmation.confirmLabel || "Confirm")}
                 </button>
               </div>
             </motion.div>

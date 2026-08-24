@@ -1,26 +1,31 @@
 import { forwardRef } from "react"
+import { motion, type HTMLMotionProps } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { motion } from "framer-motion"
 
-interface GlassCardProps extends React.ComponentPropsWithoutRef<typeof motion.div> {
+interface GlassCardProps extends HTMLMotionProps<"div"> {
   variant?: "light" | "dark"
+  hoverEffect?: boolean
 }
 
 export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(
-  ({ className, variant = "light", initial, animate, transition, whileHover, ...props }, ref) => (
-    <motion.div
-      ref={ref}
-      className={cn(
-        "rounded-[1.75rem] p-6",
-        variant === "dark" ? "glass-card-dark" : "glass-card",
-        className
-      )}
-      initial={initial !== undefined ? initial : { opacity: 0, scale: 0.95 }}
-      animate={animate !== undefined ? animate : { opacity: 1, scale: 1 }}
-      transition={transition !== undefined ? transition : { duration: 0.4, ease: "easeOut" }}
-      whileHover={whileHover !== undefined ? whileHover : { y: -2 }}
-      {...props}
-    />
-  )
+  ({ className, variant = "light", hoverEffect = false, initial, animate, transition, whileHover, children, ...props }, ref) => {
+    return (
+      <motion.div
+        ref={ref}
+        initial={initial}
+        animate={animate}
+        transition={transition}
+        whileHover={whileHover !== undefined ? whileHover : hoverEffect ? { y: -2, transition: { duration: 0.2 } } : undefined}
+        className={cn(
+          "rounded-[1.75rem] p-6 transition-all duration-300",
+          variant === "dark" ? "glass-card-dark" : "glass-card",
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </motion.div>
+    )
+  }
 )
 GlassCard.displayName = "GlassCard"

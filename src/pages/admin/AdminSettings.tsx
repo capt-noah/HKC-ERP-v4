@@ -28,6 +28,7 @@ import {
 import { useErpStore, type Warehouse } from "@/lib/erpStore"
 import { useFinanceStore, type TaxRule } from "@/lib/financeStore"
 import { cn } from "@/lib/utils"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const listContainer = {
@@ -88,6 +89,7 @@ export default function AdminSettings() {
 
   // 5. Warehouse Modal & Editing State
   const [whModalOpen, setWhModalOpen] = useState(false)
+  const [isSavingWh, setIsSavingWh] = useState(false)
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null)
   const [whName, setWhName] = useState("")
   const [whCode, setWhCode] = useState("")
@@ -283,6 +285,7 @@ export default function AdminSettings() {
     }
 
     try {
+      setIsSavingWh(true)
       if (editingWarehouse) {
         await erp.updateWarehouse(editingWarehouse.id, {
           name: whName.trim(),
@@ -311,6 +314,8 @@ export default function AdminSettings() {
       setWhModalOpen(false)
     } catch (err: any) {
       showToast("Save Failed", "warning", err.message || "Failed to save warehouse.")
+    } finally {
+      setIsSavingWh(false)
     }
   }
 
@@ -1277,16 +1282,20 @@ export default function AdminSettings() {
 
               <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-black/5">
                 <button
+                  type="button"
+                  disabled={isSavingWh}
                   onClick={() => setWhModalOpen(false)}
-                  className="px-4 py-2 rounded-2xl border border-black/10 text-xs font-bold text-gray-600 hover:bg-gray-50"
+                  className="px-4 py-2 rounded-2xl border border-black/10 text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
+                  disabled={isSavingWh}
                   onClick={handleSaveWarehouse}
-                  className="px-5 py-2 rounded-2xl bg-black text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
+                  className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-2xl bg-black text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {editingWarehouse ? "Save Changes" : "Create Warehouse"}
+                  {isSavingWh ? <LoadingDots color="bg-white" size="sm" /> : (editingWarehouse ? "Save Changes" : "Create Warehouse")}
                 </button>
               </div>
             </motion.div>

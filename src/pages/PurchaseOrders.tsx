@@ -23,6 +23,7 @@ import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { numberToBirrWords } from "@/lib/numberToWords"
 import PurchaseOrderPrintModal from "@/components/purchase/PurchaseOrderPrintModal"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -46,6 +47,8 @@ export default function PurchaseOrders() {
   const [editingPo, setEditingPo] = useState<PurchaseOrder | null>(null)
   const [deletingPo, setDeletingPo] = useState<PurchaseOrder | null>(null)
   const [printingPo, setPrintingPo] = useState<PurchaseOrder | null>(null)
+  const [isSubmittingVoucher, setIsSubmittingVoucher] = useState(false)
+  const [isSavingEditVoucher, setIsSavingEditVoucher] = useState(false)
 
   // Document Preview State
   const [previewUrl, setPreviewUrl] = useState("")
@@ -301,15 +304,22 @@ export default function PurchaseOrders() {
       statusColor: status === "PAID" ? "bg-emerald-500" : "bg-amber-500",
       attachments,
     }
-    erp.addPurchaseOrder(newPo)
-    showToast(
-      "Voucher Created",
-      "success",
-      status === "PAID"
-        ? `Payment Voucher ${voucherNo} has been registered and posted to the General Ledger.`
-        : `Payment Voucher ${voucherNo} saved as Draft.`
-    )
-    setIsCreateModalOpen(false)
+    try {
+      setIsSubmittingVoucher(true)
+      erp.addPurchaseOrder(newPo)
+      showToast(
+        "Voucher Created",
+        "success",
+        status === "PAID"
+          ? `Payment Voucher ${voucherNo} has been registered and posted to the General Ledger.`
+          : `Payment Voucher ${voucherNo} saved as Draft.`
+      )
+      setIsCreateModalOpen(false)
+    } catch (err) {
+      showToast("Create Failed", "warning", "Could not create payment voucher.")
+    } finally {
+      setIsSubmittingVoucher(false)
+    }
   }
 
   // Save Edit Voucher
@@ -346,32 +356,39 @@ export default function PurchaseOrders() {
     const primaryRow = enrichedRows[0]
     const amountInWords = numberToBirrWords(numericAmount)
 
-    erp.updatePurchaseOrder(editingPo.id, {
-      voucherNo: voucherNo.trim(),
-      poNumber: voucherNo.trim(),
-      date: voucherDate,
-      paidTo: paidTo.trim(),
-      supplier: paidTo.trim(),
-      reasonForPayment: reasonForPayment.trim(),
-      targetAccountId: primaryRow?.accountId,
-      targetAccountCode: primaryRow?.accountCode || "1410",
-      targetAccountName: primaryRow?.accountName || "Inventory Asset",
-      chequeNo: chequeNo.trim(),
-      amount: numericAmount,
-      amountInWords,
-      accountEntries: enrichedRows,
-      status,
-      statusColor: status === "PAID" ? "bg-emerald-500" : "bg-amber-500",
-      attachments,
-    })
-    showToast(
-      "Voucher Updated",
-      "success",
-      status === "PAID"
-        ? `Payment Voucher ${voucherNo} updated and synced with the General Ledger.`
-        : `Payment Voucher ${voucherNo} updated.`
-    )
-    setIsEditModalOpen(false)
+    try {
+      setIsSavingEditVoucher(true)
+      erp.updatePurchaseOrder(editingPo.id, {
+        voucherNo: voucherNo.trim(),
+        poNumber: voucherNo.trim(),
+        date: voucherDate,
+        paidTo: paidTo.trim(),
+        supplier: paidTo.trim(),
+        reasonForPayment: reasonForPayment.trim(),
+        targetAccountId: primaryRow?.accountId,
+        targetAccountCode: primaryRow?.accountCode || "1410",
+        targetAccountName: primaryRow?.accountName || "Inventory Asset",
+        chequeNo: chequeNo.trim(),
+        amount: numericAmount,
+        amountInWords,
+        accountEntries: enrichedRows,
+        status,
+        statusColor: status === "PAID" ? "bg-emerald-500" : "bg-amber-500",
+        attachments,
+      })
+      showToast(
+        "Voucher Updated",
+        "success",
+        status === "PAID"
+          ? `Payment Voucher ${voucherNo} updated and synced with the General Ledger.`
+          : `Payment Voucher ${voucherNo} updated.`
+      )
+      setIsEditModalOpen(false)
+    } catch (err) {
+      showToast("Update Failed", "warning", "Could not update payment voucher.")
+    } finally {
+      setIsSavingEditVoucher(false)
+    }
   }
 
   // Delete Voucher
@@ -546,7 +563,7 @@ export default function PurchaseOrders() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
               {/* Header */}
               <div className="flex items-start justify-between mb-4">
@@ -841,16 +858,18 @@ export default function PurchaseOrders() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
+                    disabled={isSubmittingVoucher}
                     onClick={() => setIsCreateModalOpen(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
-                    className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
+                    disabled={isSubmittingVoucher}
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Create Voucher
+                    {isSubmittingVoucher ? <LoadingDots color="bg-white" size="sm" /> : "Create Voucher"}
                   </button>
                 </div>
               </form>
@@ -875,7 +894,7 @@ export default function PurchaseOrders() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
               {/* Header with 3-Dot Options Dropdown */}
               <EditModalHeader
@@ -1163,16 +1182,18 @@ export default function PurchaseOrders() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
+                    disabled={isSavingEditVoucher}
                     onClick={() => setIsEditModalOpen(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
-                    className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
+                    disabled={isSavingEditVoucher}
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Save Changes
+                    {isSavingEditVoucher ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
                   </button>
                 </div>
               </form>

@@ -1,5 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion"
 import { Trash2, X } from "lucide-react"
+import { LoadingDots } from "@/components/ui/LoadingDots"
+import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 
 export interface RecordDeleteModalProps {
   isOpen: boolean
@@ -26,6 +28,7 @@ export function RecordDeleteModal({
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <BodyScrollLock />
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -90,10 +93,16 @@ export function RecordDeleteModal({
                 type="button"
                 disabled={isDeleting}
                 onClick={onConfirmDelete}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-extrabold shadow-md shadow-rose-600/20 transition-all cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-extrabold shadow-md shadow-rose-600/20 transition-all cursor-pointer min-w-[120px]"
               >
-                <Trash2 className="size-3.5" />
-                {isDeleting ? "Deleting..." : "Delete Record"}
+                {isDeleting ? (
+                  <LoadingDots color="bg-white" size="sm" />
+                ) : (
+                  <>
+                    <Trash2 className="size-3.5" />
+                    <span>Delete Record</span>
+                  </>
+                )}
               </button>
             </div>
           </motion.div>

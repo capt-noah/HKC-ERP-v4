@@ -26,6 +26,7 @@ import { useErpStore, getTradeLicenseStatus, type Customer, type Supplier } from
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -44,10 +45,12 @@ export default function PartnersRegistry() {
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null)
+  const [isSubmittingCustomer, setIsSubmittingCustomer] = useState(false)
 
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [deletingSupplier, setDeletingSupplier] = useState<Supplier | null>(null)
+  const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false)
 
   // Customer Form State
   const [custName, setCustName] = useState("")
@@ -168,44 +171,51 @@ export default function PartnersRegistry() {
       return
     }
 
-    if (editingCustomer) {
-      const isNewFile = custTradePaperUrl !== (editingCustomer.tradePaperUrl || "")
-      const uploadedAt = isNewFile ? new Date().toISOString() : editingCustomer.tradePaperUploadedAt
+    try {
+      setIsSubmittingCustomer(true)
+      if (editingCustomer) {
+        const isNewFile = custTradePaperUrl !== (editingCustomer.tradePaperUrl || "")
+        const uploadedAt = isNewFile ? new Date().toISOString() : editingCustomer.tradePaperUploadedAt
 
-      erp.updateCustomer(editingCustomer.id, {
-        name: custName.trim(),
-        country: custCountry,
-        region: custRegion,
-        contactPerson: custContactPerson,
-        phone: custPhone,
-        email: custEmail,
-        address: custAddress,
-        category: custCategory,
-        tradePaperFileName: custTradePaperName,
-        tradePaperUrl: custTradePaperUrl,
-        tradePaperUploadedAt: uploadedAt,
-      })
-      showToast("Customer Updated", "success", `Customer ${custName} successfully updated in registry.`)
-    } else {
-      const hasFile = !!custTradePaperUrl
-      const newCust: Customer = {
-        id: `CUST-${Date.now().toString().slice(-4)}`,
-        name: custName.trim(),
-        country: custCountry,
-        region: custRegion,
-        contactPerson: custContactPerson,
-        phone: custPhone,
-        email: custEmail,
-        address: custAddress,
-        category: custCategory,
-        tradePaperFileName: custTradePaperName,
-        tradePaperUrl: custTradePaperUrl,
-        tradePaperUploadedAt: hasFile ? new Date().toISOString() : undefined,
+        erp.updateCustomer(editingCustomer.id, {
+          name: custName.trim(),
+          country: custCountry,
+          region: custRegion,
+          contactPerson: custContactPerson,
+          phone: custPhone,
+          email: custEmail,
+          address: custAddress,
+          category: custCategory,
+          tradePaperFileName: custTradePaperName,
+          tradePaperUrl: custTradePaperUrl,
+          tradePaperUploadedAt: uploadedAt,
+        })
+        showToast("Customer Updated", "success", `Customer ${custName} successfully updated in registry.`)
+      } else {
+        const hasFile = !!custTradePaperUrl
+        const newCust: Customer = {
+          id: `CUST-${Date.now().toString().slice(-4)}`,
+          name: custName.trim(),
+          country: custCountry,
+          region: custRegion,
+          contactPerson: custContactPerson,
+          phone: custPhone,
+          email: custEmail,
+          address: custAddress,
+          category: custCategory,
+          tradePaperFileName: custTradePaperName,
+          tradePaperUrl: custTradePaperUrl,
+          tradePaperUploadedAt: hasFile ? new Date().toISOString() : undefined,
+        }
+        erp.addCustomer(newCust)
+        showToast("Customer Added", "success", `New customer ${custName} added to registry.`)
       }
-      erp.addCustomer(newCust)
-      showToast("Customer Added", "success", `New customer ${custName} added to registry.`)
+      setShowAddCustomerModal(false)
+    } catch (err) {
+      showToast("Save Error", "warning", "Failed to save customer.")
+    } finally {
+      setIsSubmittingCustomer(false)
     }
-    setShowAddCustomerModal(false)
   }
 
   const handleSaveSupplier = (e: React.FormEvent) => {
@@ -215,44 +225,50 @@ export default function PartnersRegistry() {
       return
     }
 
-    if (editingSupplier) {
-      erp.updateSupplier(editingSupplier.id, {
-        name: suppName.trim(),
-        country: suppCountry,
-        city: suppCity,
-        contactPerson: suppContactPerson,
-        phone: suppPhone,
-        email: suppEmail,
-        address: suppAddress,
-        category: suppCategory,
-        taxId: suppTaxId,
-        tradePaperFileName: suppTradePaperName,
-        tradePaperUrl: suppTradePaperUrl,
-      })
-      showToast("Supplier Updated", "success", `Supplier ${suppName} successfully updated in registry.`)
-    } else {
-      const newSupp: Supplier = {
-        id: `SUPP-${Date.now().toString().slice(-4)}`,
-        name: suppName.trim(),
-        country: suppCountry,
-        city: suppCity,
-        contactPerson: suppContactPerson,
-        phone: suppPhone,
-        email: suppEmail,
-        address: suppAddress,
-        category: suppCategory,
-        taxId: suppTaxId,
-        warehouseTarget: "WH1",
-        rating: "A",
-        status: "Active",
-        tradePaperFileName: suppTradePaperName,
-        tradePaperUrl: suppTradePaperUrl,
+    try {
+      setIsSubmittingSupplier(true)
+      if (editingSupplier) {
+        erp.updateSupplier(editingSupplier.id, {
+          name: suppName.trim(),
+          country: suppCountry,
+          city: suppCity,
+          contactPerson: suppContactPerson,
+          phone: suppPhone,
+          email: suppEmail,
+          address: suppAddress,
+          category: suppCategory,
+          taxId: suppTaxId,
+          tradePaperFileName: suppTradePaperName,
+          tradePaperUrl: suppTradePaperUrl,
+        })
+        showToast("Supplier Updated", "success", `Supplier ${suppName} successfully updated in registry.`)
+      } else {
+        const newSupp: Supplier = {
+          id: `SUPP-${Date.now().toString().slice(-4)}`,
+          name: suppName.trim(),
+          country: suppCountry,
+          city: suppCity,
+          contactPerson: suppContactPerson,
+          phone: suppPhone,
+          email: suppEmail,
+          address: suppAddress,
+          category: suppCategory,
+          taxId: suppTaxId,
+          warehouseTarget: "WH1",
+          rating: "A",
+          status: "Active",
+          tradePaperFileName: suppTradePaperName,
+          tradePaperUrl: suppTradePaperUrl,
+        }
+        erp.addSupplier(newSupp)
+        showToast("Supplier Added", "success", `New supplier ${suppName} added to registry.`)
       }
-      erp.addSupplier(newSupp)
-      showToast("Supplier Added", "success", `New Supplier ${suppName} onboarded to registry.`)
+      setShowAddSupplierModal(false)
+    } catch (err) {
+      showToast("Save Error", "warning", "Failed to save supplier.")
+    } finally {
+      setIsSubmittingSupplier(false)
     }
-
-    setShowAddSupplierModal(false)
   }
 
   const handleDeleteCustomer = (c: Customer) => {
@@ -592,7 +608,7 @@ export default function PartnersRegistry() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
               <EditModalHeader
                 title={editingCustomer ? `Edit Customer: ${editingCustomer.name}` : "Onboard New Customer"}
@@ -768,16 +784,18 @@ export default function PartnersRegistry() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button
                     type="button"
+                    disabled={isSubmittingCustomer}
                     onClick={() => setShowAddCustomerModal(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md"
+                    disabled={isSubmittingCustomer}
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {editingCustomer ? "Save Changes" : "Create Customer"}
+                    {isSubmittingCustomer ? <LoadingDots color="bg-white" size="sm" /> : (editingCustomer ? "Save Changes" : "Create Customer")}
                   </button>
                 </div>
               </form>
@@ -794,7 +812,7 @@ export default function PartnersRegistry() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
               <EditModalHeader
                 title={editingSupplier ? `Edit Supplier: ${editingSupplier.name}` : "Onboard New Supplier"}
@@ -922,16 +940,18 @@ export default function PartnersRegistry() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button
                     type="button"
+                    disabled={isSubmittingSupplier}
                     onClick={() => setShowAddSupplierModal(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-full bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 shadow-md"
+                    disabled={isSubmittingSupplier}
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {editingSupplier ? "Save Changes" : "Create Supplier"}
+                    {isSubmittingSupplier ? <LoadingDots color="bg-white" size="sm" /> : (editingSupplier ? "Save Changes" : "Create Supplier")}
                   </button>
                 </div>
               </form>

@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from "react-router-dom"
 import { useAuthStore } from "@/lib/authStore"
 import { API_BASE } from "@/lib/apiPersistence"
 import { useFeedback } from "@/context/FeedbackContext"
-import { KeyRound, User, Loader2, Eye, EyeOff, AlertCircle } from "lucide-react"
+import { KeyRound, User, Eye, EyeOff, AlertCircle } from "lucide-react"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 
 export default function Login() {
   const [username, setUsername] = useState("")
@@ -151,10 +152,10 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-bold rounded-2xl text-white bg-green-700 hover:bg-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700 transition-all active:scale-95 shadow-md disabled:opacity-70 disabled:scale-100"
+              className="group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-bold rounded-2xl text-white bg-green-700 hover:bg-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-700 transition-all active:scale-95 shadow-md disabled:opacity-70 disabled:scale-100 disabled:cursor-not-allowed"
             >
               {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <LoadingDots color="bg-white" size="md" />
               ) : (
                 "Login"
               )}

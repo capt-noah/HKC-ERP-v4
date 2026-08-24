@@ -101,9 +101,9 @@ export function FloatingNav({
         {/* 1. Left Pill: Brand Logo */}
         <div
           className={cn(
-            "flex items-center gap-2.5 px-5 py-2.5 rounded-full border shadow-sm shrink-0",
-            isDark 
-              ? "glass-nav-dark border-white/10 text-white" 
+            "h-[46px] flex items-center gap-2.5 px-4 rounded-full border shadow-sm text-black shrink-0",
+            isDark
+              ? "glass-nav-dark border-white/10 text-white"
               : "glass-nav border-white/80 text-black"
           )}
         >
@@ -111,7 +111,7 @@ export function FloatingNav({
             <img
               src="/hkc_logo.png"
               alt="HKC Logo"
-              className="h-8 md:h-9 w-auto object-contain shrink-0"
+              className="h-7 w-auto object-contain shrink-0"
             />
           )}
           <span className="font-bold text-sm tracking-tight whitespace-nowrap text-green-700 dark:text-green-400">
@@ -126,9 +126,9 @@ export function FloatingNav({
             /* Multi-module / Super Admin user: Switch between modules */
             <div
               className={cn(
-                "flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
-                isDark 
-                  ? "glass-nav-dark border-white/10" 
+                "h-[46px] flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
+                isDark
+                  ? "glass-nav-dark border-white/10"
                   : "glass-nav border-white/80"
               )}
             >
@@ -139,7 +139,7 @@ export function FloatingNav({
                     key={section.label}
                     to={section.path}
                     className={cn(
-                      "px-4 py-2 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
+                      "h-[36px] flex items-center px-4 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
                       isActive
                         ? isDark
                           ? "bg-white text-black shadow-md font-bold scale-[1.03]"
@@ -158,9 +158,9 @@ export function FloatingNav({
             /* Single-role user: Promote sub-pages directly into the primary top FloatingNav */
             <div
               className={cn(
-                "flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
-                isDark 
-                  ? "glass-nav-dark border-white/10" 
+                "h-[46px] flex items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
+                isDark
+                  ? "glass-nav-dark border-white/10"
                   : "glass-nav border-white/80"
               )}
             >
@@ -171,7 +171,7 @@ export function FloatingNav({
                     key={child.path}
                     to={child.path}
                     className={cn(
-                      "px-4 py-2 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
+                      "h-[36px] flex items-center px-4 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
                       isChildActive
                         ? isDark
                           ? "bg-white text-black shadow-md font-bold scale-[1.03]"
@@ -191,10 +191,10 @@ export function FloatingNav({
           {/* 3. Right Pill: Actions (Notification, User Profile) */}
           <div
             className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm shrink-0",
-              isDark 
-                ? "glass-nav-dark border-white/10" 
-                : "glass-nav border-white/80"
+              "h-[46px] flex items-center gap-2 px-3 rounded-full border shadow-sm shrink-0",
+              isDark
+                ? "glass-nav-dark border-white/10 text-white"
+                : "glass-nav border-white/80 text-black"
             )}
           >
             {rightActions ?? (

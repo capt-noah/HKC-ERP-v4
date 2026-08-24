@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { useAuthStore } from "@/lib/authStore"
 import { calculateProcessingServiceFee } from "@/lib/processingFeeCalculator"
 import {
@@ -538,7 +539,7 @@ export default function ProcessingServices() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.96, y: 12 }}
                 transition={{ duration: 0.2 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200 dark:border-zinc-800"
+                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 dark:border-zinc-800"
               >
                 <EditModalHeader
                   title={`Edit Processing Service: ${editingOrder.reference_number || editingOrder.id}`}
@@ -915,8 +916,9 @@ export default function ProcessingServices() {
                   <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
                     <button
                       type="button"
+                      disabled={isSavingEdit}
                       onClick={() => setEditingOrder(null)}
-                      className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-600 font-bold hover:bg-zinc-100"
+                      className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-600 font-bold hover:bg-zinc-100 disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -924,9 +926,9 @@ export default function ProcessingServices() {
                       type="button"
                       disabled={isSavingEdit}
                       onClick={handleSaveEdit}
-                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50"
+                      className="min-w-[140px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {isSavingEdit ? "Saving..." : "Save Order Changes"}
+                      {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Order Changes"}
                     </button>
                   </div>
                 </div>
@@ -944,7 +946,7 @@ export default function ProcessingServices() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.96, y: 12 }}
                 transition={{ duration: 0.2 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200 dark:border-zinc-800"
+                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 dark:border-zinc-800"
               >
                 <div className="flex items-center justify-between pb-4 mb-4 border-b border-zinc-200 dark:border-zinc-800">
                   <div>
@@ -1136,9 +1138,9 @@ export default function ProcessingServices() {
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 shadow-md"
+                      className="min-w-[140px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {isSubmitting ? "Creating..." : "Save Service Order"}
+                      {isSubmitting ? <LoadingDots color="bg-white" size="sm" /> : "Save Service Order"}
                     </button>
                   </div>
                 </form>

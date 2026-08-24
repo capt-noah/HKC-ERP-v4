@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Mail, Users, UserX, Edit, Loader2, Eye, EyeOff } from "lucide-react"
+import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Mail, Users, UserX, Edit, Eye, EyeOff } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { cn } from "@/lib/utils"
 import { useFeedback } from "@/context/FeedbackContext"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { loadResource, updateResource, deleteResource, API_BASE } from "@/lib/apiPersistence"
 import type { Role } from "@/lib/authStore"
 
@@ -551,7 +552,7 @@ export default function UserManagement() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar"
           >
             <button
               onClick={() => setShowAddModal(false)}
@@ -757,9 +758,9 @@ export default function UserManagement() {
                 <button
                   type="submit"
                   disabled={actionLoading || getPasswordStrength(newUser.password).label !== "Strong"}
-                  className="flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
+                  className="min-w-[110px] flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
-                  {actionLoading ? <Loader2 className="size-3.5 animate-spin" /> : "Save User"}
+                  {actionLoading ? <LoadingDots color="bg-white" size="sm" /> : "Save User"}
                 </button>
               </div>
             </form>
@@ -773,7 +774,7 @@ export default function UserManagement() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar"
           >
             <button
               onClick={() => {
@@ -984,9 +985,9 @@ export default function UserManagement() {
                 <button
                   type="submit"
                   disabled={actionLoading || (editPassword !== "" && getPasswordStrength(editPassword).label !== "Strong")}
-                  className="flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
+                  className="min-w-[125px] flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
                 >
-                  {actionLoading ? <Loader2 className="size-3.5 animate-spin" /> : "Save Changes"}
+                  {actionLoading ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
                 </button>
               </div>
             </form>

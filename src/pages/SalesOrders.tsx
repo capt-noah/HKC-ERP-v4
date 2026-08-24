@@ -26,6 +26,7 @@ import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DataTable } from "@/components/DataTable"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 
 export interface ShipmentDocAttachment {
   id: string
@@ -162,6 +163,9 @@ export default function SalesOrders() {
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false)
   const [isEditOrderOpen, setIsEditOrderOpen] = useState(false)
   const [editingOrder, setEditingOrder] = useState<SalesOrder | null>(null)
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
+  const [isSavingEditOrder, setIsSavingEditOrder] = useState(false)
+  const [isSubmittingQuotation, setIsSubmittingQuotation] = useState(false)
   const [deletingOrder, setDeletingOrder] = useState<SalesOrder | null>(null)
   const [isNewQuotationOpen, setIsNewQuotationOpen] = useState(false)
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
@@ -449,13 +453,20 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
-    // Refresh attachments map for order
-    const updatedDocs = await fetchShipmentDocs(editingOrder.id, "sales_order")
-    setSoAttachmentsMap((prev) => ({ ...prev, [editingOrder.id]: updatedDocs }))
+    try {
+      setIsSavingEditOrder(true)
+      // Refresh attachments map for order
+      const updatedDocs = await fetchShipmentDocs(editingOrder.id, "sales_order")
+      setSoAttachmentsMap((prev) => ({ ...prev, [editingOrder.id]: updatedDocs }))
 
-    setIsEditOrderOpen(false)
-    setEditingOrder(null)
-    showToast("Sales Order Updated", "success", `Sales Order contract ${updatedSo.id} updated successfully.`)
+      setIsEditOrderOpen(false)
+      setEditingOrder(null)
+      showToast("Sales Order Updated", "success", `Sales Order contract ${updatedSo.id} updated successfully.`)
+    } catch (err) {
+      showToast("Update Error", "warning", "Failed to update sales order.")
+    } finally {
+      setIsSavingEditOrder(false)
+    }
   }
 
   // Handle Create Sales Order
@@ -607,20 +618,27 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
-    const docs = await fetchShipmentDocs(soId, "sales_order")
-    setSoAttachmentsMap((prev) => ({ ...prev, [soId]: docs }))
+    try {
+      setIsSubmittingOrder(true)
+      const docs = await fetchShipmentDocs(soId, "sales_order")
+      setSoAttachmentsMap((prev) => ({ ...prev, [soId]: docs }))
 
-    erp.addSalesOrder(newSo)
+      erp.addSalesOrder(newSo)
 
-    showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
-    setIsNewOrderOpen(false)
-    setNewDesc("")
-    setCustomerSearchInput("")
-    setNewCustomerId("")
-    setStagedTradePaperName("")
-    setStagedTradePaperUrl("")
-    setStagedPaymentAdviceName("")
-    setStagedPaymentAdviceUrl("")
+      showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
+      setIsNewOrderOpen(false)
+      setNewDesc("")
+      setCustomerSearchInput("")
+      setNewCustomerId("")
+      setStagedTradePaperName("")
+      setStagedTradePaperUrl("")
+      setStagedPaymentAdviceName("")
+      setStagedPaymentAdviceUrl("")
+    } catch (err) {
+      showToast("Create Error", "warning", "Failed to create sales order.")
+    } finally {
+      setIsSubmittingOrder(false)
+    }
   }
 
   // Handle Create Quotation
@@ -666,10 +684,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       items: finalItems,
     }
 
-    erp.addQuotation(newQt)
-    showToast("Quotation Generated", "success", `Pro-Forma ${newQt.id} created for ${selectedCust.name}.`)
-    setIsNewQuotationOpen(false)
-    setQuoteDesc("")
+    try {
+      setIsSubmittingQuotation(true)
+      erp.addQuotation(newQt)
+      showToast("Quotation Generated", "success", `Pro-Forma ${newQt.id} created for ${selectedCust.name}.`)
+      setIsNewQuotationOpen(false)
+      setQuoteDesc("")
+    } catch (err) {
+      showToast("Quotation Error", "warning", "Failed to generate quotation.")
+    } finally {
+      setIsSubmittingQuotation(false)
+    }
   }
 
   // Confirm Sales Invoice Creation
@@ -969,7 +994,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
               {/* Header with Close X Button */}
               <div className="flex items-start justify-between mb-4">
@@ -1444,16 +1469,18 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
+                    disabled={isSubmittingOrder}
                     onClick={() => setIsNewOrderOpen(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
-                    className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
+                    disabled={isSubmittingOrder}
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Create Contract
+                    {isSubmittingOrder ? <LoadingDots color="bg-white" size="sm" /> : "Create Contract"}
                   </button>
                 </div>
               </form>
@@ -1479,7 +1506,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
               {/* Reusable Header with 3-Dot Options Dropdown */}
               <EditModalHeader
@@ -1853,16 +1880,18 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
+                    disabled={isSavingEditOrder}
                     onClick={() => setIsEditOrderOpen(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
-                    className="px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md"
+                    disabled={isSavingEditOrder}
+                    className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Save Order Changes
+                    {isSavingEditOrder ? <LoadingDots color="bg-white" size="sm" /> : "Save Order Changes"}
                   </button>
                 </div>
               </form>
@@ -1879,7 +1908,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 overflow-y-auto max-h-[90vh]"
+              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
               <h2 className="text-xl font-black text-zinc-950 mb-1">Draft Pro-Forma Quotation</h2>
               <p className="text-xs font-semibold text-zinc-500 mb-5">Generates an ERPNext-aligned pro-forma quotation.</p>
@@ -1937,16 +1966,18 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 <div className="flex items-center justify-end gap-3 pt-3">
                   <button 
                     type="button" 
+                    disabled={isSubmittingQuotation}
                     onClick={() => setIsNewQuotationOpen(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
-                    className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
+                    disabled={isSubmittingQuotation}
+                    className="min-w-[140px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Generate Quotation
+                    {isSubmittingQuotation ? <LoadingDots color="bg-white" size="sm" /> : "Generate Quotation"}
                   </button>
                 </div>
               </form>

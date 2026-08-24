@@ -119,86 +119,122 @@
   * {
     @apply border-border;
   }
+  html,
   body {
     @apply bg-background text-foreground;
+    background-color: #f4f4f5;
+    min-height: 100vh;
     font-family: var(--font-sans);
+  }
+  .dark html,
+  .dark body {
+    background-color: #09090b;
   }
 }
 
-/* iOS 26 style glass card with 32px rounded corners */
+/* Globally remove scrollbars on all elements, modals, dialogs, and overflow containers */
+html,
+body,
+*,
+*::before,
+*::after {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE / Edge */
+}
+
+::-webkit-scrollbar,
+*::-webkit-scrollbar,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-corner {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  background: transparent !important;
+  opacity: 0 !important;
+}
+
+/* Modal open background locking & overscroll containment */
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  touch-action: none !important;
+}
+
+.fixed.inset-0,
+[role="dialog"] {
+  overscroll-behavior: contain !important;
+}
+
+/* iOS 26 style glass card with 32px rounded corners - Glassy Frosted Blur */
 .glass-card {
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(40px) saturate(240%);
-  -webkit-backdrop-filter: blur(40px) saturate(240%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.02), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.36) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.04), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
   border-radius: 2rem;
+  transform: translateZ(0);
 }
 
 .dark .glass-card {
-  background: rgba(20, 20, 22, 0.38);
-  backdrop-filter: blur(40px) saturate(240%);
-  -webkit-backdrop-filter: blur(40px) saturate(240%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: linear-gradient(135deg, rgba(30, 30, 34, 0.68) 0%, rgba(20, 20, 24, 0.45) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.28), inset 0 1px 1px 0 rgba(255, 255, 255, 0.06);
   border-radius: 2rem;
+  transform: translateZ(0);
 }
 
 /* Solid black card (uses theme black) with 32px rounded corners */
 .glass-card-dark {
   background: #242427;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.12);
   border-radius: 2rem;
+  transform: translateZ(0);
 }
 
-/* Floating glass nav */
+/* Floating glass nav - Glassy Frosted Blur */
 .glass-nav {
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(40px) saturate(240%);
-  -webkit-backdrop-filter: blur(40px) saturate(240%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.46) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.95);
+  transform: translateZ(0);
 }
 
 .glass-nav-dark {
-  background: rgba(20, 20, 22, 0.38);
-  backdrop-filter: blur(40px) saturate(240%);
-  -webkit-backdrop-filter: blur(40px) saturate(240%);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: linear-gradient(135deg, rgba(30, 30, 34, 0.75) 0%, rgba(20, 20, 24, 0.52) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.06);
+  transform: translateZ(0);
 }
 
-/* Page gradient - clean white/grey canvas with subtle organic green accents */
+/* Page gradient - clean white/grey canvas with balanced, wide organic green gradient bleeding from left to right */
 .page-gradient {
   background:
-    radial-gradient(circle at 15% 25%, rgba(34, 197, 94, 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse 110% 85% at 5% 45%, rgba(34, 197, 94, 0.13) 0%, rgba(34, 197, 94, 0.07) 40%, rgba(34, 197, 94, 0.03) 70%, transparent 92%),
+    radial-gradient(ellipse 85% 70% at 45% 60%, rgba(34, 197, 94, 0.07) 0%, rgba(34, 197, 94, 0.03) 45%, rgba(34, 197, 94, 0.01) 70%, transparent 85%),
+    radial-gradient(ellipse 60% 50% at 78% 35%, rgba(34, 197, 94, 0.04) 0%, rgba(34, 197, 94, 0.01) 45%, transparent 75%),
     radial-gradient(circle at 92% 12%, rgba(0, 0, 0, 0.02) 0%, transparent 45%),
-    radial-gradient(circle at 45% 75%, rgba(34, 197, 94, 0.04) 0%, transparent 50%),
     linear-gradient(135deg, #ffffff 0%, #f4f4f5 50%, #e4e4e7 100%);
   position: relative;
   overflow-x: hidden;
   z-index: 1;
 }
 
-/* Subtle, high-end organic dotted background pattern overlay and interactive floating shapes */
-.page-gradient::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.15;
-  background-image: 
-    radial-gradient(circle, #27272a 1px, transparent 1px);
-  background-size: 24px 24px;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Elegant floating vector line circle in background */
+/* Elegant floating vector line circle in background - static for 0% idle CPU */
 .page-gradient::after {
   content: "";
   position: absolute;
-  top: 15%;
+  top: 25%;
   right: -5%;
   width: 500px;
   height: 500px;
@@ -206,37 +242,27 @@
   border-radius: 50%;
   pointer-events: none;
   z-index: -1;
-  animation: slow-spin 120s linear infinite;
-  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.01);
+  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.02);
 }
 
+.dark .page-gradient,
 .page-gradient-dark {
   background:
-    radial-gradient(circle at 15% 25%, rgba(34, 197, 94, 0.06) 0%, transparent 45%),
+    radial-gradient(ellipse 110% 85% at 5% 45%, rgba(34, 197, 94, 0.11) 0%, rgba(34, 197, 94, 0.05) 40%, rgba(34, 197, 94, 0.02) 70%, transparent 92%),
+    radial-gradient(ellipse 85% 70% at 45% 60%, rgba(34, 197, 94, 0.06) 0%, rgba(34, 197, 94, 0.025) 45%, rgba(34, 197, 94, 0.008) 70%, transparent 85%),
+    radial-gradient(ellipse 60% 50% at 78% 35%, rgba(34, 197, 94, 0.035) 0%, rgba(34, 197, 94, 0.01) 45%, transparent 75%),
     radial-gradient(circle at 92% 12%, rgba(0, 0, 0, 0.15) 0%, transparent 45%),
-    radial-gradient(circle at 45% 75%, rgba(34, 197, 94, 0.02) 0%, transparent 50%),
     linear-gradient(135deg, #09090b 0%, #18181b 50%, #09090b 100%);
   position: relative;
   overflow-x: hidden;
   z-index: 1;
 }
 
-.page-gradient-dark::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.08;
-  background-image: 
-    radial-gradient(circle, #ffffff 1px, transparent 1px);
-  background-size: 24px 24px;
-  pointer-events: none;
-  z-index: -1;
-}
-
+.dark .page-gradient::after,
 .page-gradient-dark::after {
   content: "";
   position: absolute;
-  top: 15%;
+  top: 25%;
   right: -5%;
   width: 500px;
   height: 500px;
@@ -244,8 +270,7 @@
   border-radius: 50%;
   pointer-events: none;
   z-index: -1;
-  animation: slow-spin 120s linear infinite;
-  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.01);
+  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.02);
 }
 
 /* Animations for background elements */

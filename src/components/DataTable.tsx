@@ -1,5 +1,4 @@
 import type { ReactNode } from "react"
-import { motion } from "framer-motion"
 import { Skeleton } from "@/components/ui/skeleton"
 import { GlassCard } from "@/components/GlassCard"
 import { FinanceTableToolbar, type FilterOption, type HeaderAction } from "@/components/FinanceTableToolbar"
@@ -72,7 +71,7 @@ export function DataTable<T>({
   const sortedData = sorted()
 
   return (
-    <GlassCard className="flex flex-col overflow-hidden p-0">
+    <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
       {/* Header Toolbar */}
       <div className="px-6 pt-6 mb-4">
         <FinanceTableToolbar
@@ -90,7 +89,7 @@ export function DataTable<T>({
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse table-fixed">
           <thead>
-            <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
+            <tr className="bg-gradient-to-r from-black/[0.035] via-black/[0.015] to-transparent dark:from-white/[0.04] dark:via-white/[0.02] dark:to-transparent border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
               {columns.map((col) => (
                 <ResizableTh
                   key={col.key}
@@ -119,14 +118,13 @@ export function DataTable<T>({
               </tr>
             ) : (
               sortedData.map((item) => (
-                <motion.tr
+                <tr
                   key={keyExtractor(item)}
-                  whileHover={{ scale: 1.001 }}
-                  className={`hover:bg-white/50 transition-colors ${onRowClick ? "cursor-pointer" : ""}`}
+                  className={`hover:bg-white/60 dark:hover:bg-white/10 transition-colors ${onRowClick ? "cursor-pointer" : ""}`}
                   onClick={() => onRowClick?.(item)}
                 >
                   {renderRow(item, colWidths)}
-                </motion.tr>
+                </tr>
               ))
             )}
           </tbody>

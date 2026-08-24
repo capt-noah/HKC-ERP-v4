@@ -56,12 +56,12 @@ export function SubPageNav({ items, variant = "light" }: SubPageNavProps) {
             key={item.path}
             to={item.path}
             className={cn(
-              "px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap shrink-0",
+              "px-5 py-2.5 rounded-full text-sm font-semibold transition-all whitespace-nowrap shrink-0",
               isActive
-                ? "bg-green-700 text-white font-semibold shadow-sm"
+                ? "bg-green-700 text-white font-bold shadow-sm"
                 : isDark
                   ? "glass-card-dark text-zinc-300 hover:text-white"
-                  : "glass-card text-gray-500 hover:text-black"
+                  : "glass-card text-zinc-600 hover:text-zinc-950"
             )}
           >
             {item.label}

@@ -633,7 +633,7 @@ export default function Assets() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 max-h-[90vh] overflow-y-auto no-scrollbar"
             >
               <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
                 <h3 className="text-base font-black text-zinc-900">Register New Fixed Asset</h3>

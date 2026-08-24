@@ -14,6 +14,8 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { EditModalHeader } from "@/components/EditModalHeader"
+import { LoadingDots } from "@/components/ui/LoadingDots"
+import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 import SalesIssuePrintModal from "@/components/sales/SalesIssuePrintModal"
 
 export interface ShipmentDocAttachment {
@@ -130,6 +132,7 @@ export default function SalesIssued() {
   const [error, setError] = useState("")
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<SalesIssue | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
   const [printingIssue, setPrintingIssue] = useState<SalesIssue | null>(null)
   const [batchOptions, setBatchOptions] = useState<Record<number, AvailableBatch[]>>({})
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([])
@@ -358,83 +361,104 @@ export default function SalesIssued() {
     }
   }, [salesOrders])
 
-  const openEdit = async (issue: SalesIssue) => {
+  const openEdit = (issue: SalesIssue) => {
     const statusLower = (issue.status || "").toLowerCase()
     if (statusLower === "cancelled") {
       showToast("Cancelled record locked", "warning", "Cancelled sales issues cannot be edited.")
       return
     }
-    try {
-      let detail = issue
+
+    const targetWh = issue.warehouse_id || (issue as any).warehouse || ""
+    const normalizedWarehouseId = canonicalWarehouseId(targetWh)
+
+    setEditing(issue)
+    setFsNo(issue.fs_no || (issue as any).fsNo || "")
+    setReferenceNo(issue.reference_no || (issue as any).referenceNo || "")
+    setSaleDate(issue.sale_date || (issue as any).issueDate || issue.sale_date || new Date().toISOString().split("T")[0])
+    setCustomerName(issue.customer_name || (issue as any).customer || issue.customer_id || "")
+    setWarehouseId(normalizedWarehouseId)
+    setPaymentType(((issue.payment_type || (issue as any).paymentType || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
+    setStagedPaymentAdviceName("")
+    setStagedPaymentAdviceUrl("")
+    setStagedTradePaperName("")
+    setStagedTradePaperUrl("")
+
+    const rawItems = (issue.items && issue.items.length > 0) ? issue.items : [blankItem()]
+    const populatedItems = rawItems.map((item) => {
+      const product = products.find((entry) => entry.id === item.item_id || entry.name === item.item_name)
+      return {
+        ...item,
+        item_id: item.item_id || product?.id || "",
+        item_name: item.item_name || product?.name || "",
+        batch_no: item.batch_no || product?.batch || "BATCH-MAIN",
+        batch_id: item.batch_id || item.batch_no || product?.batch || "BATCH-MAIN",
+        packaging_unit: item.packaging_unit || product?.unit || "Box",
+        quantity: Number(item.quantity || (item as any).qty || 1),
+        unit_price: Number(item.unit_price ?? (item as any).price ?? product?.sellingPrice ?? 0),
+        amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
+      }
+    })
+
+    setItems(populatedItems)
+    setBatchOptions({})
+
+    // Open modal immediately without waiting on network calls
+    setFormOpen(true)
+
+    // Concurrently fetch detailed issue data, attachments, and available batches in parallel
+    void (async () => {
       try {
-        const fetchRes = await getSalesIssue(issue.id)
+        const [fetchRes, issueDocs, refDocs] = await Promise.all([
+          getSalesIssue(issue.id).catch(() => null),
+          fetchShipmentDocs(issue.id, "sales_issue").catch(() => []),
+          issue.reference_no ? fetchShipmentDocs(issue.reference_no, "sales_order").catch(() => []) : Promise.resolve([]),
+        ])
+
         if (fetchRes && typeof fetchRes === "object" && fetchRes.id) {
-          detail = fetchRes
+          setEditing(fetchRes)
+          if (fetchRes.items && fetchRes.items.length > 0) {
+            const updatedItems = fetchRes.items.map((item) => {
+              const product = products.find((entry) => entry.id === item.item_id || entry.name === item.item_name)
+              return {
+                ...item,
+                item_id: item.item_id || product?.id || "",
+                item_name: item.item_name || product?.name || "",
+                batch_no: item.batch_no || product?.batch || "BATCH-MAIN",
+                batch_id: item.batch_id || item.batch_no || product?.batch || "BATCH-MAIN",
+                packaging_unit: item.packaging_unit || product?.unit || "Box",
+                quantity: Number(item.quantity || (item as any).qty || 1),
+                unit_price: Number(item.unit_price ?? (item as any).price ?? product?.sellingPrice ?? 0),
+                amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
+              }
+            })
+            setItems(updatedItems)
+          }
         }
-      } catch {
-        detail = issue
-      }
 
-      const targetWh = detail.warehouse_id || (detail as any).warehouse || issue.warehouse_id || (issue as any).warehouse || ""
-      const normalizedWarehouseId = canonicalWarehouseId(targetWh)
+        const adviceDoc = issueDocs.find((d) => d.document_type === "Payment Advice") || refDocs.find((d) => d.document_type === "Payment Advice")
+        const tradeDoc = issueDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper") || refDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
 
-      setEditing(detail)
-      setFsNo(detail.fs_no || (detail as any).fsNo || issue.fs_no || "")
-      setReferenceNo(detail.reference_no || (detail as any).referenceNo || issue.reference_no || "")
-      setSaleDate(detail.sale_date || (detail as any).issueDate || issue.sale_date || new Date().toISOString().split("T")[0])
-      setCustomerName(detail.customer_name || (detail as any).customer || detail.customer_id || issue.customer_name || "")
-      setWarehouseId(normalizedWarehouseId)
-      setPaymentType(((detail.payment_type || (detail as any).paymentType || issue.payment_type || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
-
-      // Fetch existing documents for this sales issue and its referenced sales orders
-      const issueDocs = await fetchShipmentDocs(issue.id, "sales_issue")
-      let adviceDoc = issueDocs.find((d) => d.document_type === "Payment Advice")
-      let tradeDoc = issueDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-
-      if (!adviceDoc && issue.reference_no) {
-        const refDocs = await fetchShipmentDocs(issue.reference_no, "sales_order")
-        adviceDoc = refDocs.find((d) => d.document_type === "Payment Advice")
-        if (!tradeDoc) {
-          tradeDoc = refDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+        if (adviceDoc) {
+          setStagedPaymentAdviceName(adviceDoc.file_name || "")
+          setStagedPaymentAdviceUrl(adviceDoc.file_url || "")
         }
-      }
-
-      setStagedPaymentAdviceName(adviceDoc?.file_name || "")
-      setStagedPaymentAdviceUrl(adviceDoc?.file_url || "")
-      setStagedTradePaperName(tradeDoc?.file_name || "")
-      setStagedTradePaperUrl(tradeDoc?.file_url || "")
-
-      const rawItems = (detail.items && detail.items.length > 0) ? detail.items : (issue.items && issue.items.length > 0) ? issue.items : [blankItem()]
-      const populatedItems = rawItems.map((item) => {
-        const product = products.find((entry) => entry.id === item.item_id || entry.name === item.item_name)
-        return {
-          ...item,
-          item_id: item.item_id || product?.id || "",
-          item_name: item.item_name || product?.name || "",
-          batch_no: item.batch_no || product?.batch || "BATCH-MAIN",
-          batch_id: item.batch_id || item.batch_no || product?.batch || "BATCH-MAIN",
-          packaging_unit: item.packaging_unit || product?.unit || "Box",
-          quantity: Number(item.quantity || (item as any).qty || 1),
-          unit_price: Number(item.unit_price ?? (item as any).price ?? product?.sellingPrice ?? 0),
-          amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
+        if (tradeDoc) {
+          setStagedTradePaperName(tradeDoc.file_name || "")
+          setStagedTradePaperUrl(tradeDoc.file_url || "")
         }
-      })
 
-      setItems(populatedItems)
-
-      if (normalizedWarehouseId) {
-        const options = await Promise.all(
-          populatedItems.map((row) =>
-            row.item_id ? getAvailableBatches(row.item_id, normalizedWarehouseId).catch(() => []) : Promise.resolve([])
+        if (normalizedWarehouseId) {
+          const options = await Promise.all(
+            populatedItems.map((row) =>
+              row.item_id ? getAvailableBatches(row.item_id, normalizedWarehouseId).catch(() => []) : Promise.resolve([])
+            )
           )
-        )
-        setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
+          setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
+        }
+      } catch (err) {
+        console.warn("Non-blocking background load error for sales issue:", err)
       }
-
-      setFormOpen(true)
-    } catch (err) {
-      showToast("Load failed", "warning", err instanceof Error ? err.message : "Could not load sales issue details.")
-    }
+    })()
   }
 
   const updateItem = async (index: number, patch: Partial<SalesIssueItem>) => {
@@ -511,6 +535,7 @@ export default function SalesIssued() {
     }
 
     try {
+      setIsSaving(true)
       if (editing) {
         await updateSalesIssue(editing.id, payload)
       } else {
@@ -573,6 +598,8 @@ export default function SalesIssued() {
       await load()
     } catch (err) {
       showToast("Save failed", "warning", err instanceof Error ? err.message : "Could not save sales issue.")
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -794,8 +821,9 @@ export default function SalesIssued() {
       <AnimatePresence>
         {formOpen && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <BodyScrollLock />
             <motion.div className="absolute inset-0 bg-black/35 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setFormOpen(false)} />
-            <motion.div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+            <motion.div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
               {editing ? (
                 <EditModalHeader
                   title={isPostedEditing ? `Edit Posted Sales Issue (${editing.fs_no})` : `Edit Sales Issue (${editing.fs_no})`}
@@ -1180,8 +1208,22 @@ export default function SalesIssued() {
                 <div className="flex gap-4 text-sm font-black"><span>Total Quantity: {totalQuantity.toLocaleString()}</span><span>Grand Total: {money(grandTotal)}</span></div>
               </div>
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
-                <button onClick={() => setFormOpen(false)} className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black">Cancel</button>
-                <button onClick={() => void handleSave()} className="h-10 rounded-xl bg-emerald-700 px-5 text-xs font-black text-white">Save</button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => setFormOpen(false)}
+                  className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black disabled:opacity-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void handleSave()}
+                  className="h-10 min-w-[90px] inline-flex items-center justify-center rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 text-xs font-black text-white transition-colors"
+                >
+                  {isSaving ? <LoadingDots color="bg-white" size="sm" /> : "Save"}
+                </button>
               </div>
             </motion.div>
           </div>

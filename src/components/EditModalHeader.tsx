@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { MoreVertical, Trash2, X } from "lucide-react"
+import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 
 export interface EditModalHeaderProps {
   title: string
@@ -30,7 +31,9 @@ export function EditModalHeader({
   }, [])
 
   return (
-    <div className="flex items-start justify-between mb-4 pb-2 border-b border-zinc-100">
+    <>
+      <BodyScrollLock />
+      <div className="flex items-start justify-between mb-4 pb-2 border-b border-zinc-100">
       <div>
         <h2 className="text-xl font-black text-zinc-950 tracking-tight">{title}</h2>
         {subtitle && <p className="text-xs font-semibold text-zinc-500 mt-0.5">{subtitle}</p>}
@@ -82,5 +85,6 @@ export function EditModalHeader({
         </button>
       </div>
     </div>
+    </>
   )
 }

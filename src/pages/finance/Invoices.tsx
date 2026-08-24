@@ -24,6 +24,7 @@ import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import InvoicePrintModal from "@/components/finance/InvoicePrintModal"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { API_BASE } from "@/lib/apiPersistence"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -63,6 +64,7 @@ export default function Invoices() {
   // Edit Modal State (issue date, due date, terms removed per design)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [deletingInvoice, setDeletingInvoice] = useState<Invoice | null>(null)
   const [editCustName, setEditCustName] = useState("")
   const [editStatus, setEditStatus] = useState<"Paid" | "Unpaid">("Unpaid")
@@ -277,76 +279,83 @@ export default function Invoices() {
       return
     }
 
-    // 1. Upload Payment Advice if attached
-    if (editAdviceFile) {
-      try {
-        const form = new FormData()
-        form.append("file", editAdviceFile)
-        form.append("record_id", editingInvoice.id)
-        form.append("record_type", "sales_order")
-        form.append("document_type", "Payment Advice")
-        await fetch(`${API_BASE}/api/shipment_documents`, { method: "POST", body: form })
-
-        if (editingInvoice.sales_issue_id) {
-          const siForm = new FormData()
-          siForm.append("file", editAdviceFile)
-          siForm.append("record_id", editingInvoice.sales_issue_id)
-          siForm.append("record_type", "sales_order")
-          siForm.append("document_type", "Payment Advice")
-          await fetch(`${API_BASE}/api/shipment_documents`, { method: "POST", body: siForm })
-        }
-      } catch (err) {
-        console.warn("Payment advice upload failed:", err)
-      }
-    }
-
-    // 2. If marked as Paid, record payment and settle
-    if (wantsPaid) {
-      const settleAmount = Number(editingInvoice.balance_due || editingInvoice.total || 0)
-      store.recordPayment({
-        linked_invoice_id: editingInvoice.id,
-        amount: settleAmount,
-        currency: editingInvoice.currency,
-        date: new Date().toISOString().split("T")[0],
-        method: "Cash",
-        reference: `PAID-${Date.now().toString().slice(-4)}`,
-        direction: "Received",
-      })
-
-      // Sync linked sales issue to Cash
-      if (editingInvoice.sales_issue_id) {
+    try {
+      setIsSavingEdit(true)
+      // 1. Upload Payment Advice if attached
+      if (editAdviceFile) {
         try {
-          await fetch(`${API_BASE}/api/sales_issues/${editingInvoice.sales_issue_id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ payment_type: "Cash" }),
-          })
+          const form = new FormData()
+          form.append("file", editAdviceFile)
+          form.append("record_id", editingInvoice.id)
+          form.append("record_type", "sales_order")
+          form.append("document_type", "Payment Advice")
+          await fetch(`${API_BASE}/api/shipment_documents`, { method: "POST", body: form })
+
+          if (editingInvoice.sales_issue_id) {
+            const siForm = new FormData()
+            siForm.append("file", editAdviceFile)
+            siForm.append("record_id", editingInvoice.sales_issue_id)
+            siForm.append("record_type", "sales_order")
+            siForm.append("document_type", "Payment Advice")
+            await fetch(`${API_BASE}/api/shipment_documents`, { method: "POST", body: siForm })
+          }
         } catch (err) {
-          console.warn("Sales issue sync failed:", err)
+          console.warn("Payment advice upload failed:", err)
         }
       }
 
-      store.updateInvoice(editingInvoice.id, {
-        customer_name: editCustName,
-        payment_terms: "Cash",
-        status: "Paid",
-        amount_paid: editingInvoice.total,
-        balance_due: 0,
-        notes: editNotes,
-      })
+      // 2. If marked as Paid, record payment and settle
+      if (wantsPaid) {
+        const settleAmount = Number(editingInvoice.balance_due || editingInvoice.total || 0)
+        store.recordPayment({
+          linked_invoice_id: editingInvoice.id,
+          amount: settleAmount,
+          currency: editingInvoice.currency,
+          date: new Date().toISOString().split("T")[0],
+          method: "Cash",
+          reference: `PAID-${Date.now().toString().slice(-4)}`,
+          direction: "Received",
+        })
 
-      showToast("Invoice Settled & Paid", "success", `Invoice ${editingInvoice.invoice_number} is now marked as Paid with Payment Advice attached.`)
-    } else {
-      store.updateInvoice(editingInvoice.id, {
-        customer_name: editCustName,
-        notes: editNotes,
-      })
+        // Sync linked sales issue to Cash
+        if (editingInvoice.sales_issue_id) {
+          try {
+            await fetch(`${API_BASE}/api/sales_issues/${editingInvoice.sales_issue_id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ payment_type: "Cash" }),
+            })
+          } catch (err) {
+            console.warn("Sales issue sync failed:", err)
+          }
+        }
 
-      showToast("Invoice Updated", "success", `Invoice ${editingInvoice.invoice_number} has been updated.`)
+        store.updateInvoice(editingInvoice.id, {
+          customer_name: editCustName,
+          payment_terms: "Cash",
+          status: "Paid",
+          amount_paid: editingInvoice.total,
+          balance_due: 0,
+          notes: editNotes,
+        })
+
+        showToast("Invoice Settled & Paid", "success", `Invoice ${editingInvoice.invoice_number} is now marked as Paid with Payment Advice attached.`)
+      } else {
+        store.updateInvoice(editingInvoice.id, {
+          customer_name: editCustName,
+          notes: editNotes,
+        })
+
+        showToast("Invoice Updated", "success", `Invoice ${editingInvoice.invoice_number} has been updated.`)
+      }
+
+      setIsEditModalOpen(false)
+      setEditingInvoice(null)
+    } catch (err) {
+      showToast("Update Failed", "warning", "Failed to update invoice.")
+    } finally {
+      setIsSavingEdit(false)
     }
-
-    setIsEditModalOpen(false)
-    setEditingInvoice(null)
   }
 
   // Delete Invoice
@@ -794,16 +803,18 @@ export default function Invoices() {
                 <div className="pt-2 flex justify-end gap-2 border-t border-zinc-100">
                   <button
                     type="button"
+                    disabled={isSavingEdit}
                     onClick={() => setIsEditModalOpen(false)}
-                    className="px-4 py-2 border border-zinc-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-zinc-50 cursor-pointer"
+                    className="px-4 py-2 border border-zinc-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-zinc-50 cursor-pointer disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-black hover:bg-zinc-800 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
+                    disabled={isSavingEdit}
+                    className="min-w-[125px] inline-flex items-center justify-center px-5 py-2 bg-black hover:bg-zinc-800 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Save Changes
+                    {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
                   </button>
                 </div>
               </form>

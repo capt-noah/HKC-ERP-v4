@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import type { BinCardEntry } from "@/lib/binCardApi"
 
 interface BinCardEntryModalProps {
@@ -32,6 +33,7 @@ export default function BinCardEntryModal({
   const [remark, setRemark] = useState("")
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (entry) {
@@ -53,21 +55,26 @@ export default function BinCardEntryModal({
     }
   }, [entry, isOpen])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const numericQty = Number(qty || 0)
     if (numericQty <= 0) return
 
-    onSave({
-      date,
-      batchNo: batchNo || "N/A",
-      qtyReceived: type === "received" ? numericQty : 0,
-      qtyIssued: type === "issued" ? numericQty : 0,
-      expiryDate: expiryDate || "N/A",
-      party: party || "-",
-      remark: remark || "-"
-    })
-    onClose()
+    try {
+      setIsSubmitting(true)
+      await Promise.resolve(onSave({
+        date,
+        batchNo: batchNo || "N/A",
+        qtyReceived: type === "received" ? numericQty : 0,
+        qtyIssued: type === "issued" ? numericQty : 0,
+        expiryDate: expiryDate || "N/A",
+        party: party || "Standard Processing",
+        remark: remark || "N/A"
+      }))
+      onClose()
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleConfirmDelete = async () => {
@@ -208,16 +215,18 @@ export default function BinCardEntryModal({
             <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-2.5">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={onClose}
-                className="px-4 py-2.5 rounded-full border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-100 active:scale-95 transition-all"
+                className="px-4 py-2.5 rounded-full border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-100 active:scale-95 transition-all disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all"
+                disabled={isSubmitting}
+                className="min-w-[140px] inline-flex items-center justify-center px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {entry ? "Save Movement Entry" : "Record Entry"}
+                {isSubmitting ? <LoadingDots color="bg-white" size="sm" /> : (entry ? "Save Movement Entry" : "Record Entry")}
               </button>
             </div>
           </form>

@@ -7,6 +7,7 @@ import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar } from "@/components/HRTable"
 import { useFeedback } from "@/context/FeedbackContext"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { ATTENDANCE_STATUSES, WAREHOUSE_OPTIONS, calculateHours, hrApi, initials, loadHRData, makeId, type AttendanceRecord, type Employee } from "@/lib/hrApi"
 
@@ -216,9 +217,8 @@ export default function Attendance() {
 	                      {statusRequiresNoTime(draft.status) ? <NoTimeLabel /> : <input type="time" value={draft.check_out_time} onChange={(event) => setDraft(employee.id, { check_out_time: event.target.value })} className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold outline-none focus:border-emerald-700" />}
                       <span className="font-black text-zinc-900">{hours.toFixed(2)}</span>
                       <input value={draft.notes} onChange={(event) => setDraft(employee.id, { notes: event.target.value })} placeholder="Notes" className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-bold outline-none focus:border-emerald-700" />
-                      <button onClick={() => saveAttendance(employee)} disabled={isSaving} className="inline-flex items-center justify-center gap-1.5 rounded-full bg-black px-3 py-2 text-[10px] font-black text-white disabled:cursor-wait disabled:bg-zinc-700">
-                        {isSaving ? <span className="size-3 rounded-full border-2 border-white/40 border-t-white animate-spin" /> : <Save className="size-3" />}
-                        Save
+                      <button onClick={() => saveAttendance(employee)} disabled={isSaving} className="min-w-[64px] inline-flex items-center justify-center gap-1.5 rounded-full bg-black px-3 py-2 text-[10px] font-black text-white disabled:cursor-wait disabled:bg-zinc-700">
+                        {isSaving ? <LoadingDots color="bg-white" size="xs" /> : <><Save className="size-3" /> Save</>}
                       </button>
                     </div>
                   )

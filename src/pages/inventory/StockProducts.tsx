@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
 import StockBinCardLedger from "@/components/stock/StockBinCardLedger"
 import StockBinEntryModal from "@/components/stock/StockBinEntryModal"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
 import { getExpiryStatus, getExpiringItemsSummary } from "@/lib/expiryUtils"
 
@@ -1403,9 +1404,21 @@ export default function StockProducts() {
               </div>
 
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
-                <button onClick={() => setEditingProduct(null)} className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black">Cancel</button>
-                <button disabled={isSavingEdit} onClick={() => void handleSaveProductDetails()} className="h-10 rounded-xl bg-zinc-950 px-5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
-                  {isSavingEdit ? "Saving..." : "Save Stock Details"}
+                <button
+                  type="button"
+                  disabled={isSavingEdit}
+                  onClick={() => setEditingProduct(null)}
+                  className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingEdit}
+                  onClick={() => void handleSaveProductDetails()}
+                  className="h-10 min-w-[130px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 px-5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                >
+                  {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Stock Details"}
                 </button>
               </div>
             </motion.div>
@@ -1421,7 +1434,7 @@ export default function StockProducts() {
               initial={{ opacity: 0, scale: 0.96, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-zinc-200"
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200"
             >
               <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200">
                 <div>
@@ -1704,9 +1717,9 @@ export default function StockProducts() {
                       type="button"
                       disabled={!canSaveAdd || isSavingAdd}
                       onClick={() => void handleSaveNewStockItem(false)}
-                      className="h-10 rounded-full bg-zinc-950 text-white font-bold px-5 disabled:opacity-40"
+                      className="h-10 min-w-[110px] inline-flex items-center justify-center rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold px-5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      {isSavingAdd ? "Saving..." : "Save Item"}
+                      {isSavingAdd ? <LoadingDots color="bg-white" size="sm" /> : "Save Item"}
                     </button>
                   </div>
                 </div>
@@ -1809,9 +1822,21 @@ export default function StockProducts() {
                 )}
 
                 <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
-                  <button onClick={() => setSlimAddEntryProduct(null)} className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold">Cancel</button>
-                  <button disabled={isSavingAdd} onClick={handleSaveSlimEntry} className="h-9 rounded-xl bg-zinc-950 text-white px-5 text-xs font-bold shadow-md">
-                    {isSavingAdd ? "Saving..." : "Add Entry"}
+                  <button 
+                    type="button"
+                    disabled={isSavingAdd}
+                    onClick={() => setSlimAddEntryProduct(null)} 
+                    className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={isSavingAdd} 
+                    onClick={handleSaveSlimEntry} 
+                    className="h-9 min-w-[100px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white px-5 text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isSavingAdd ? <LoadingDots color="bg-white" size="sm" /> : "Add Entry"}
                   </button>
                 </div>
               </div>
@@ -1895,9 +1920,21 @@ export default function StockProducts() {
                 </div>
 
                 <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
-                  <button onClick={() => setEditingSubEntry(null)} className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold">Cancel</button>
-                  <button disabled={isSavingSubEdit} onClick={handleSaveSubEntryEdit} className="h-9 rounded-xl bg-zinc-950 text-white px-5 text-xs font-bold shadow-md">
-                    {isSavingSubEdit ? "Saving..." : "Save Changes"}
+                  <button 
+                    type="button"
+                    disabled={isSavingSubEdit}
+                    onClick={() => setEditingSubEntry(null)} 
+                    className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button"
+                    disabled={isSavingSubEdit} 
+                    onClick={handleSaveSubEntryEdit} 
+                    className="h-9 min-w-[110px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white px-5 text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isSavingSubEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
                   </button>
                 </div>
               </div>

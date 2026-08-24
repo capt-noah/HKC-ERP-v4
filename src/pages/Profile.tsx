@@ -352,10 +352,6 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen page-gradient select-none font-sans text-zinc-900 dark:text-zinc-100 relative pb-20">
-      {/* Decorative ambient background glows */}
-      <div className="absolute top-10 left-1/4 size-96 rounded-full bg-emerald-300/20 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-20 right-1/4 size-96 rounded-full bg-emerald-100/30 blur-3xl pointer-events-none" />
-
       <main className="max-w-6xl mx-auto px-4 md:px-6 pt-8 md:pt-10">
         {/* Stylized Glass Back Button */}
         <div className="mb-6 flex items-center justify-start">

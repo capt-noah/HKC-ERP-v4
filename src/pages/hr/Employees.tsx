@@ -7,6 +7,7 @@ import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
 import { useFeedback } from "@/context/FeedbackContext"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 
@@ -265,7 +266,7 @@ function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { for
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-black text-black">{title}</h3>
           <button onClick={onClose} disabled={saving} className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-40"><X className="size-5" /></button>
@@ -303,9 +304,8 @@ function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { for
           </label>
           <div className="md:col-span-3 flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold disabled:opacity-50">Cancel</button>
-            <button type="submit" disabled={saving} className="inline-flex min-w-34 items-center justify-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-bold disabled:cursor-wait disabled:bg-zinc-700">
-              {saving && <span className="size-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />}
-              {saving ? "Saving..." : "Save Employee"}
+            <button type="submit" disabled={saving} className="inline-flex min-w-34 items-center justify-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-bold disabled:cursor-wait disabled:bg-zinc-700 disabled:opacity-60 transition-colors">
+              {saving ? <LoadingDots color="bg-white" size="sm" /> : "Save Employee"}
             </button>
           </div>
         </form>
@@ -329,7 +329,7 @@ function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { e
   const employeePayroll = payroll.filter((record) => record.employee_id === employee.id)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
         <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black text-black">{employee.full_name}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />

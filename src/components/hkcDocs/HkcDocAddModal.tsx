@@ -3,6 +3,7 @@ import { motion } from "framer-motion"
 import { X, Save } from "lucide-react"
 import type { HkcDocAttachment, HkcDocRecord } from "@/lib/erpStore"
 import HkcDocAttachmentPanel from "./HkcDocAttachmentPanel"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { createHkcDocRecord } from "@/lib/hkcDocsApi"
 import { useFeedback } from "@/context/FeedbackContext"
 
@@ -158,9 +159,9 @@ export default function HkcDocAddModal({
               type="button"
               disabled={isSaving}
               onClick={handleSave}
-              className="h-10 rounded-xl bg-zinc-950 text-white font-bold px-5 inline-flex items-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-40"
+              className="h-10 min-w-[120px] rounded-xl bg-zinc-950 text-white font-bold px-5 inline-flex items-center justify-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <Save className="size-4" /> {isSaving ? "Saving..." : "Save Record"}
+              {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Record</>}
             </button>
           </div>
         </div>

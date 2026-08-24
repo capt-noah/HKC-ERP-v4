@@ -3,6 +3,7 @@ import { motion } from "framer-motion"
 import { X, Save, Trash2 } from "lucide-react"
 import type { HkcDocAttachment, HkcDocRecord } from "@/lib/erpStore"
 import HkcDocAttachmentPanel from "./HkcDocAttachmentPanel"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { updateHkcDocRecord, deleteHkcDocRecord } from "@/lib/hkcDocsApi"
 import { useFeedback } from "@/context/FeedbackContext"
 
@@ -190,8 +191,9 @@ export default function HkcDocEditModal({
             <div className="flex gap-2">
               <button
                 type="button"
+                disabled={isSaving}
                 onClick={onClose}
-                className="h-10 rounded-xl border border-zinc-200 px-4 font-bold text-zinc-600 hover:bg-zinc-100"
+                className="h-10 rounded-xl border border-zinc-200 px-4 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -199,9 +201,9 @@ export default function HkcDocEditModal({
                 type="button"
                 disabled={isSaving}
                 onClick={handleSave}
-                className="h-10 rounded-xl bg-zinc-950 text-white font-bold px-5 inline-flex items-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-40"
+                className="h-10 min-w-[125px] rounded-xl bg-zinc-950 text-white font-bold px-5 inline-flex items-center justify-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <Save className="size-4" /> {isSaving ? "Saving..." : "Save Changes"}
+                {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Changes</>}
               </button>
             </div>
           </div>
