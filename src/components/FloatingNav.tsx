@@ -101,10 +101,8 @@ export function FloatingNav({
         {/* 1. Left Pill: Brand Logo */}
         <div
           className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-full border shadow-sm shrink-0 transition-all backdrop-blur-2xl",
-            isDark 
-              ? "bg-zinc-900/65 border-white/10 text-white shadow-black/20" 
-              : "bg-white/60 border-white/80 text-zinc-950 shadow-black/5"
+            "flex items-center gap-2 px-4 py-2 rounded-full shrink-0 transition-all shadow-sm",
+            isDark ? "glass-nav-dark text-white" : "glass-nav text-zinc-950"
           )}
         >
           {brandIcon ?? (
@@ -126,10 +124,8 @@ export function FloatingNav({
             /* Multi-module / Super Admin user: Switch between modules */
             <div
               className={cn(
-                "flex items-center gap-1 p-1.5 rounded-full border shadow-sm overflow-x-auto no-scrollbar backdrop-blur-2xl",
-                isDark 
-                  ? "bg-zinc-900/65 border-white/10 shadow-black/20" 
-                  : "bg-white/60 border-white/80 shadow-black/5"
+                "flex items-center gap-1 p-1.5 rounded-full shrink-0 overflow-x-auto no-scrollbar shadow-sm",
+                isDark ? "glass-nav-dark" : "glass-nav"
               )}
             >
               {visibleSections.map((section) => {
@@ -158,10 +154,8 @@ export function FloatingNav({
             /* Single-role user: Promote sub-pages directly into the primary top FloatingNav */
             <div
               className={cn(
-                "flex items-center gap-1 p-1.5 rounded-full border shadow-sm overflow-x-auto no-scrollbar backdrop-blur-2xl",
-                isDark 
-                  ? "bg-zinc-900/65 border-white/10 shadow-black/20" 
-                  : "bg-white/60 border-white/80 shadow-black/5"
+                "flex items-center gap-1 p-1.5 rounded-full shrink-0 overflow-x-auto no-scrollbar shadow-sm",
+                isDark ? "glass-nav-dark" : "glass-nav"
               )}
             >
               {visibleChildren.map((child) => {
@@ -191,10 +185,8 @@ export function FloatingNav({
           {/* 3. Right Pill: Actions (Notification, User Profile) */}
           <div
             className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-full border shadow-sm shrink-0 backdrop-blur-2xl",
-              isDark 
-                ? "bg-zinc-900/65 border-white/10 shadow-black/20" 
-                : "bg-white/60 border-white/80 shadow-black/5"
+              "flex items-center gap-2 px-3.5 py-2 rounded-full shrink-0 shadow-sm",
+              isDark ? "glass-nav-dark" : "glass-nav"
             )}
           >
             {rightActions ?? (
