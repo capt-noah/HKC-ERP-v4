@@ -125,123 +125,65 @@
   }
 }
 
-/* iOS 26 style glass card with 32px rounded corners */
+/* iOS style glass card with 32px rounded corners */
 .glass-card {
-  background: rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(40px) saturate(240%);
-  -webkit-backdrop-filter: blur(40px) saturate(240%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.02), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(40px) saturate(220%);
+  -webkit-backdrop-filter: blur(40px) saturate(220%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.02), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   border-radius: 2rem;
 }
 
 .dark .glass-card {
-  background: rgba(20, 20, 22, 0.38);
-  backdrop-filter: blur(40px) saturate(240%);
-  -webkit-backdrop-filter: blur(40px) saturate(240%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: rgba(20, 20, 24, 0.55);
+  backdrop-filter: blur(40px) saturate(220%);
+  -webkit-backdrop-filter: blur(40px) saturate(220%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   border-radius: 2rem;
 }
 
 /* Solid black card (uses theme black) with 32px rounded corners */
 .glass-card-dark {
-  background: #242427;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
+  background: rgba(36, 36, 39, 0.85);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.12);
   border-radius: 2rem;
 }
 
 /* Floating glass nav */
 .glass-nav {
-  background: rgba(255, 255, 255, 0.62) !important;
+  background: rgba(255, 255, 255, 0.72) !important;
   backdrop-filter: blur(28px) saturate(200%) !important;
   -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.8) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
 }
 
 .glass-nav-dark {
-  background: rgba(20, 20, 24, 0.65) !important;
+  background: rgba(20, 20, 24, 0.75) !important;
   backdrop-filter: blur(28px) saturate(200%) !important;
   -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
 }
 
-/* Page gradient - clean white/grey canvas with subtle organic green accents */
+/* Page canvas - transparent to let the ambient green spherical viewport shine through */
 .page-gradient {
-  background:
-    radial-gradient(circle at 15% 25%, rgba(34, 197, 94, 0.08) 0%, transparent 45%),
-    radial-gradient(circle at 92% 12%, rgba(0, 0, 0, 0.02) 0%, transparent 45%),
-    radial-gradient(circle at 45% 75%, rgba(34, 197, 94, 0.04) 0%, transparent 50%),
-    linear-gradient(135deg, #ffffff 0%, #f4f4f5 50%, #e4e4e7 100%);
+  background: transparent;
   position: relative;
   overflow-x: hidden;
   z-index: 1;
-}
-
-/* Subtle, high-end organic dotted background pattern overlay and interactive floating shapes */
-.page-gradient::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.18;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(244, 244, 245, 0.12));
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Elegant floating vector line circle in background */
-.page-gradient::after {
-  content: "";
-  position: absolute;
-  top: 15%;
-  right: -5%;
-  width: 500px;
-  height: 500px;
-  border: 1px dashed rgba(0, 0, 0, 0.04);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: -1;
-  animation: slow-spin 120s linear infinite;
-  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.01);
 }
 
 .page-gradient-dark {
-  background:
-    radial-gradient(circle at 15% 25%, rgba(34, 197, 94, 0.06) 0%, transparent 45%),
-    radial-gradient(circle at 92% 12%, rgba(0, 0, 0, 0.15) 0%, transparent 45%),
-    radial-gradient(circle at 45% 75%, rgba(34, 197, 94, 0.02) 0%, transparent 50%),
-    linear-gradient(135deg, #09090b 0%, #18181b 50%, #09090b 100%);
+  background: transparent;
   position: relative;
   overflow-x: hidden;
   z-index: 1;
-}
-
-.page-gradient-dark::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.1;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(24, 24, 27, 0.14));
-  pointer-events: none;
-  z-index: -1;
-}
-
-.page-gradient-dark::after {
-  content: "";
-  position: absolute;
-  top: 15%;
-  right: -5%;
-  width: 500px;
-  height: 500px;
-  border: 1px dashed rgba(255, 255, 255, 0.03);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: -1;
-  animation: slow-spin 120s linear infinite;
-  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.01);
 }
 
 /* Animations for background elements */
@@ -270,7 +212,18 @@
   border-bottom: 2px solid #18181b;
   padding-bottom: 7mm;
 }
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
 
+.animate-spin-slow {
+  animation: spin-slow 140s linear infinite;
+}
 .credit-attachment-header h2 {
   font-size: 16pt;
   line-height: 1.1;

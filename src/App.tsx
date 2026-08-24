@@ -33,6 +33,7 @@ import Profile from "@/pages/Profile"
 import NotFound from "@/pages/NotFound"
 
 import { Toaster } from "sonner"
+import { AppBackground } from "@/components/AppBackground"
 
 import { useAuthStore } from "@/lib/authStore"
 
@@ -62,6 +63,7 @@ function RoleHomeRedirect() {
 export function App() {
   return (
     <>
+      <AppBackground />
       <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/login" element={<Login />} />
