@@ -307,7 +307,7 @@ export default function AttendanceLeave() {
                     {employees.length === 0 ? (
                       <p className="text-xs font-semibold text-zinc-400 text-center py-12">No employees loaded. Add employees in the Employees tab first.</p>
                     ) : (
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto table-scrollbar-x" data-table-scroll>
                         <div className="min-w-[820px] space-y-4">
                           {/* Day headers */}
                           <div className="grid items-center text-center" style={{ gridTemplateColumns: "200px repeat(14, 1fr)" }}>
@@ -378,7 +378,7 @@ export default function AttendanceLeave() {
                       ]}
                       actions={[{ label: "Apply Leave", onClick: () => setShowApplyLeave(true) }]}
                     />
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto table-scrollbar-x" data-table-scroll>
                       <table className="w-full text-left border-collapse table-fixed">
                         <ResizableTableHeader columns={leaveColumns} colWidths={colWidths}
                           onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir}

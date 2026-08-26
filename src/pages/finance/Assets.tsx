@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   X,
@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Building,
   CheckCircle2,
-  TrendingDown,
   Download,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -20,6 +19,7 @@ import { useFinanceStore } from "@/lib/financeStore"
 import type { FixedAsset } from "@/lib/financeStore"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { exportPeachtreeFixedAssets, isDateInPreset } from "@/lib/peachtreeExportUtils"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
@@ -224,6 +224,17 @@ export default function Assets() {
   ]
 
   const deprTabTable = useResizableTable(deprTabColumns, filteredScheduleItems)
+
+  const [deprPage, setDeprPage] = useState(1)
+  const [deprPageSize, setDeprPageSize] = useState(10)
+
+  useEffect(() => {
+    setDeprPage(1)
+  }, [deprSearch, deprStatusFilter, filteredScheduleItems.length])
+
+  const sortedDepr = deprTabTable.sorted()
+  const totalDeprPages = Math.max(1, Math.ceil(sortedDepr.length / deprPageSize))
+  const displayedDepr = sortedDepr.slice((deprPage - 1) * deprPageSize, deprPage * deprPageSize)
 
   return (
     <div className="min-h-screen page-gradient">
@@ -472,7 +483,7 @@ export default function Assets() {
                         <div className="overflow-x-auto">
                           <table className="w-full text-left text-xs border-collapse table-fixed">
                             <thead>
-                              <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                              <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                                 {deprInlineColumns.map((col) => (
                                   <ResizableTh
                                     key={col.key}
@@ -561,10 +572,10 @@ export default function Assets() {
                 },
               ]}
             />
-            <div className="overflow-x-auto -mx-2 px-2">
+            <TableScrollWrapper>
               <table className="w-full text-left border-collapse table-fixed text-xs">
                 <thead>
-                  <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                  <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                     {deprTabColumns.map((col) => (
                       <ResizableTh
                         key={col.key}
@@ -583,36 +594,39 @@ export default function Assets() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/5">
-                  {filteredScheduleItems.length === 0 ? (
+                  {sortedDepr.length === 0 ? (
                     <tr><td colSpan={6} className="text-center py-10 text-gray-400">No depreciation schedule items match your filters.</td></tr>
                   ) : (
-                    deprTabTable.sorted().map((item) => (
+                    displayedDepr.map((item) => (
                       <tr key={`${item.assetId}-${item.id}`} className="hover:bg-black/[0.01]">
-                        <td className="py-3 pl-2">
+                        <td className="py-3.5 pl-2">
                           <div className="font-bold text-black">{item.assetName}</div>
                           <div className="text-[10px] text-zinc-400 font-mono">{item.assetId}</div>
                         </td>
-                        <td className="py-3 font-mono font-bold text-zinc-500">#{item.period_number}</td>
-                        <td className="py-3 text-zinc-600">{item.depreciation_date}</td>
-                        <td className="py-3 text-right font-mono font-black text-zinc-900">ETB {item.depreciation_amount.toLocaleString()}</td>
-                        <td className="py-3 text-center">
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                            item.status === "Posted" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                          }`}>{item.status}</span>
+                        <td className="py-3.5 font-mono text-zinc-600">#{item.period_number}</td>
+                        <td className="py-3.5 font-mono text-gray-600">{item.depreciation_date}</td>
+                        <td className="py-3.5 text-right font-mono font-bold text-black">
+                          ETB {item.depreciation_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="py-3 text-right pr-4">
-                          {item.status === "Pending" && (
+                        <td className="py-3.5 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            item.status === "Posted"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-amber-50 text-amber-700 border border-amber-200"
+                          }`}>
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-right pr-4">
+                          {item.status === "Pending" ? (
                             <button
                               onClick={() => handlePostDepreciation(item.assetId, item.id)}
-                              className="text-[10px] font-bold px-3 py-1 rounded-lg bg-black text-white hover:bg-zinc-800 flex items-center gap-1 ml-auto"
+                              className="text-xs font-bold px-3 py-1 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors shadow-xs"
                             >
-                              <TrendingDown className="size-3" /> Post Entry
+                              Post GL
                             </button>
-                          )}
-                          {item.status === "Posted" && (
-                            <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 justify-end">
-                              <CheckCircle2 className="size-3" /> GL Posted
-                            </span>
+                          ) : (
+                            <span className="text-xs font-mono text-gray-400">{item.journal_entry_id || "Posted"}</span>
                           )}
                         </td>
                       </tr>
@@ -620,7 +634,55 @@ export default function Assets() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </TableScrollWrapper>
+
+            {sortedDepr.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between border-t border-black/5 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                  <span>
+                    Showing {Math.min((deprPage - 1) * deprPageSize + 1, sortedDepr.length)} to {Math.min(deprPage * deprPageSize, sortedDepr.length)} of {sortedDepr.length} entries
+                  </span>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                    <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                    <select
+                      value={deprPageSize}
+                      onChange={(e) => {
+                        setDeprPageSize(Number(e.target.value))
+                        setDeprPage(1)
+                      }}
+                      className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={deprPage === 1}
+                    onClick={() => setDeprPage((p) => Math.max(1, p - 1))}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                    Page {deprPage} of {totalDeprPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={deprPage >= totalDeprPages}
+                    onClick={() => setDeprPage((p) => p + 1)}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </GlassCard>
         )}
       </motion.div>

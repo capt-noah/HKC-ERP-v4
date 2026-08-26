@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Search, 
@@ -34,6 +34,7 @@ import {
 } from "@/lib/peachtreeExportUtils"
 
 import { Skeleton } from "@/components/ui/skeleton"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -400,6 +401,16 @@ export default function Ledger() {
     }
     return 0
   })
+
+  const [jePage, setJePage] = useState(1)
+  const [jePageSize, setJePageSize] = useState(10)
+
+  useEffect(() => {
+    setJePage(1)
+  }, [searchEntries, jeSourceFilter, jeDateFilter, filteredEntries.length])
+
+  const totalJePages = Math.max(1, Math.ceil(sortedEntries.length / jePageSize))
+  const displayedEntries = sortedEntries.slice((jePage - 1) * jePageSize, jePage * jePageSize)
 
   // Group accounts
   const accountsByType = {
@@ -797,10 +808,10 @@ export default function Ledger() {
                     ]}
                   />
                 </div>
-                <div className="overflow-x-auto">
+                <TableScrollWrapper>
                   <table className="w-full text-left border-collapse table-fixed">
                     <thead>
-                      <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                      <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                         {jeColumns.map((col) => {
                           const width = jeColWidths[col.key] || 120
                           const isSorted = jeSortKey === col.key
@@ -952,7 +963,7 @@ export default function Ledger() {
                           </td>
                         </tr>
                       ) : (
-                        sortedEntries.map((ent, idx) => {
+                        displayedEntries.map((ent, idx) => {
                           const entryLines = lines.filter((l) => l.journal_entry_id === ent.id)
                           const isReversal = ent.is_reversal_of !== null
                           const isReversed = reversedEntryIds.has(ent.id)
@@ -1004,35 +1015,29 @@ export default function Ledger() {
                               >
                                 <div className="flex flex-col gap-1 max-w-xs">
                                   {entryLines.map((l) => (
-                                    <div key={l.id} className="flex items-center text-[11px] truncate min-h-[18px]">
-                                      {l.party_name ? (
-                                        <span className="font-sans font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] truncate">
-                                          [{l.party_type ? `${l.party_type}: ` : ""}{l.party_name}]
-                                        </span>
-                                      ) : (
-                                        <span className="text-zinc-300 font-mono text-[11px]">-</span>
-                                      )}
+                                    <div key={l.id} className="text-[11px] font-semibold text-zinc-700 truncate">
+                                      {l.party_name || "—"}
                                     </div>
                                   ))}
                                 </div>
                               </td>
                               <td
                                 style={{ width: `${jeColWidths.debit_amount}px` }}
-                                className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap truncate"
+                                className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap"
                               >
-                                ETB {totalDebit.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                ETB {totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </td>
                               <td
                                 style={{ width: `${jeColWidths.credit_amount}px` }}
-                                className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap truncate"
+                                className="px-3 py-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap"
                               >
-                                ETB {totalCredit.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                ETB {totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </td>
                               <td
                                 style={{ width: `${jeColWidths.source_type}px` }}
-                                className="px-3 py-3 text-center whitespace-nowrap truncate"
+                                className="px-3 py-3 text-center whitespace-nowrap"
                               >
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold truncate ${
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                                   ent.source_type === "Payment Voucher"
                                     ? "bg-indigo-50 text-indigo-700 border border-indigo-200/60"
                                     : ent.source_type === "Sales Invoice"
@@ -1046,7 +1051,7 @@ export default function Ledger() {
                               </td>
                               <td
                                 style={{ width: `${jeColWidths.actions}px` }}
-                                className="px-3 py-3 text-right pr-4 whitespace-nowrap"
+                                className="px-3 py-3 text-right whitespace-nowrap pr-3"
                               >
                                 {!isReversal && !isReversed ? (
                                   <button
@@ -1071,7 +1076,55 @@ export default function Ledger() {
                       )}
                     </tbody>
                   </table>
-                </div>
+                </TableScrollWrapper>
+
+                {!isLoading && sortedEntries.length > 0 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                    <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                      <span>
+                        Showing {Math.min((jePage - 1) * jePageSize + 1, sortedEntries.length)} to {Math.min(jePage * jePageSize, sortedEntries.length)} of {sortedEntries.length} entries
+                      </span>
+                      <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                        <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                        <select
+                          value={jePageSize}
+                          onChange={(e) => {
+                            setJePageSize(Number(e.target.value))
+                            setJePage(1)
+                          }}
+                          className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                        >
+                          <option value={10}>10</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={jePage === 1}
+                        onClick={() => setJePage((p) => Math.max(1, p - 1))}
+                        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                        Page {jePage} of {totalJePages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={jePage >= totalJePages}
+                        onClick={() => setJePage((p) => p + 1)}
+                        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </GlassCard>
             </motion.div>
           )}

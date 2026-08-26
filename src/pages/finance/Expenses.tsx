@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Check, 
@@ -23,6 +23,7 @@ import { exportToExcel } from "@/lib/exportUtils"
 import { isDateInPreset } from "@/lib/peachtreeExportUtils"
 
 import { Skeleton } from "@/components/ui/skeleton"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
@@ -313,6 +314,27 @@ export default function Expenses() {
 
   const schColumns: TableColumn[] = [{key:'id',label:'Schedule ID'},{key:'expense_type',label:'Expense Type'},{key:'frequency',label:'Frequency'},{key:'cost_center',label:'Cost Center'},{key:'linked_resource_id',label:'Linked Resource'},{key:'next_due_date',label:'Next Due Date'},{key:'amount',label:'Recurring Amount',align:'right'},{key:'auto_generate',label:'Auto-Generate',align:'center'},{key:'status',label:'Status',align:'center'},{key:'_actions',label:'Actions',align:'right',noSort:true}]
   const schTable = useResizableTable(schColumns, filteredRecurringSchedules)
+
+  const [expPage, setExpPage] = useState(1)
+  const [expPageSize, setExpPageSize] = useState(10)
+  const [schPage, setSchPage] = useState(1)
+  const [schPageSize, setSchPageSize] = useState(10)
+
+  useEffect(() => {
+    setExpPage(1)
+  }, [searchQuery, filterCategory, filterStatus, expenseDateFilter, filteredExpenses.length])
+
+  useEffect(() => {
+    setSchPage(1)
+  }, [schSearch, schStatusFilter, filteredRecurringSchedules.length])
+
+  const sortedExpenses = expTable.sorted()
+  const totalExpPages = Math.max(1, Math.ceil(sortedExpenses.length / expPageSize))
+  const displayedExpenses = sortedExpenses.slice((expPage - 1) * expPageSize, expPage * expPageSize)
+
+  const sortedSchedules = schTable.sorted()
+  const totalSchPages = Math.max(1, Math.ceil(sortedSchedules.length / schPageSize))
+  const displayedSchedules = sortedSchedules.slice((schPage - 1) * schPageSize, schPage * schPageSize)
 
   return (
     <div className="min-h-screen page-gradient">
@@ -613,10 +635,10 @@ export default function Expenses() {
               />
 
               {/* Expense Table List */}
-              <div className="overflow-x-auto">
+              <TableScrollWrapper>
                 <table className="w-full text-left border-collapse table-fixed">
                   <thead>
-                    <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                    <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                       {expColumns.map(col => <ResizableTh key={col.key} col={col} width={expTable.colWidths[col.key] ?? 140} sortKey={expTable.sortKey} sortDir={expTable.sortDir} openMenuCol={expTable.openMenuCol} onResizeStart={expTable.handleResizeStart} onToggleMenu={expTable.toggleMenu} onSortAsc={expTable.setSortAsc} onSortDesc={expTable.setSortDesc} onClearSort={expTable.clearSort} />)}
                     </tr>
                   </thead>
@@ -633,14 +655,14 @@ export default function Expenses() {
                           <td className="py-3.5 text-right pr-4"><Skeleton className="h-4 w-12 bg-zinc-200/80 ml-auto" /></td>
                         </tr>
                       ))
-                    ) : filteredExpenses.length === 0 ? (
+                    ) : sortedExpenses.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="text-center py-12 text-gray-400 text-sm">
                           No expense entries match your filter.
                         </td>
                       </tr>
                     ) : (
-                      expTable.sorted().map((exp) => (
+                      displayedExpenses.map((exp) => (
                         <tr key={exp.id} className="text-sm hover:bg-black/[0.01]">
                           <td className="py-3.5 pl-2 font-mono text-xs font-bold text-gray-500">{exp.id}</td>
                           <td className="py-3.5 font-bold text-black">{exp.merchant}</td>
@@ -711,20 +733,68 @@ export default function Expenses() {
                     )}
                   </tbody>
                 </table>
-              </div>
+              </TableScrollWrapper>
+
+              {!isLoading && sortedExpenses.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between border-t border-black/5 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                  <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                    <span>
+                      Showing {Math.min((expPage - 1) * expPageSize + 1, sortedExpenses.length)} to {Math.min(expPage * expPageSize, sortedExpenses.length)} of {sortedExpenses.length} entries
+                    </span>
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                      <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                      <select
+                        value={expPageSize}
+                        onChange={(e) => {
+                          setExpPageSize(Number(e.target.value))
+                          setExpPage(1)
+                        }}
+                        className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={expPage === 1}
+                      onClick={() => setExpPage((p) => Math.max(1, p - 1))}
+                      className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                      Page {expPage} of {totalExpPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={expPage >= totalExpPages}
+                      onClick={() => setExpPage((p) => p + 1)}
+                      className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </GlassCard>
           </div>
         )}
 
         {/* Tab 2: Recurring Expenses */}
         {activeTab === "recurring" && (
-          <GlassCard className="flex flex-col">
+          <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
             <FinanceTableToolbar
               title="Recurring Expense Schedules"
-              subtitle="Automated leases, retainers, and scheduled overhead payments."
+              subtitle="Manage automated and recurring expense templates"
               searchValue={schSearch}
               onSearchChange={setSchSearch}
-              searchPlaceholder="Search schedule, type, cost center..."
+              searchPlaceholder="Search schedule, expense type, cost center..."
               filters={[
                 {
                   value: schStatusFilter,
@@ -748,78 +818,133 @@ export default function Expenses() {
               ]}
             />
 
-            <div className="overflow-x-auto">
+            <TableScrollWrapper>
               <table className="w-full text-left border-collapse table-fixed">
                 <thead>
-                  <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                  <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                     {schColumns.map(col => <ResizableTh key={col.key} col={col} width={schTable.colWidths[col.key] ?? 140} sortKey={schTable.sortKey} sortDir={schTable.sortDir} openMenuCol={schTable.openMenuCol} onResizeStart={schTable.handleResizeStart} onToggleMenu={schTable.toggleMenu} onSortAsc={schTable.setSortAsc} onSortDesc={schTable.setSortDesc} onClearSort={schTable.clearSort} />)}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/5">
-                  {schTable.sorted().map((sch) => (
-                    <tr key={sch.id} className="text-sm hover:bg-black/[0.01]">
-                      <td className="py-3.5 pl-2 font-mono text-xs font-bold text-gray-500">{sch.id}</td>
-                      <td className="py-3.5 font-bold text-black">{sch.expense_type}</td>
-                      <td className="py-3.5 text-xs text-gray-600 font-medium">{sch.frequency}</td>
-                      <td className="py-3.5 text-xs text-gray-700 font-medium">{sch.cost_center || "CC-100 Corporate HQ"}</td>
-                      <td className="py-3.5 text-xs font-mono text-gray-500">{sch.linked_resource_id || "Overhead General"}</td>
-                      <td className="py-3.5 text-xs font-bold text-black">{sch.next_due_date}</td>
-                      <td className="py-3.5 text-right font-mono font-black text-black">
-                        {sch.currency} {sch.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-3.5 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          sch.auto_generate ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500"
-                        }`}>
-                          {sch.auto_generate ? "Enabled" : "Manual"}
-                        </span>
-                      </td>
-                      <td className="py-3.5 text-center">
-                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${
-                          sch.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-600"
-                        }`}>
-                          {sch.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 text-right pr-4">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              store.toggleRecurringScheduleStatus(sch.id)
-                              showToast("Status Updated", "info", `Schedule ${sch.id} is now ${sch.status === "Active" ? "Paused" : "Active"}`)
-                            }}
-                            className="text-xs font-bold px-2.5 py-1 rounded-lg border border-black/10 hover:bg-black/5 text-black"
-                          >
-                            {sch.status === "Active" ? "Pause" : "Activate"}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingSchedule(sch)
-                              setEditSchExpenseType(sch.expense_type)
-                              setEditSchAmount(String(sch.amount))
-                              setEditSchFrequency(sch.frequency)
-                              setEditSchDueDate(sch.next_due_date)
-                              setShowEditScheduleModal(true)
-                            }}
-                            className="size-7 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors"
-                            title="Edit Schedule"
-                          >
-                            <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSchedule(sch.id)}
-                            className="size-7 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-colors"
-                            title="Delete Schedule"
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
+                  {sortedSchedules.length === 0 ? (
+                    <tr>
+                      <td colSpan={schColumns.length} className="text-center py-12 text-gray-400 text-sm">
+                        No recurring expense schedules found.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    displayedSchedules.map((sch) => (
+                      <tr key={sch.id} className="text-sm hover:bg-black/[0.01]">
+                        <td className="py-3.5 pl-2 font-mono text-xs font-bold text-gray-500">{sch.id}</td>
+                        <td className="py-3.5 font-bold text-black">{sch.expense_type}</td>
+                        <td className="py-3.5 text-xs text-gray-600 font-medium">{sch.frequency}</td>
+                        <td className="py-3.5 text-xs text-gray-700 font-medium">{sch.cost_center || "CC-100 Corporate HQ"}</td>
+                        <td className="py-3.5 text-xs font-mono text-gray-500">{sch.linked_resource_id || "Overhead General"}</td>
+                        <td className="py-3.5 text-xs font-bold text-black">{sch.next_due_date}</td>
+                        <td className="py-3.5 text-right font-mono font-black text-black">
+                          {sch.currency} {sch.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3.5 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            sch.auto_generate ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500"
+                          }`}>
+                            {sch.auto_generate ? "Auto" : "Manual"}
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-center">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            sch.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500"
+                          }`}>
+                            {sch.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-right pr-4">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                store.toggleRecurringScheduleStatus(sch.id)
+                                showToast("Status Updated", "info", `Schedule ${sch.id} is now ${sch.status === "Active" ? "Paused" : "Active"}`)
+                              }}
+                              className="text-xs font-bold px-2.5 py-1 rounded-lg border border-black/10 hover:bg-black/5 text-black"
+                            >
+                              {sch.status === "Active" ? "Pause" : "Activate"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingSchedule(sch)
+                                setEditSchExpenseType(sch.expense_type)
+                                setEditSchAmount(String(sch.amount))
+                                setEditSchFrequency(sch.frequency)
+                                setEditSchDueDate(sch.next_due_date)
+                                setShowEditScheduleModal(true)
+                              }}
+                              className="size-7 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors"
+                              title="Edit Schedule"
+                            >
+                              <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSchedule(sch.id)}
+                              className="size-7 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-colors"
+                              title="Delete Schedule"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
-            </div>
+            </TableScrollWrapper>
+            {sortedSchedules.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between border-t border-black/5 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                  <span>
+                    Showing {Math.min((schPage - 1) * schPageSize + 1, sortedSchedules.length)} to {Math.min(schPage * schPageSize, sortedSchedules.length)} of {sortedSchedules.length} entries
+                  </span>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                    <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                    <select
+                      value={schPageSize}
+                      onChange={(e) => {
+                        setSchPageSize(Number(e.target.value))
+                        setSchPage(1)
+                      }}
+                      className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={schPage === 1}
+                    onClick={() => setSchPage((p) => Math.max(1, p - 1))}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                    Page {schPage} of {totalSchPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={schPage >= totalSchPages}
+                    onClick={() => setSchPage((p) => p + 1)}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </GlassCard>
         )}
 

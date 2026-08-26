@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Users,
@@ -15,6 +15,8 @@ import {
   Phone,
   Mail,
   Globe,
+  FileText,
+  Eye,
 } from "lucide-react"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -27,6 +29,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { saveTradeLicense } from "@/lib/tradeDocumentService"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
@@ -323,6 +326,24 @@ export default function PartnersRegistry() {
       (s.email || "").toLowerCase().includes(q)
     )
   })
+  const [custPage, setCustPage] = useState(1)
+  const [custPageSize, setCustPageSize] = useState(10)
+  const [suppPage, setSuppPage] = useState(1)
+  const [suppPageSize, setSuppPageSize] = useState(10)
+
+  useEffect(() => {
+    setCustPage(1)
+  }, [search, filteredCustomers.length])
+
+  useEffect(() => {
+    setSuppPage(1)
+  }, [search, filteredSuppliers.length])
+
+  const totalCustPages = Math.max(1, Math.ceil(filteredCustomers.length / custPageSize))
+  const displayedCustomers = filteredCustomers.slice((custPage - 1) * custPageSize, custPage * custPageSize)
+
+  const totalSuppPages = Math.max(1, Math.ceil(filteredSuppliers.length / suppPageSize))
+  const displayedSuppliers = filteredSuppliers.slice((suppPage - 1) * suppPageSize, suppPage * suppPageSize)
 
   return (
     <div className="min-h-screen page-gradient">
@@ -433,12 +454,11 @@ export default function PartnersRegistry() {
               )}
             </div>
           </div>
-
           {/* Table Content */}
-          <div className="overflow-x-auto">
+          <TableScrollWrapper>
             {activeTab === "customers" ? (
               <table className="w-full text-left text-xs">
-                <thead className="bg-zinc-100/90 text-zinc-600 font-extrabold uppercase text-[10px] tracking-wider border-b border-zinc-200/80">
+                <thead className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                   <tr>
                     <th className="px-4 py-3">Customer ID / Name</th>
                     <th className="px-4 py-3">Category & Region</th>
@@ -457,7 +477,7 @@ export default function PartnersRegistry() {
                       <td colSpan={5} className="p-8 text-center text-zinc-400 font-medium">No customers found in registry.</td>
                     </tr>
                   ) : (
-                    filteredCustomers.map((c) => (
+                    displayedCustomers.map((c) => (
                       <tr key={c.id} className="hover:bg-white/80 transition-colors">
                         <td className="px-4 py-3.5">
                           <div className="font-mono font-black text-zinc-950">{c.id}</div>
@@ -500,22 +520,30 @@ export default function PartnersRegistry() {
                                         }`}
                                         title={isExpired ? "Trade License Expired! Click to view" : "View Trade License"}
                                       >
-                                        <CheckCircle2 className={`size-3 ${isExpired ? "text-rose-500" : "text-emerald-600"}`} /> {c.tradePaperFileName || "Trade License"} ↗
+                                        <FileText className="size-3 text-emerald-600" />
+                                        <span className="max-w-[130px] truncate">{c.tradePaperFileName || "Trade License"}</span>
+                                        <Eye className="size-3 text-emerald-500" />
                                       </button>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-zinc-50 text-zinc-700 border-zinc-200">
-                                        <CheckCircle2 className="size-3 text-zinc-400" /> {c.tradePaperFileName}
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName || "On File"}
                                       </span>
                                     )}
-                                    <span className={`text-[9px] font-black uppercase tracking-wider ${isExpired ? "text-rose-600" : "text-emerald-600"}`}>
-                                      {isExpired ? "Expired" : `Valid (${evaluation.daysRemaining}d remaining)`}
-                                    </span>
+                                    {isExpired ? (
+                                      <span className="text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md">
+                                        Expired ({evaluation.daysRemaining}d ago)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-md">
+                                        Valid ({evaluation.daysRemaining}d left)
+                                      </span>
+                                    )}
                                   </div>
                                 )
                               })()
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                <AlertCircle className="size-2.5 text-amber-500" /> Trade License Missing
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                <AlertCircle className="size-3 text-amber-500" /> Missing Trade License
                               </span>
                             )}
                           </div>
@@ -545,7 +573,7 @@ export default function PartnersRegistry() {
               </table>
             ) : (
               <table className="w-full text-left text-xs">
-                <thead className="bg-zinc-100/90 text-zinc-600 font-extrabold uppercase text-[10px] tracking-wider border-b border-zinc-200/80">
+                <thead className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                   <tr>
                     <th className="px-4 py-3">Supplier ID / Name</th>
                     <th className="px-4 py-3">Category & Location</th>
@@ -564,7 +592,7 @@ export default function PartnersRegistry() {
                       <td colSpan={5} className="p-8 text-center text-zinc-400 font-medium">No suppliers found in registry.</td>
                     </tr>
                   ) : (
-                    filteredSuppliers.map((s) => (
+                    displayedSuppliers.map((s) => (
                       <tr key={s.id} className="hover:bg-white/80 transition-colors">
                         <td className="px-4 py-3.5">
                           <div className="font-mono font-black text-zinc-950">{s.id}</div>
@@ -620,7 +648,106 @@ export default function PartnersRegistry() {
                 </tbody>
               </table>
             )}
-          </div>
+          </TableScrollWrapper>
+
+          {/* Pagination Footer */}
+          {!isLoading && (
+            <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 dark:border-zinc-800/60 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+              {activeTab === "customers" ? (
+                <>
+                  <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                    <span>
+                      Showing {filteredCustomers.length === 0 ? 0 : (custPage - 1) * custPageSize + 1} to {Math.min(custPage * custPageSize, filteredCustomers.length)} of {filteredCustomers.length} entries
+                    </span>
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                      <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                      <select
+                        value={custPageSize}
+                        onChange={(e) => {
+                          setCustPageSize(Number(e.target.value))
+                          setCustPage(1)
+                        }}
+                        className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={custPage === 1}
+                      onClick={() => setCustPage((p) => Math.max(1, p - 1))}
+                      className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                      Page {custPage} of {totalCustPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={custPage >= totalCustPages}
+                      onClick={() => setCustPage((p) => p + 1)}
+                      className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                    <span>
+                      Showing {filteredSuppliers.length === 0 ? 0 : (suppPage - 1) * suppPageSize + 1} to {Math.min(suppPage * suppPageSize, filteredSuppliers.length)} of {filteredSuppliers.length} entries
+                    </span>
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                      <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                      <select
+                        value={suppPageSize}
+                        onChange={(e) => {
+                          setSuppPageSize(Number(e.target.value))
+                          setSuppPage(1)
+                        }}
+                        className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={suppPage === 1}
+                      onClick={() => setSuppPage((p) => Math.max(1, p - 1))}
+                      className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                      Page {suppPage} of {totalSuppPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={suppPage >= totalSuppPages}
+                      onClick={() => setSuppPage((p) => p + 1)}
+                      className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </GlassCard>
       </motion.div>
 

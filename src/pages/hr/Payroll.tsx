@@ -6,6 +6,7 @@ import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useFeedback } from "@/context/FeedbackContext"
 import { financeStore } from "@/lib/financeStore"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
@@ -129,6 +130,17 @@ export default function Payroll() {
 
   const { sortKey, sortDir, handleSort, handleClearSort, sortItems } = useTableSort()
   const sorted = sortItems(filtered)
+
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, selectedPeriod, payrollStatus, paymentStatus, warehouse, filtered.length])
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
+  const displayedRecords = sorted.slice((page - 1) * pageSize, page * pageSize)
+
   const columns: TableColumn[] = [
     { key: "employee", label: "Employee", initialWidth: 220 },
     { key: "warehouse", label: "Warehouse", initialWidth: 150 },
@@ -371,11 +383,11 @@ export default function Payroll() {
             actions={[{ label: "Create Period", onClick: () => setShowPeriodForm(true), variant: "secondary" }, { label: "Load Active Employees", onClick: loadActiveEmployees }]}
             secondary={currentPeriod && <div className="flex flex-wrap gap-2">{PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => <button key={item} onClick={() => updatePeriodStatus(item)} className="rounded-full bg-black/[0.04] px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700">{item}</button>)}</div>}
           />
-          <div className="overflow-x-auto">
+          <TableScrollWrapper>
             <table className="w-full text-left border-collapse table-fixed">
               <ResizableTableHeader columns={columns} colWidths={colWidths} onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} onClearSort={handleClearSort} />
               <tbody className="divide-y divide-black/5 text-xs">
-                {!loading && sorted.length === 0 ? <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No payroll records have been created yet.</td></tr> : sorted.map((record) => {
+                {!loading && sorted.length === 0 ? <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No payroll records have been created yet.</td></tr> : displayedRecords.map((record) => {
                   const employee = employeeById.get(record.employee_id)
                   const period = periodById.get(record.payroll_period_id)
                   const canApprove = record.payment_status === "Pending" && period?.status !== "Cancelled"
@@ -404,7 +416,55 @@ export default function Payroll() {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableScrollWrapper>
+
+          {!loading && sorted.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between border-t border-black/5 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+              <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                <span>
+                  Showing {Math.min((page - 1) * pageSize + 1, sorted.length)} to {Math.min(page * pageSize, sorted.length)} of {sorted.length} entries
+                </span>
+                <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                  <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value))
+                      setPage(1)
+                    }}
+                    className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </GlassCard>
           </>
         )}

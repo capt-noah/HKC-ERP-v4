@@ -691,7 +691,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
       <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Top Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-3xl font-black text-black tracking-tight">Sales Orders & Contracts</h1>

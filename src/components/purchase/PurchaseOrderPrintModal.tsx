@@ -35,6 +35,8 @@ export default function PurchaseOrderPrintModal({
     date: po.date || "",
     paidTo: po.paidTo || po.supplier || "",
     reasonForPayment: po.reasonForPayment || po.category || "",
+    bankName: po.bankName || "Commercial Bank of Ethiopia (CBE)",
+    paymentMethod: po.paymentMethod || "Cheque",
     chequeNo: po.chequeNo || "",
     amount: Number(po.amount || 0),
     amountInWords: amountWords,
@@ -135,7 +137,19 @@ export default function PurchaseOrderPrintModal({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-zinc-500">Cheque No:</span>
+              <span className="font-bold text-zinc-500">Bank:</span>
+              <span className="font-semibold text-zinc-950 border-b border-zinc-300 pb-0.5 flex-1">
+                {po.bankName || "Commercial Bank of Ethiopia (CBE)"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-zinc-500">Payment Method:</span>
+              <span className="font-semibold text-zinc-950 border-b border-zinc-300 pb-0.5 flex-1">
+                {po.paymentMethod || "Cheque"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-zinc-500">Cheque / Ref No:</span>
               <span className="font-mono font-bold text-zinc-950 border-b border-zinc-300 pb-0.5 flex-1">
                 {po.chequeNo || "—"}
               </span>

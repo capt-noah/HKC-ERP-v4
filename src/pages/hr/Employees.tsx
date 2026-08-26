@@ -6,6 +6,7 @@ import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useFeedback } from "@/context/FeedbackContext"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
@@ -67,6 +68,17 @@ export default function Employees() {
 
   const { sortKey, sortDir, handleSort, handleClearSort, sortItems } = useTableSort()
   const sortedEmployees = sortItems(filteredEmployees)
+
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, status, warehouse, employmentType, filteredEmployees.length])
+
+  const totalPages = Math.max(1, Math.ceil(sortedEmployees.length / pageSize))
+  const displayedEmployees = sortedEmployees.slice((page - 1) * pageSize, page * pageSize)
+
   const columns: TableColumn[] = [
     { key: "full_name", label: "Full Name", initialWidth: 200 },
     { key: "phone", label: "Phone", initialWidth: 140 },
@@ -185,13 +197,13 @@ export default function Employees() {
               ]}
               actions={[{ label: "Add Employee", onClick: openAdd }]}
             />
-            <div className="overflow-x-auto">
+            <TableScrollWrapper>
               <table className="w-full text-left border-collapse table-fixed">
                 <ResizableTableHeader columns={columns} colWidths={colWidths} onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} onClearSort={handleClearSort} />
                 <tbody className="divide-y divide-black/5 text-xs">
                   {!loading && sortedEmployees.length === 0 ? (
                     <tr><td colSpan={9} className="py-12 text-center text-zinc-400 font-medium">No employees have been registered yet.</td></tr>
-                  ) : sortedEmployees.map((employee) => (
+                  ) : displayedEmployees.map((employee) => (
                     <tr key={employee.id} className="hover:bg-black/[0.02] transition-colors">
                       <Cell width={colWidths.full_name}><div className="flex items-center gap-2"><span className="size-7 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[10px] font-black">{initials(employee.full_name)}</span><span className="truncate">{employee.full_name}</span></div></Cell>
                       <Cell width={colWidths.phone}>{employee.phone || "-"}</Cell>
@@ -210,7 +222,55 @@ export default function Employees() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScrollWrapper>
+
+            {!loading && sortedEmployees.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between border-t border-black/5 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                  <span>
+                    Showing {Math.min((page - 1) * pageSize + 1, sortedEmployees.length)} to {Math.min(page * pageSize, sortedEmployees.length)} of {sortedEmployees.length} entries
+                  </span>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                    <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value))
+                        setPage(1)
+                      }}
+                      className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </GlassCard>
         </motion.div>
         )}

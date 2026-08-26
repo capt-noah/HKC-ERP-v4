@@ -1,9 +1,11 @@
 import { loadResource, createResource, updateResource, deleteResource } from "./apiPersistence"
 import type { HkcDocRecord } from "./erpStore"
+import { sortNewestFirst } from "./utils"
 
 export async function loadHkcDocRecords(): Promise<HkcDocRecord[]> {
   try {
-    return await loadResource<HkcDocRecord>("hkc_doc_records")
+    const records = await loadResource<HkcDocRecord>("hkc_doc_records")
+    return sortNewestFirst(records)
   } catch (err) {
     console.error("loadHkcDocRecords error:", err)
     return []

@@ -140,7 +140,7 @@ export function ResizableTableHeader({
 
   return (
     <thead>
-      <tr className="border-b border-black/10 bg-black/[0.03] text-[11px] font-extrabold text-zinc-600 uppercase tracking-wider select-none">
+      <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase select-none">
         {columns.map((col) => {
           const width = colWidths[col.key] || col.initialWidth || 130
           const isSorted = sortKey === col.key

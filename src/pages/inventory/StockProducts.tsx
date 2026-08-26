@@ -23,6 +23,7 @@ import { withOperatingWarehouses } from "@/lib/warehouses"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
@@ -411,6 +412,17 @@ export default function StockProducts() {
   const totalTableWidth = useMemo(() => {
     return currentProductColumns.reduce((sum, col) => sum + (productsTable.colWidths[col.key] || 120), 0)
   }, [currentProductColumns, productsTable.colWidths])
+
+  const [stockPage, setStockPage] = useState(1)
+  const [stockPageSize, setStockPageSize] = useState(10)
+
+  useEffect(() => {
+    setStockPage(1)
+  }, [searchQuery, selectedWarehouse, expiryFilter, filteredProducts.length])
+
+  const sortedStockProducts = productsTable.sorted()
+  const totalStockPages = Math.max(1, Math.ceil(sortedStockProducts.length / stockPageSize))
+  const displayedStockProducts = sortedStockProducts.slice((stockPage - 1) * stockPageSize, stockPage * stockPageSize)
 
   // Chevron expand / collapse toggle
   const toggleRowExpand = (productId: string) => {
@@ -923,7 +935,7 @@ export default function StockProducts() {
                   />
                 </div>
 
-                <div className="overflow-x-auto">
+                <TableScrollWrapper>
                   <table className="w-full text-left border-collapse table-fixed" style={{ minWidth: `${Math.max(totalTableWidth, 1100)}px` }}>
                     <thead className="relative z-20">
                       <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
@@ -947,14 +959,14 @@ export default function StockProducts() {
                     <tbody className="divide-y divide-zinc-150/40">
                       {isLoading ? (
                         <ProductTableSkeletonRows colSpan={currentProductColumns.length} />
-                      ) : productsTable.sorted().length === 0 ? (
+                      ) : sortedStockProducts.length === 0 ? (
                         <tr>
                           <td colSpan={currentProductColumns.length} className="text-center py-16 text-zinc-400 text-xs font-semibold">
                             No stock records found matching filters.
                           </td>
                         </tr>
                       ) : (
-                        productsTable.sorted().map((prod) => {
+                        displayedStockProducts.map((prod) => {
                           const isWH1Item = isWH1(prod.warehouse)
                           const isExpanded = expandedProductIds.has(prod.id)
 
@@ -1237,7 +1249,55 @@ export default function StockProducts() {
                       )}
                     </tbody>
                   </table>
-                </div>
+                </TableScrollWrapper>
+
+                {!isLoading && sortedStockProducts.length > 0 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 dark:border-zinc-800/60 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                    <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                      <span>
+                        Showing {Math.min((stockPage - 1) * stockPageSize + 1, sortedStockProducts.length)} to {Math.min(stockPage * stockPageSize, sortedStockProducts.length)} of {sortedStockProducts.length} entries
+                      </span>
+                      <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                        <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                        <select
+                          value={stockPageSize}
+                          onChange={(e) => {
+                            setStockPageSize(Number(e.target.value))
+                            setStockPage(1)
+                          }}
+                          className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                        >
+                          <option value={10}>10</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={stockPage === 1}
+                        onClick={() => setStockPage((p) => Math.max(1, p - 1))}
+                        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                        Page {stockPage} of {totalStockPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={stockPage >= totalStockPages}
+                        onClick={() => setStockPage((p) => p + 1)}
+                        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </GlassCard>
             </motion.div>
           )}

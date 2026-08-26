@@ -204,8 +204,7 @@ export default function Attendance() {
                 />
               }
             />
-
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto table-scrollbar-x" data-table-scroll>
               <div className="min-w-[700px] divide-y divide-black/5">
                 <div className="grid grid-cols-[300px_180px_minmax(180px,_1fr)_120px] gap-3 bg-black/[0.03] px-5 py-3 text-[10px] font-black uppercase tracking-wider text-zinc-500">
                   <span>Employee</span>

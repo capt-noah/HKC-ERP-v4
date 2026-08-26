@@ -1,4 +1,5 @@
 import { createResource, deleteResource, loadResource, updateResource, API_BASE } from "./apiPersistence"
+import { sortNewestFirst } from "./utils"
 
 export const WAREHOUSE_OPTIONS = ["Warehouse 1", "Warehouse 2", "Warehouse 3", "Head Office", "Not Assigned"] as const
 export const EMPLOYMENT_TYPES = ["Permanent", "Temporary", "Contract", "Probation", "Intern", "Part-Time"] as const
@@ -360,11 +361,11 @@ export async function loadHRData(): Promise<HRData> {
   ])
 
   return {
-    employees: employees.map(normalizeEmployee).filter((e) => e.full_name && e.id),
-    attendance: attendance.map(normalizeAttendance).filter((a) => a.id),
-    leaves: leaves.map(normalizeLeave).filter((l) => l.id),
-    payrollPeriods: payrollPeriods.map(normalizePayrollPeriod).filter((p) => p.name),
-    payrollRecords: payrollRecords.map(normalizePayrollRecord).filter((r) => r.id),
+    employees: sortNewestFirst(employees.map(normalizeEmployee).filter((e) => e.full_name && e.id)),
+    attendance: sortNewestFirst(attendance.map(normalizeAttendance).filter((a) => a.id)),
+    leaves: sortNewestFirst(leaves.map(normalizeLeave).filter((l) => l.id)),
+    payrollPeriods: sortNewestFirst(payrollPeriods.map(normalizePayrollPeriod).filter((p) => p.name)),
+    payrollRecords: sortNewestFirst(payrollRecords.map(normalizePayrollRecord).filter((r) => r.id)),
   }
 }
 

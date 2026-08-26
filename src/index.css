@@ -138,8 +138,8 @@ body,
 *,
 *::before,
 *::after {
-  scrollbar-width: none !important; /* Firefox */
-  -ms-overflow-style: none !important; /* IE / Edge */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / Edge */
 }
 
 ::-webkit-scrollbar,
@@ -147,13 +147,88 @@ body,
 *::-webkit-scrollbar-track,
 *::-webkit-scrollbar-thumb,
 *::-webkit-scrollbar-corner {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  max-width: 0 !important;
-  max-height: 0 !important;
-  background: transparent !important;
-  opacity: 0 !important;
+  display: none;
+  width: 0;
+  height: 0;
+  max-width: 0;
+  max-height: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+/* Restored & styled visible horizontal scrollbar for data tables on desktop */
+.table-scrollbar-x,
+[data-table-scroll] {
+  scrollbar-width: thin !important;
+  scrollbar-color: #059669 rgba(5, 150, 105, 0.08) !important;
+  -ms-overflow-style: auto !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar,
+[data-table-scroll]::-webkit-scrollbar {
+  display: block !important;
+  height: 10px !important;
+  width: 10px !important;
+  background: rgba(5, 150, 105, 0.05) !important;
+  border-radius: 9999px !important;
+  opacity: 1 !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-track,
+[data-table-scroll]::-webkit-scrollbar-track {
+  display: block !important;
+  background: rgba(5, 150, 105, 0.05) !important;
+  border-radius: 9999px !important;
+  border: 1px solid rgba(5, 150, 105, 0.1) !important;
+  opacity: 1 !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-thumb,
+[data-table-scroll]::-webkit-scrollbar-thumb {
+  display: block !important;
+  background: #059669 !important;
+  border-radius: 9999px !important;
+  opacity: 1 !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  cursor: grab !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-thumb:hover,
+[data-table-scroll]::-webkit-scrollbar-thumb:hover {
+  background: #047857 !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-thumb:active,
+[data-table-scroll]::-webkit-scrollbar-thumb:active {
+  cursor: grabbing !important;
+  background: #065f46 !important;
+}
+
+.dark .table-scrollbar-x,
+.dark [data-table-scroll] {
+  scrollbar-color: #10b981 rgba(16, 185, 129, 0.1) !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar,
+.dark [data-table-scroll]::-webkit-scrollbar {
+  background: rgba(16, 185, 129, 0.06) !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar-track,
+.dark [data-table-scroll]::-webkit-scrollbar-track {
+  background: rgba(16, 185, 129, 0.06) !important;
+  border: 1px solid rgba(16, 185, 129, 0.12) !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar-thumb,
+.dark [data-table-scroll]::-webkit-scrollbar-thumb {
+  background: #10b981 !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar-thumb:hover,
+.dark [data-table-scroll]::-webkit-scrollbar-thumb:hover {
+  background: #34d399 !important;
 }
 
 /* Modal open background locking & overscroll containment */

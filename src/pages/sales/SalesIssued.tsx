@@ -11,11 +11,13 @@ import { useErpStore } from "@/lib/erpStore"
 import { financeStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
+import { sortNewestFirst } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import SalesIssuePrintModal from "@/components/sales/SalesIssuePrintModal"
 
 import {
@@ -92,7 +94,7 @@ export default function SalesIssued() {
   const [rows, setRows] = useState<SalesIssue[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [pageSize] = useState(10)
+  const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState("")
   const [batchFilter, setBatchFilter] = useState("ALL")
   const [loading, setLoading] = useState(false)
@@ -248,8 +250,9 @@ export default function SalesIssued() {
       if (batchFilter !== "ALL") params.set("batch_no", batchFilter)
       const result = await listSalesIssues(params)
       const safeRows = Array.isArray(result?.rows) ? result.rows : Array.isArray(result) ? result : []
-      const safeTotal = typeof result?.total === "number" ? result.total : safeRows.length
-      setRows(safeRows)
+      const sorted = sortNewestFirst(safeRows)
+      const safeTotal = typeof result?.total === "number" ? result.total : sorted.length
+      setRows(sorted)
       setTotal(safeTotal)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sales issued records.")
@@ -765,7 +768,7 @@ export default function SalesIssued() {
 
           {error && <div className="mx-6 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">{error}</div>}
 
-          <div className="overflow-x-auto">
+          <TableScrollWrapper>
             <table className="w-full text-left border-collapse table-fixed">
               <thead>
                 <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
@@ -837,11 +840,48 @@ export default function SalesIssued() {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="flex items-center justify-between border-t border-zinc-100 px-6 py-4">
-            <button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-bold disabled:opacity-40">Previous</button>
-            <span className="text-xs font-bold text-zinc-500">Page {page} of {Math.max(1, Math.ceil(total / pageSize))}</span>
-            <button disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((value) => value + 1)} className="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-bold disabled:opacity-40">Next</button>
+          </TableScrollWrapper>
+          <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 px-6 py-4 bg-white/40 gap-3">
+            <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+              <span>
+                Showing {total === 0 ? 0 : (page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total} entries
+              </span>
+              <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value))
+                    setPage(1)
+                  }}
+                  className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+              >
+                Previous
+              </button>
+              <span className="text-xs font-black text-zinc-700 px-2 font-mono">
+                Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+              </span>
+              <button
+                disabled={page >= Math.ceil(total / pageSize)}
+                onClick={() => setPage((value) => value + 1)}
+                className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </GlassCard>
       </main>

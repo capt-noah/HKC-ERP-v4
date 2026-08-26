@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   X,
@@ -16,6 +16,7 @@ import { useFinanceStore } from "@/lib/financeStore"
 import type { TaxRule } from "@/lib/financeStore"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -154,6 +155,17 @@ export default function Taxes() {
     sorted,
   } = useResizableTable(columns, filteredTaxRules)
 
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, filterType, filteredTaxRules.length])
+
+  const sortedRules = sorted()
+  const totalPages = Math.max(1, Math.ceil(sortedRules.length / pageSize))
+  const displayedRules = sortedRules.slice((page - 1) * pageSize, page * pageSize)
+
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
@@ -233,10 +245,10 @@ export default function Taxes() {
               actions={[{ label: "Add Tax Rule", onClick: () => setShowAddModal(true) }]}
             />
 
-            <div className="overflow-x-auto">
+            <TableScrollWrapper>
               <table className="w-full text-left border-collapse table-fixed">
                 <thead>
-                  <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                  <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                     {columns.map((col) => (
                       <ResizableTh
                         key={col.key}
@@ -268,14 +280,14 @@ export default function Taxes() {
                         <td className="py-3.5 text-right pr-2"><Skeleton className="h-4 w-12 bg-zinc-200/80 ml-auto" /></td>
                       </tr>
                     ))
-                  ) : filteredTaxRules.length === 0 ? (
+                  ) : sortedRules.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="text-center py-12 text-gray-400">
                         No tax rules configured. Click &quot;Add Tax Rule&quot; to create one.
                       </td>
                     </tr>
                   ) : (
-                    sorted().map((rule) => (
+                    displayedRules.map((rule) => (
                       <tr key={rule.id} className="hover:bg-black/[0.01]">
                         <td className="py-3.5 pl-2 font-mono text-xs font-bold text-gray-500">{rule.id}</td>
                         <td className="py-3.5 font-bold text-black">{rule.name}</td>
@@ -317,7 +329,55 @@ export default function Taxes() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </TableScrollWrapper>
+
+            {!isLoading && sortedRules.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between border-t border-black/5 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                  <span>
+                    Showing {Math.min((page - 1) * pageSize + 1, sortedRules.length)} to {Math.min(page * pageSize, sortedRules.length)} of {sortedRules.length} entries
+                  </span>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                    <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value))
+                        setPage(1)
+                      }}
+                      className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </GlassCard>
         </motion.div>
       </motion.div>

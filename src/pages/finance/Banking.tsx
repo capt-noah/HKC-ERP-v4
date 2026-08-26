@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Landmark,
@@ -17,6 +17,7 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { exportToExcel } from "@/lib/exportUtils"
 import { isDateInPreset } from "@/lib/peachtreeExportUtils"
 import { Skeleton } from "@/components/ui/skeleton"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -97,6 +98,17 @@ export default function Banking() {
   ]
 
   const { colWidths, sortKey, sortDir, openMenuCol, handleResizeStart, toggleMenu, setSortAsc, setSortDesc, clearSort, sorted } = useResizableTable(columns, filteredBankLines)
+
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  useEffect(() => {
+    setPage(1)
+  }, [bankSearch, bankStatusFilter, bankTypeFilter, bankDateFilter, filteredBankLines.length])
+
+  const sortedLines = sorted()
+  const totalPages = Math.max(1, Math.ceil(sortedLines.length / pageSize))
+  const displayedLines = sortedLines.slice((page - 1) * pageSize, page * pageSize)
 
   const handleClearBankLine = (id: string) => {
     setClearedLineIds((previous) => new Set(previous).add(id))
@@ -272,10 +284,10 @@ export default function Banking() {
                     },
                   ]}
                 />
-                <div className="overflow-x-auto -mx-2 px-2">
+                <TableScrollWrapper>
                   <table className="w-full text-left border-collapse table-fixed">
                     <thead>
-                      <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase tracking-wider select-none">
+                      <tr className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                         {columns.map(col => (
                           <ResizableTh
                             key={col.key}
@@ -306,55 +318,106 @@ export default function Banking() {
                             <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-12 bg-zinc-200/80 ml-auto" /></td>
                           </tr>
                         ))
-                      ) : sorted().length === 0 ? (
+                      ) : sortedLines.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="text-center py-12 text-gray-400">
-                            No bank statement lines match your filters.
+                          <td colSpan={7} className="text-center py-16 text-zinc-400">
+                            No bank statement lines match the selected filters.
                           </td>
                         </tr>
                       ) : (
-                      sorted().map((line) => (
-                        <tr key={line.id} className="hover:bg-zinc-50/60 transition-colors">
-                        <td className="px-4 py-3 font-mono text-zinc-600">{line.date}</td>
-                        <td className="px-4 py-3 font-mono font-bold text-zinc-900">{line.reference}</td>
-                        <td className="px-4 py-3 font-semibold text-zinc-800">{line.payee}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            line.type === "Deposit" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-700"
-                          }`}>
-                            {line.type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-zinc-900">
-                          ETB {line.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {line.isCleared ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full">
-                              <CheckCircle2 className="size-3" /> Cleared ({line.clearedDate})
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full">
-                              Uncleared
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right pr-4">
-                          {!line.isCleared && (
-                            <button
-                              onClick={() => handleClearBankLine(line.id)}
-                              className="text-[11px] font-bold text-white bg-black hover:bg-zinc-800 px-3 py-1 rounded-full transition-all"
-                            >
-                              Clear Transaction
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                        displayedLines.map((line) => {
+                          const isCleared = clearedLineIds.has(line.id) || line.isCleared
+                          return (
+                            <tr key={line.id} className="hover:bg-zinc-50/60 transition-colors">
+                              <td className="px-4 py-3 font-mono text-zinc-600">{line.date}</td>
+                              <td className="px-4 py-3 font-mono font-bold text-zinc-900">{line.reference}</td>
+                              <td className="px-4 py-3 font-semibold text-zinc-800">{line.payee}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                  line.type === "Deposit" ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-700"
+                                }`}>
+                                  {line.type}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right font-mono font-bold text-zinc-900">
+                                ETB {line.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {isCleared ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full">
+                                    <CheckCircle2 className="size-3" /> Cleared ({line.clearedDate || "Auto"})
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full">
+                                    Uncleared
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right pr-4">
+                                {!isCleared && (
+                                  <button
+                                    onClick={() => handleClearBankLine(line.id)}
+                                    className="text-[11px] font-bold text-white bg-black hover:bg-zinc-800 px-3 py-1 rounded-full transition-all"
+                                  >
+                                    Clear Transaction
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })
                       )}
-                  </tbody>
-                </table>
-                </div>
+                    </tbody>
+                  </table>
+                </TableScrollWrapper>
+
+                {!isLoading && sortedLines.length > 0 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                    <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                      <span>
+                        Showing {Math.min((page - 1) * pageSize + 1, sortedLines.length)} to {Math.min(page * pageSize, sortedLines.length)} of {sortedLines.length} entries
+                      </span>
+                      <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                        <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                        <select
+                          value={pageSize}
+                          onChange={(e) => {
+                            setPageSize(Number(e.target.value))
+                            setPage(1)
+                          }}
+                          className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                        >
+                          <option value={10}>10</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={page === 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                        Page {page} of {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((p) => p + 1)}
+                        className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </GlassCard>
             </motion.div>
           )}

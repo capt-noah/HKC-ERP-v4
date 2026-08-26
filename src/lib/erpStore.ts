@@ -5,6 +5,7 @@ import { financeStore } from "./financeStore"
 import { evaluateStockStatus } from "../core/inventory/stockEngine"
 import { validateTransferNote } from "../core/inventory/transferEngine"
 import { processSalesOrderPipeline } from "../core/sales/orderPipeline"
+import { sortNewestFirst } from "./utils"
 
 export interface Warehouse {
   id: string
@@ -313,6 +314,9 @@ export interface PurchaseOrder {
   paidBy?: string
   receivedBy?: string
   items?: PurchaseOrderItem[]
+  bankName?: string
+  paymentMethod?: "Cheque" | "Bank Transfer" | "RTGS" | "Cash" | string
+  paymentAdviceAttachment?: PurchaseOrderAttachment | null
   attachments?: PurchaseOrderAttachment[] | string[]
   receivedAmount?: number
   billedAmount?: number
@@ -444,12 +448,12 @@ class ErpStore {
         loadResource<PurchaseOrder>("purchase_orders").catch(() => []),
       ])
 
-      this.warehouses = warehouses
-      this.products = products.map((product) => this.withInventoryValue(product))
-      this.transfers = transfers.map(({ id: _id, ...transfer }) => transfer as Transfer)
-      this.stockMovements = stockMovements
-      if (suppliers.length > 0) this.suppliers = suppliers
-      if (purchaseOrders.length > 0) this.purchaseOrders = purchaseOrders
+      this.warehouses = sortNewestFirst(warehouses)
+      this.products = sortNewestFirst(products).map((product) => this.withInventoryValue(product))
+      this.transfers = sortNewestFirst(transfers.map(({ id: _id, ...transfer }) => transfer as Transfer))
+      this.stockMovements = sortNewestFirst(stockMovements)
+      if (suppliers.length > 0) this.suppliers = sortNewestFirst(suppliers)
+      if (purchaseOrders.length > 0) this.purchaseOrders = sortNewestFirst(purchaseOrders)
 
       this._inventoryLoaded = true
       this._loadError = null
@@ -498,12 +502,12 @@ class ErpStore {
         loadResource<DeliveryNote>("delivery_notes"),
       ])
 
-      this.salesOrders = salesOrders
-      this.purchaseOrders = purchaseOrders
-      this.customers = customers
-      this.suppliers = suppliers
-      this.quotations = quotations
-      this.deliveryNotes = deliveryNotes
+      this.salesOrders = sortNewestFirst(salesOrders)
+      this.purchaseOrders = sortNewestFirst(purchaseOrders)
+      this.customers = sortNewestFirst(customers)
+      this.suppliers = sortNewestFirst(suppliers)
+      this.quotations = sortNewestFirst(quotations)
+      this.deliveryNotes = sortNewestFirst(deliveryNotes)
 
       this._salesLoaded = true
       this._loadError = null
@@ -944,7 +948,7 @@ class ErpStore {
       status: warehouse.status || "Active",
     }
     const savedWarehouse = await createResource<Warehouse>("warehouses", newWarehouse)
-    this.warehouses = [...this.warehouses, savedWarehouse]
+    this.warehouses = [savedWarehouse, ...this.warehouses]
     this.notify()
     return savedWarehouse
   }

@@ -333,7 +333,7 @@ export default function Recruitment() {
                   </p>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto table-scrollbar-x" data-table-scroll>
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-black/10 bg-black/[0.03] text-[11px] text-zinc-500 font-extrabold uppercase tracking-wider">

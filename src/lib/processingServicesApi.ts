@@ -28,6 +28,7 @@ export interface ProcessingServiceOrder {
 }
 
 import { API_BASE } from "./apiPersistence"
+import { sortNewestFirst } from "./utils"
 
 export async function fetchProcessingServices(status?: string): Promise<ProcessingServiceOrder[]> {
   try {
@@ -38,7 +39,7 @@ export async function fetchProcessingServices(status?: string): Promise<Processi
     const res = await fetch(url.toString())
     if (res.ok) {
       const data = await res.json()
-      if (Array.isArray(data)) return data
+      if (Array.isArray(data)) return sortNewestFirst(data)
     }
   } catch (err) {
     console.warn("fetchProcessingServices error:", err)

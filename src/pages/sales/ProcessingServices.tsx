@@ -18,6 +18,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useErpStore } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -369,6 +370,17 @@ export default function ProcessingServices() {
     _actions: 120,
   })
 
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, stageFilter, filteredServices.length])
+
+  const sortedOrders = ordersTable.sorted()
+  const totalPages = Math.max(1, Math.ceil(sortedOrders.length / pageSize))
+  const displayedOrders = sortedOrders.slice((page - 1) * pageSize, page * pageSize)
+
   if (!hasWH1Access) {
     return <Navigate to="/inventory/stock" replace />
   }
@@ -427,7 +439,7 @@ export default function ProcessingServices() {
             />
           </div>
 
-          <div className="overflow-x-auto">
+          <TableScrollWrapper>
             <table className="w-full text-left border-collapse table-fixed">
               <thead>
                 <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
@@ -451,14 +463,14 @@ export default function ProcessingServices() {
               <tbody className="divide-y divide-zinc-100 font-medium">
                 {isLoading ? (
                   <ProcessingServicesSkeletonRows />
-                ) : ordersTable.sorted().length === 0 ? (
+                ) : sortedOrders.length === 0 ? (
                   <tr>
                     <td colSpan={serviceOrderColumns.length} className="px-4 py-8 text-center text-xs font-semibold text-zinc-400">
                       No processing service orders found matching criteria.
                     </td>
                   </tr>
                 ) : (
-                  ordersTable.sorted().map((order) => {
+                  displayedOrders.map((order) => {
                     const colors = STAGE_COLOR_MAP[order.status] || STAGE_COLOR_MAP.Received
                     const companySettings = erp.getCompanySettings()
                     const rates = {
@@ -527,7 +539,55 @@ export default function ProcessingServices() {
                 )}
               </tbody>
             </table>
-          </div>
+          </TableScrollWrapper>
+
+          {!isLoading && sortedOrders.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 dark:border-zinc-800/60 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+              <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                <span>
+                  Showing {Math.min((page - 1) * pageSize + 1, sortedOrders.length)} to {Math.min(page * pageSize, sortedOrders.length)} of {sortedOrders.length} entries
+                </span>
+                <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                  <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value))
+                      setPage(1)
+                    }}
+                    className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </GlassCard>
 
         {/* MODAL: EDIT PROCESSING SERVICE ORDER */}

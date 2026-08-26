@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Mail, Users, UserX, Edit, Eye, EyeOff } from "lucide-react"
+import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Users, UserX, Edit, Eye, EyeOff } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { cn } from "@/lib/utils"
+import { cn, sortNewestFirst } from "@/lib/utils"
 import { useFeedback } from "@/context/FeedbackContext"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { loadResource, updateResource, deleteResource, API_BASE } from "@/lib/apiPersistence"
 import type { Role } from "@/lib/authStore"
 
@@ -167,9 +168,9 @@ export default function UserManagement() {
         loadResource<any>("employees"),
         loadResource<any>("warehouses"),
       ])
-      setUsers(usersData)
-      setEmployees(employeesData)
-      setWarehouses(warehousesData)
+      setUsers(sortNewestFirst(usersData))
+      setEmployees(sortNewestFirst(employeesData))
+      setWarehouses(sortNewestFirst(warehousesData))
     } catch (err: any) {
       console.error(err)
       showToast("Error loading user management data", "warning")
@@ -350,6 +351,16 @@ export default function UserManagement() {
     return matchesSearch && matchesRole && matchesStatus
   })
 
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, selectedRoleFilter, selectedStatusFilter, filteredUsers.length])
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize))
+  const displayedUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
+
   const getInitials = (name: string) => {
     return name
       .split(" ")
@@ -434,10 +445,10 @@ export default function UserManagement() {
             {loading ? (
               <UserTableSkeleton />
             ) : (
-              <div className="overflow-x-auto">
+              <TableScrollWrapper>
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-black/5 text-xs text-gray-400 font-bold uppercase tracking-wider">
+                    <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                       <th className="py-4 px-4">User</th>
                       <th className="py-4 px-4">Assigned Roles</th>
                       <th className="py-4 px-4">Scope (Warehouse)</th>
@@ -453,7 +464,7 @@ export default function UserManagement() {
                         </td>
                       </tr>
                     ) : (
-                      filteredUsers.map((user, idx) => {
+                      displayedUsers.map((user, idx) => {
                         const randomPreset = avatarBgPresets[idx % avatarBgPresets.length]
                         const initials = getInitials(user.fullname || user.username)
 
@@ -463,40 +474,52 @@ export default function UserManagement() {
                           ? whIds
                               .map(id => warehouses.find(w => w.id === id || w.code === id)?.name || id)
                               .join(", ")
-                          : "Global Access"
+                          : "HQ & All Warehouses"
 
                         return (
                           <tr key={user.id} className="hover:bg-black/[0.01] transition-colors">
                             <td className="py-4 px-4">
                               <div className="flex items-center gap-3">
-                                <div className={cn("size-10 rounded-full flex items-center justify-center text-xs font-black", randomPreset)}>
+                                <div className={cn(
+                                  "size-9 rounded-2xl flex items-center justify-center font-black text-xs shadow-xs",
+                                  randomPreset
+                                )}>
                                   {initials}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-extrabold text-black">{user.fullname || "Manual User"}</p>
-                                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                                    <Mail className="size-3 shrink-0" /> {user.username}
-                                  </p>
+                                  <div className="font-bold text-black text-sm flex items-center gap-2">
+                                    {user.fullname || user.username}
+                                  </div>
+                                  <div className="text-xs text-gray-400 font-mono mt-0.5">
+                                    @{user.username}
+                                  </div>
                                 </div>
                               </div>
                             </td>
                             <td className="py-4 px-4">
-                              <div className="flex flex-wrap gap-1">
-                                {user.roles && user.roles.map(r => (
-                                  <span key={r} className="text-[10px] font-bold bg-green-50 text-green-700 border border-green-100 rounded-full px-2 py-0.5">
+                              <div className="flex flex-wrap gap-1.5 max-w-sm">
+                                {user.roles.map(r => (
+                                  <span
+                                    key={r}
+                                    className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-800 border border-zinc-200/80 flex items-center gap-1 shadow-2xs"
+                                  >
+                                    <span className="size-1.5 rounded-full bg-zinc-400" />
                                     {roleLabels[r] || r}
                                   </span>
                                 ))}
                               </div>
                             </td>
-                            <td className="py-4 px-4 text-xs font-bold text-gray-700">
-                              {whDisplay}
+                            <td className="py-4 px-4">
+                              <span className="text-xs font-semibold text-zinc-600">
+                                {whDisplay}
+                              </span>
                             </td>
                             <td className="py-4 px-4 text-center">
                               <span className={cn(
-                                "inline-flex items-center text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full border shadow-sm",
-                                user.status === "active" && "bg-emerald-50 text-emerald-700 border-emerald-200",
-                                user.status === "suspended" && "bg-rose-50 text-rose-700 border-rose-200"
+                                "px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider inline-block",
+                                user.status === "active"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-rose-50 text-rose-700 border border-rose-200"
                               )}>
                                 {user.status}
                               </span>
@@ -540,6 +563,54 @@ export default function UserManagement() {
                     )}
                   </tbody>
                 </table>
+              </TableScrollWrapper>
+            )}
+
+            {!loading && filteredUsers.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between border-t border-black/5 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+                <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                  <span>
+                    Showing {Math.min((page - 1) * pageSize + 1, filteredUsers.length)} to {Math.min(page * pageSize, filteredUsers.length)} of {filteredUsers.length} entries
+                  </span>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                    <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value))
+                        setPage(1)
+                      }}
+                      className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-black text-zinc-700 dark:text-zinc-300 px-2 font-mono">
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
           </GlassCard>

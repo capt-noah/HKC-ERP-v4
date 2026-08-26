@@ -595,6 +595,8 @@ export interface PrintPurchaseOrderOptions {
   date: string
   paidTo: string
   reasonForPayment?: string
+  bankName?: string
+  paymentMethod?: string
   chequeNo?: string
   amount: number
   amountInWords?: string
@@ -686,7 +688,9 @@ export function printPurchaseOrderDocument(po: PrintPurchaseOrderOptions): void 
     <div class="info-row"><span class="info-label">Date:</span><span class="info-val">${po.date}</span></div>
     <div class="info-row full-width"><span class="info-label">Paid To:</span><span class="info-val">${po.paidTo}</span></div>
     <div class="info-row full-width"><span class="info-label">Reason for Payment:</span><span class="info-val">${po.reasonForPayment || "—"}</span></div>
-    <div class="info-row"><span class="info-label">Cheque No:</span><span class="info-val font-mono">${po.chequeNo || "—"}</span></div>
+    <div class="info-row"><span class="info-label">Bank:</span><span class="info-val">${po.bankName || "Commercial Bank of Ethiopia (CBE)"}</span></div>
+    <div class="info-row"><span class="info-label">Payment Method:</span><span class="info-val">${po.paymentMethod || "Cheque"}</span></div>
+    <div class="info-row"><span class="info-label">Cheque / Ref No:</span><span class="info-val font-mono">${po.chequeNo || "—"}</span></div>
     <div class="info-row"><span class="info-label">Amount in Figure:</span><span class="info-val font-mono">ETB ${Number(po.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
   </div>
 
@@ -759,17 +763,19 @@ export function exportPurchaseOrderToExcel(po: PrintPurchaseOrderOptions): void 
     title: po.company?.name || "HABTOM KEBEDE CHIMSA IMPORT & EXPORT",
     subtitle: `CHEQUE PAYMENT VOUCHER - ${po.voucherNo}`,
     metadata: [
+      { label: "Document Type", value: "Cheque Payment Voucher" },
       { label: "Voucher Number", value: po.voucherNo },
-      { label: "Voucher Date", value: po.date },
+      { label: "Date", value: po.date },
       { label: "Paid To", value: po.paidTo },
-      { label: "Reason For Payment", value: po.reasonForPayment || "-" },
-      { label: "Cheque Reference", value: po.chequeNo || "-" },
-      { label: "Total Amount (ETB)", value: Number(po.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
-      { label: "Amount in Words", value: po.amountInWords || numberToWords(po.amount) },
-      { label: "Status", value: po.status || "PAID" },
+      { label: "Reason for Payment", value: po.reasonForPayment || "-" },
+      { label: "Bank", value: po.bankName || "Commercial Bank of Ethiopia (CBE)" },
+      { label: "Payment Method", value: po.paymentMethod || "Cheque" },
+      { label: "Cheque / Ref No", value: po.chequeNo || "-" },
+      { label: "Amount (ETB)", value: Number(po.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) },
+      { label: "Amount in Words", value: po.amountInWords || "-" },
     ],
     headers,
-    rows
+    rows,
   })
 }
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { deleteResource, loadResource, persistResources } from "./apiPersistence"
 import { useAuthStore } from "./authStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
+import { sortNewestFirst } from "./utils"
 
 export interface AccountItem {
   id: string
@@ -420,13 +421,13 @@ class FinanceStore {
       ])
 
       this.accounts = accounts
-      this.entries = entries.map((e: any) => ({
+      this.entries = sortNewestFirst(entries.map((e: any) => ({
         ...e,
         entry_number: e.entry_number || e.id,
         posting_status: e.posting_status || "POSTED",
         source_type: e.source_type || "MANUAL",
         currency: e.currency || "ETB",
-      }))
+      })))
       this.lines = lines.map((l: any) => ({
         ...l,
         debit_amount: Number(l.debit_amount ?? l.debit ?? 0),
@@ -434,32 +435,32 @@ class FinanceStore {
         currency: l.currency || "ETB",
         exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
       }))
-      this.invoices = invoices.map((inv: any) => ({
+      this.invoices = sortNewestFirst(invoices.map((inv: any) => ({
         ...inv,
         subtotal: Number(inv.subtotal ?? inv.amount ?? 0),
         total_amount: Number(inv.total_amount ?? inv.total ?? inv.amount ?? 0),
         balance_due: Number(inv.balance_due ?? inv.total_amount ?? 0),
         status: inv.status || "Draft",
-      }))
-      this.payments = payments
-      this.recurringSchedules = recurringSchedules
-      this.expenses = expenses.map((exp: any) => ({
+      })))
+      this.payments = sortNewestFirst(payments)
+      this.recurringSchedules = sortNewestFirst(recurringSchedules)
+      this.expenses = sortNewestFirst(expenses.map((exp: any) => ({
         ...exp,
         amount: Number(exp.amount ?? 0),
         status: exp.status || "Approved",
-      }))
-      this.vehicles = vehicles
-      this.periods = periods
+      })))
+      this.vehicles = sortNewestFirst(vehicles)
+      this.periods = sortNewestFirst(periods)
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
-      this.payrollRuns = payrollRuns
-      this.revaluations = revaluations
-      this.fixedAssets = fixedAssets.map((fa: any) => ({
+      this.payrollRuns = sortNewestFirst(payrollRuns)
+      this.revaluations = sortNewestFirst(revaluations)
+      this.fixedAssets = sortNewestFirst(fixedAssets.map((fa: any) => ({
         ...fa,
         cost: Number(fa.cost ?? 0),
         accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumulated_depreciation ?? 0),
         netBookValue: Number(fa.netBookValue ?? fa.cost ?? 0),
-      }))
+      })))
       const initialTaxRules: TaxRule[] = [
         { id: "TAX-01", name: "Standard VAT", ratePercent: 15, type: "VAT/GST", accountCode: "2210", isInclusive: false, description: "Standard Value Added Tax (15%)" },
         { id: "TAX-02", name: "Withholding Tax (TDS)", ratePercent: 3, type: "Withholding Tax (TDS)", accountCode: "2200", isInclusive: false, description: "Withholding Tax on Payments (3%)" },
@@ -467,7 +468,7 @@ class FinanceStore {
       ]
 
       if (Array.isArray(taxRules) && taxRules.length > 0) {
-        this.taxRules = taxRules.map((t: any) => ({
+        this.taxRules = sortNewestFirst(taxRules.map((t: any) => ({
           ...t,
           id: t.id,
           name: t.name || "Tax Rule",
@@ -476,7 +477,7 @@ class FinanceStore {
           accountCode: t.accountCode ?? t.gl_account_code ?? "",
           isInclusive: Boolean(t.isInclusive ?? t.is_inclusive ?? false),
           description: t.description || "",
-        }))
+        })))
       } else {
         this.taxRules = initialTaxRules
       }
@@ -1020,7 +1021,7 @@ class FinanceStore {
       id: `ACC-${account.code}`,
       parent_account_id: normalizedParentId,
     }
-    this.accounts = [...this.accounts, newAcc]
+    this.accounts = [newAcc, ...this.accounts]
     this.notify()
     return { success: true, account: newAcc }
   }
@@ -2334,7 +2335,7 @@ class FinanceStore {
       isInclusive: Boolean(rule.isInclusive),
       is_inclusive: Boolean(rule.isInclusive),
     } as any
-    this.taxRules = [...this.taxRules, newRule]
+    this.taxRules = [newRule, ...this.taxRules]
     persistResources([{ resource: "tax_rules", items: this.taxRules }])
     this.notify()
     return newRule
@@ -2371,7 +2372,7 @@ class FinanceStore {
   public addAccountingPeriod(p: Omit<AccountingPeriod, "id">): AccountingPeriod {
     const newId = `PRD-${String(this.periods.length + 1).padStart(3, "0")}`
     const newPeriod = { ...p, id: newId }
-    this.periods = [...this.periods, newPeriod]
+    this.periods = [newPeriod, ...this.periods]
     this.notify()
     return newPeriod
   }
