@@ -24,9 +24,13 @@ import {
   Tag,
   UserCheck,
   MoreVertical,
+  Coins,
+  ShieldCheck,
+  Scale,
 } from "lucide-react"
 import { useErpStore, type Warehouse } from "@/lib/erpStore"
 import { useFinanceStore, type TaxRule } from "@/lib/financeStore"
+import { DEFAULT_ETHIOPIAN_TAX_BRACKETS, DEFAULT_ETHIOPIAN_PENSION_CONFIG, type TaxBracket } from "@/core/hr/payrollEngine"
 import { cn } from "@/lib/utils"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 
@@ -77,7 +81,23 @@ export default function AdminSettings() {
   const [defaultDamageAcc, setDefaultDamageAcc] = useState(companySettings.default_damage_account_id || "")
   const [defaultCashAcc, setDefaultCashAcc] = useState(companySettings.default_cash_account_id || "")
 
-  // 4. Tax Rules Modal & Editing State
+  // 4. Ethiopian Pension & Progressive Tax Brackets State
+  const [pensionEmpRate, setPensionEmpRate] = useState<number | "">(companySettings.pension_employee_rate ?? 7)
+  const [pensionCompRate, setPensionCompRate] = useState<number | "">(companySettings.pension_employer_rate ?? 11)
+  const [pensionExpatExempt, setPensionExpatExempt] = useState<boolean>(companySettings.pension_expat_exempt ?? true)
+  const [taxBrackets, setTaxBrackets] = useState<TaxBracket[]>(
+    companySettings.tax_brackets_config && companySettings.tax_brackets_config.length > 0
+      ? companySettings.tax_brackets_config
+      : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+  )
+  const [bracketModalOpen, setBracketModalOpen] = useState(false)
+  const [editingBracketIndex, setEditingBracketIndex] = useState<number | null>(null)
+  const [bracketMin, setBracketMin] = useState<number | "">(0)
+  const [bracketMax, setBracketMax] = useState<number | "">(2000)
+  const [bracketRate, setBracketRate] = useState<number | "">(0)
+  const [bracketDeductible, setBracketDeductible] = useState<number | "">(0)
+
+  // 5. Tax Rules Modal & Editing State
   const [taxModalOpen, setTaxModalOpen] = useState(false)
   const [editingTaxRule, setEditingTaxRule] = useState<TaxRule | null>(null)
   const [taxName, setTaxName] = useState("")
@@ -87,7 +107,7 @@ export default function AdminSettings() {
   const [taxIsInclusive, setTaxIsInclusive] = useState(false)
   const [taxDescription, setTaxDescription] = useState("")
 
-  // 5. Warehouse Modal & Editing State
+  // 6. Warehouse Modal & Editing State
   const [whModalOpen, setWhModalOpen] = useState(false)
   const [isSavingWh, setIsSavingWh] = useState(false)
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null)
@@ -121,13 +141,21 @@ export default function AdminSettings() {
     setDefaultCogsAcc(s.default_cogs_account_id || "")
     setDefaultDamageAcc(s.default_damage_account_id || "")
     setDefaultCashAcc(s.default_cash_account_id || "")
+    setPensionEmpRate(s.pension_employee_rate ?? 7)
+    setPensionCompRate(s.pension_employer_rate ?? 11)
+    setPensionExpatExempt(s.pension_expat_exempt ?? true)
+    setTaxBrackets(
+      s.tax_brackets_config && s.tax_brackets_config.length > 0
+        ? s.tax_brackets_config
+        : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+    )
   }, [finance])
 
-  // Save Company & Rates Configurations to Supabase
+  // Save Company, Pension & Rates Configurations to Supabase
   const handleSave = () => {
     confirm({
       title: "Save System Settings",
-      message: "Persist the configured entity profile, fee rates, and ledger mappings to Supabase?",
+      message: "Persist the configured entity profile, fee rates, pension parameters, and tax brackets to Supabase?",
       confirmLabel: "Save Configurations",
       cancelLabel: "Cancel",
       onConfirm: () => {
@@ -149,6 +177,10 @@ export default function AdminSettings() {
           default_cogs_account_id: defaultCogsAcc,
           default_damage_account_id: defaultDamageAcc,
           default_cash_account_id: defaultCashAcc,
+          pension_employee_rate: Number(pensionEmpRate) || 0,
+          pension_employer_rate: Number(pensionCompRate) || 0,
+          pension_expat_exempt: Boolean(pensionExpatExempt),
+          tax_brackets_config: taxBrackets,
         }
 
         erp.updateCompanySettings(updated)
@@ -179,7 +211,113 @@ export default function AdminSettings() {
     setDefaultCogsAcc(s.default_cogs_account_id || "")
     setDefaultDamageAcc(s.default_damage_account_id || "")
     setDefaultCashAcc(s.default_cash_account_id || "")
-    showToast("Changes Discarded", "info", "Form values have been reverted to current database state.")
+    setPensionEmpRate(s.pension_employee_rate ?? 7)
+    setPensionCompRate(s.pension_employer_rate ?? 11)
+    setPensionExpatExempt(s.pension_expat_exempt ?? true)
+    setTaxBrackets(
+      s.tax_brackets_config && s.tax_brackets_config.length > 0
+        ? s.tax_brackets_config
+        : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+    )
+    showToast("Changes Discarded", "info", "Reverted parameters back to active database values.")
+  }
+
+  const handleOpenBracketModal = (index?: number) => {
+    if (typeof index === "number" && taxBrackets[index]) {
+      const b = taxBrackets[index]
+      setEditingBracketIndex(index)
+      setBracketMin(b.min)
+      setBracketMax(b.max === null ? "" : b.max)
+      setBracketRate(b.ratePercent)
+      setBracketDeductible(b.deductible)
+    } else {
+      setEditingBracketIndex(null)
+      const last = taxBrackets[taxBrackets.length - 1]
+      setBracketMin(last && last.max ? last.max + 1 : 0)
+      setBracketMax("")
+      setBracketRate(35)
+      setBracketDeductible(0)
+    }
+    setBracketModalOpen(true)
+  }
+
+  const handleSaveBracket = () => {
+    const min = Number(bracketMin) || 0
+    const max = bracketMax === "" || bracketMax === null ? null : Number(bracketMax)
+    const rate = Number(bracketRate) || 0
+    const deductible = Number(bracketDeductible) || 0
+
+    const updatedBracket: TaxBracket = {
+      min,
+      max,
+      ratePercent: rate,
+      deductible,
+    }
+
+    if (editingBracketIndex !== null) {
+      setTaxBrackets((prev) => prev.map((b, i) => (i === editingBracketIndex ? updatedBracket : b)))
+      showToast("Tax Bracket Updated", "success", `Tier updated to ${rate}% rate. Click Save Settings to persist.`)
+    } else {
+      setTaxBrackets((prev) => [...prev, updatedBracket])
+      showToast("Tax Bracket Added", "success", `Added new ${rate}% tax tier. Click Save Settings to persist.`)
+    }
+    setBracketModalOpen(false)
+  }
+
+  const handleDeleteBracket = (index: number) => {
+    if (taxBrackets.length <= 1) {
+      showToast("Cannot Delete", "warning", "At least one tax tier must be defined.")
+      return
+    }
+    const bracket = taxBrackets[index]
+    const label = bracket
+      ? bracket.max === null
+        ? `Over ${bracket.min.toLocaleString()} ETB (${bracket.ratePercent}%)`
+        : `${bracket.min.toLocaleString()} - ${bracket.max.toLocaleString()} ETB (${bracket.ratePercent}%)`
+      : "this tier"
+
+    confirm({
+      title: "Delete Tax Bracket Tier",
+      message: `Are you sure you want to delete the tax bracket tier "${label}"? This will modify the progressive income tax computation table.`,
+      confirmLabel: "Delete Tier",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+      onConfirm: () => {
+        setTaxBrackets((prev) => prev.filter((_, i) => i !== index))
+        showToast("Tax Bracket Removed", "info", "Tier removed. Remember to click Save Changes to persist to the database.")
+      },
+    })
+  }
+
+  const handleResetPension = () => {
+    confirm({
+      title: "Reset Pension Scheme to Statutory Defaults",
+      message: "Reset employee contribution rate to 7%, employer contribution rate to 11%, and enable expatriate exemption (Proclamation No. 1268/2022)?",
+      confirmLabel: "Reset Pension Rates",
+      cancelLabel: "Cancel",
+      onConfirm: () => {
+        setPensionEmpRate(DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent)
+        setPensionCompRate(DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent)
+        setPensionExpatExempt(DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt)
+        showToast("Pension Rates Reset", "success", "Reverted to statutory 7% employee and 11% employer rates.")
+      },
+    })
+  }
+
+  const handleResetDefaultBrackets = () => {
+    confirm({
+      title: "Reset to Proclamation No. 1395/2025",
+      message: "Reset all employment income tax brackets and pension contribution rates to standard Ethiopian statutory defaults?",
+      confirmLabel: "Reset to Legal Defaults",
+      cancelLabel: "Cancel",
+      onConfirm: () => {
+        setTaxBrackets(DEFAULT_ETHIOPIAN_TAX_BRACKETS)
+        setPensionEmpRate(DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent)
+        setPensionCompRate(DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent)
+        setPensionExpatExempt(DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt)
+        showToast("Brackets Reset", "success", "Loaded statutory rules (0-2000 ETB exempt, up to 35% above 14k ETB, 7%/11% pension).")
+      },
+    })
   }
 
   // --- Tax Rule Handlers ---
@@ -545,6 +683,207 @@ export default function AdminSettings() {
               {/* Tab 2: Tax Rates & Rules */}
               {activeTab === "tax" && (
                 <motion.div key="tax" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                  {/* 1. Ethiopian Statutory Pension Configuration */}
+                  <GlassCard>
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
+                      <div className="flex items-center gap-3.5">
+                        <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
+                          <Coins className="size-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-black">Ethiopian Pension Scheme</h3>
+                          <p className="text-xs text-gray-400">
+                            Statutory contribution rates under Proclamation No. 1267/2022 (Public) &amp; No. 1268/2022 (Private Organization Employees).
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <span className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                          <ShieldCheck className="size-3.5" />
+                          Mandatory Local Scheme
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleResetPension}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-2xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-bold transition-all shadow-xs"
+                        >
+                          <RotateCcw className="size-3.5" /> Reset to 7%/11%
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSave}
+                          className="flex items-center gap-1 px-3.5 py-1.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs active:scale-95"
+                        >
+                          <Save className="size-3.5" /> Save Pension
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+                      <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5">
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                          Employee Contribution Rate
+                        </label>
+                        <p className="text-[11px] text-gray-400 mb-2">Deducted from gross monthly basic salary (Default 7%).</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            value={pensionEmpRate}
+                            onChange={(e) => setPensionEmpRate(e.target.value === "" ? "" : Number(e.target.value))}
+                            className="w-full bg-white border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-black text-black font-mono outline-none focus:border-amber-600"
+                          />
+                          <span className="text-sm font-bold text-gray-500 font-mono">%</span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5">
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                          Employer Contribution Rate
+                        </label>
+                        <p className="text-[11px] text-gray-400 mb-2">Company co-contribution on basic salary (Default 11%).</p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            value={pensionCompRate}
+                            onChange={(e) => setPensionCompRate(e.target.value === "" ? "" : Number(e.target.value))}
+                            className="w-full bg-white border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-black text-black font-mono outline-none focus:border-amber-600"
+                          />
+                          <span className="text-sm font-bold text-gray-500 font-mono">%</span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 flex flex-col justify-between">
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                            Expatriate Exemption Rule
+                          </label>
+                          <p className="text-[11px] text-gray-400 mb-2">Foreign expatriate employees are legally exempt from Ethiopian pension.</p>
+                        </div>
+                        <label className="flex items-center gap-2.5 cursor-pointer mt-2">
+                          <input
+                            type="checkbox"
+                            checked={pensionExpatExempt}
+                            onChange={(e) => setPensionExpatExempt(e.target.checked)}
+                            className="size-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span className="text-xs font-bold text-black">Exempt Foreign Expats</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/70 text-xs text-amber-900 leading-relaxed">
+                      <span className="font-bold">Statutory Sequence:</span> Employee pension (7%) is computed on the <strong>Gross Basic Salary</strong> and deducted <em>prior</em> to applying progressive employment income tax brackets.
+                    </div>
+                  </GlassCard>
+
+                  {/* 2. Progressive Employment Income Tax Brackets */}
+                  <GlassCard>
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
+                      <div className="flex items-center gap-3.5">
+                        <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
+                          <Scale className="size-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-black">Employment Income Tax Brackets</h3>
+                          <p className="text-xs text-gray-400">
+                            Progressive tax rates and deductibles under Proclamation No. 1395/2025 applied to Taxable Base ((Basic + Allowances) - 7% Pension).
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleResetDefaultBrackets}
+                          className="flex items-center gap-1 px-3 py-2 rounded-2xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-bold transition-all shadow-xs"
+                        >
+                          <RotateCcw className="size-3.5" /> Reset to Proc. 1395/2025
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenBracketModal()}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+                        >
+                          <Plus className="size-4" /> Add Tax Tier
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-black/5 bg-black/[0.02] text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                            <th className="py-3 px-4">Taxable Income Range (ETB)</th>
+                            <th className="py-3 px-4">Marginal Tax Rate</th>
+                            <th className="py-3 px-4">Statutory Deductible</th>
+                            <th className="py-3 px-4">Calculation Quick Formula</th>
+                            <th className="py-3 px-4 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-black/5 text-xs">
+                          {taxBrackets.map((bracket, index) => {
+                            const rangeLabel =
+                              bracket.max === null
+                                ? `Over ${bracket.min.toLocaleString()} ETB`
+                                : `${bracket.min.toLocaleString()} - ${bracket.max.toLocaleString()} ETB`
+                            const formula =
+                              bracket.ratePercent === 0
+                                ? "0.00 ETB (Exempt)"
+                                : `(Taxable Base × ${bracket.ratePercent}%) - ${bracket.deductible.toLocaleString()} ETB`
+
+                            return (
+                              <tr key={index} className="hover:bg-black/[0.02] transition-colors">
+                                <td className="py-3.5 px-4 font-bold text-zinc-950 font-mono">
+                                  {rangeLabel}
+                                  {bracket.min === 0 && bracket.ratePercent === 0 && (
+                                    <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800">
+                                      EXEMPT
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3.5 px-4 font-black text-zinc-900 font-mono text-sm">
+                                  {bracket.ratePercent}%
+                                </td>
+                                <td className="py-3.5 px-4 font-bold text-zinc-700 font-mono">
+                                  {bracket.deductible.toLocaleString()} ETB
+                                </td>
+                                <td className="py-3.5 px-4 font-mono text-zinc-500 text-[11px]">
+                                  {formula}
+                                </td>
+                                <td className="py-3.5 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenBracketModal(index)}
+                                      className="p-1.5 rounded-lg hover:bg-black/5 text-zinc-600"
+                                      title="Edit Tier"
+                                    >
+                                      <Pencil className="size-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteBracket(index)}
+                                      className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600"
+                                      title="Delete Tier"
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </GlassCard>
+
+                  {/* 3. Standard Commercial Tax Rules (VAT, Withholding, Duties) */}
                   <GlassCard>
                     <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
                       <div className="flex items-center gap-3.5">
@@ -552,8 +891,8 @@ export default function AdminSettings() {
                           <Receipt className="size-5" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-black">Tax Rates & Legal Rules</h3>
-                          <p className="text-xs text-gray-400">Manage statutory tax categories, tax rates, withholding thresholds, and GL account assignments.</p>
+                          <h3 className="text-lg font-bold text-black">Commercial Transaction Taxes</h3>
+                          <p className="text-xs text-gray-400">Manage standard VAT, withholding tax (TDS), and customs duty rates.</p>
                         </div>
                       </div>
                       <button
@@ -567,7 +906,7 @@ export default function AdminSettings() {
                     {taxRules.length === 0 ? (
                       <div className="text-center py-12 border border-dashed border-black/10 rounded-2xl">
                         <Percent className="size-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm font-bold text-gray-500">No Tax Rules Configured</p>
+                        <p className="text-sm font-bold text-gray-500">No Commercial Tax Rules Configured</p>
                         <p className="text-xs text-gray-400 mt-1">Click &quot;Add Tax Rule&quot; to establish standard VAT or withholding tax rates.</p>
                       </div>
                     ) : (
@@ -950,7 +1289,7 @@ export default function AdminSettings() {
             </AnimatePresence>
 
             {/* Bottom Action Buttons (for tabs with general form inputs) */}
-            {["general", "rates", "accounts"].includes(activeTab) && (
+            {["general", "tax", "rates", "accounts"].includes(activeTab) && (
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   onClick={handleDiscardChanges}
@@ -1156,6 +1495,123 @@ export default function AdminSettings() {
                   className="px-5 py-2 rounded-2xl bg-black text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
                 >
                   {editingTaxRule ? "Update Tax Rate" : "Save Tax Rule"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Add/Edit Progressive Tax Bracket Tier */}
+      <AnimatePresence>
+        {bracketModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-black/10"
+            >
+              <div className="flex items-center justify-between pb-4 mb-5 border-b border-black/5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
+                    <Scale className="size-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-black">
+                      {editingBracketIndex !== null ? "Edit Employment Tax Tier" : "Add Employment Tax Tier"}
+                    </h3>
+                    <p className="text-xs text-gray-400">Configure progressive bracket range and marginal tax rate</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setBracketModalOpen(false)}
+                  className="p-2 rounded-full hover:bg-black/5 text-gray-400 hover:text-black transition-colors"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                      Minimum Income (ETB)
+                    </label>
+                    <input
+                      type="number"
+                      value={bracketMin}
+                      placeholder="0"
+                      onChange={(e) => setBracketMin(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black font-mono outline-none focus:border-emerald-600 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                      Maximum Income (ETB)
+                    </label>
+                    <input
+                      type="number"
+                      value={bracketMax}
+                      placeholder="Leave blank for No Cap / Over"
+                      onChange={(e) => setBracketMax(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black font-mono outline-none focus:border-emerald-600 focus:bg-white"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">Leave empty if top tier (e.g. Over 14,000 ETB).</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                      Tax Rate (%)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        value={bracketRate}
+                        placeholder="0"
+                        onChange={(e) => setBracketRate(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black font-mono outline-none focus:border-emerald-600 focus:bg-white"
+                      />
+                      <span className="text-sm font-bold text-gray-500 font-mono">%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                      Deductible (ETB)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={bracketDeductible}
+                      placeholder="0"
+                      onChange={(e) => setBracketDeductible(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black font-mono outline-none focus:border-emerald-600 focus:bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200/70 text-xs text-emerald-950 font-mono">
+                  Quick Formula: (Taxable Base × {Number(bracketRate) || 0}%) - {Number(bracketDeductible) || 0} ETB
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-black/5">
+                <button
+                  onClick={() => setBracketModalOpen(false)}
+                  className="px-4 py-2 rounded-2xl border border-black/10 text-xs font-bold text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveBracket}
+                  className="px-5 py-2 rounded-2xl bg-black text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
+                >
+                  {editingBracketIndex !== null ? "Update Tier" : "Add Tier"}
                 </button>
               </div>
             </motion.div>

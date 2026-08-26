@@ -50,6 +50,17 @@ function getAuthHeaders(): Record<string, string> {
   return headers
 }
 
+function handleAuthFailure(status: number) {
+  if (status === 401 || status === 403) {
+    try {
+      localStorage.removeItem("auth-storage")
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.href = "/login"
+      }
+    } catch {}
+  }
+}
+
 export async function loadResource<T>(resource: string): Promise<T[]> {
   const authHeaders = getAuthHeaders()
   if (!authHeaders["Authorization"]) {

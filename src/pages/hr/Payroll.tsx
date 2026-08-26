@@ -10,6 +10,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { financeStore } from "@/lib/financeStore"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { PAYMENT_STATUSES, PAYROLL_PERIOD_STATUSES, calculatePayroll, hrApi, loadHRData, makeId, money, type Employee, type PayrollPeriod, type PayrollRecord } from "@/lib/hrApi"
+import { calculateEthiopianPayroll, DEFAULT_ETHIOPIAN_PENSION_CONFIG, DEFAULT_ETHIOPIAN_TAX_BRACKETS } from "@/core/hr/payrollEngine"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -24,6 +25,25 @@ const blankPeriod = (): Omit<PayrollPeriod, "id"> => ({
 })
 
 function blankRecord(employee: Employee, periodId: string): PayrollRecord {
+  const s = financeStore.getCompanySettings()
+  const pensionConfig = {
+    employeeRatePercent: s.pension_employee_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent,
+    employerRatePercent: s.pension_employer_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent,
+    expatExempt: s.pension_expat_exempt ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt,
+  }
+  const taxBrackets = s.tax_brackets_config && s.tax_brackets_config.length > 0
+    ? s.tax_brackets_config
+    : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+
+  const ethiopian = calculateEthiopianPayroll({
+    employeeId: employee.id,
+    employeeName: employee.full_name,
+    basicSalary: Number(employee.basic_salary || 0),
+    allowances: 0,
+    pensionConfig,
+    taxBrackets,
+  })
+
   return calculatePayroll({
     id: makeId("PAY"),
     payroll_period_id: periodId,
@@ -33,8 +53,8 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
     overtime_pay: 0,
     bonus: 0,
     other_earnings: 0,
-    tax: 0,
-    pension: 0,
+    tax: ethiopian.incomeTaxDeducted,
+    pension: ethiopian.employeePension,
     absence_deduction: 0,
     loan_deduction: 0,
     other_deductions: 0,
@@ -144,12 +164,66 @@ export default function Payroll() {
     if (!currentPeriod) return showToast("Payroll Period Required", "warning", "Create or select a payroll period first.")
     const activeEmployees = employees.filter((employee) => employee.status === "Active")
     const missing = activeEmployees.filter((employee) => !records.some((record) => record.payroll_period_id === currentPeriod.id && record.employee_id === employee.id))
+
+    // Also check for pending records whose basic salary changed in the employee profile
+    const pendingToUpdate = records.filter((record) => {
+      if (record.payroll_period_id !== currentPeriod.id || record.payment_status !== "Pending") return false
+      const emp = employeeById.get(record.employee_id)
+      if (!emp) return false
+      return Number(record.basic_salary || 0) !== Number(emp.basic_salary || 0)
+    })
+
     try {
-      await Promise.all(missing.map((employee) => hrApi.createPayrollRecord(blankRecord(employee, currentPeriod.id))))
-      showToast("Payroll Records Loaded", "success", `${missing.length} active employee records saved for payroll.`)
+      const createPromises = missing.map((employee) => hrApi.createPayrollRecord(blankRecord(employee, currentPeriod.id)))
+      
+      const s = financeStore.getCompanySettings()
+      const pensionConfig = {
+        employeeRatePercent: s.pension_employee_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent,
+        employerRatePercent: s.pension_employer_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent,
+        expatExempt: s.pension_expat_exempt ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt,
+      }
+      const taxBrackets = s.tax_brackets_config && s.tax_brackets_config.length > 0
+        ? s.tax_brackets_config
+        : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+
+      const updatePromises = pendingToUpdate.map((record) => {
+        const emp = employeeById.get(record.employee_id)!
+        const newSalary = Number(emp.basic_salary || 0)
+        const calculated = calculateEthiopianPayroll({
+          basicSalary: newSalary,
+          allowances: Number(record.allowances || 0),
+          overtimePay: Number(record.overtime_pay || 0),
+          bonus: Number(record.bonus || 0),
+          otherEarnings: Number(record.other_earnings || 0),
+          absenceDeduction: Number(record.absence_deduction || 0),
+          loanDeduction: Number(record.loan_deduction || 0),
+          otherDeductions: Number(record.other_deductions || 0),
+          pensionConfig,
+          taxBrackets,
+        })
+
+        return hrApi.updatePayrollRecord(record.id, {
+          ...record,
+          basic_salary: newSalary,
+          pension: calculated.employeePension,
+          tax: calculated.incomeTaxDeducted,
+          gross_pay: calculated.grossSalary,
+          total_deductions: calculated.totalEmployeeDeductions,
+          net_pay: calculated.netTakeHomePay,
+        })
+      })
+
+      await Promise.all([...createPromises, ...updatePromises])
+
+      const msgs = []
+      if (missing.length > 0) msgs.push(`${missing.length} active employees loaded`)
+      if (pendingToUpdate.length > 0) msgs.push(`${pendingToUpdate.length} salaries synchronized with employee profiles`)
+      if (msgs.length === 0) msgs.push("All payroll records and salaries are currently synchronized")
+
+      showToast("Payroll Synchronized", "success", msgs.join("; ") + ".")
       await refresh()
     } catch (err) {
-      showToast("Payroll Load Failed", "warning", err instanceof Error ? err.message : "Supabase rejected payroll records.")
+      showToast("Payroll Sync Failed", "warning", err instanceof Error ? err.message : "Supabase rejected payroll records.")
     }
   }
 
@@ -336,7 +410,7 @@ export default function Payroll() {
         )}
       </motion.div>
       {showPeriodForm && <PeriodForm form={periodForm} setForm={setPeriodForm} onClose={() => setShowPeriodForm(false)} onSubmit={createPeriod} />}
-      {editing && <PayrollRecordForm record={editing} onClose={() => setEditing(null)} onSubmit={(changes) => updateRecord(editing, changes)} />}
+      {editing && <PayrollRecordForm record={editing} employee={employeeById.get(editing.employee_id)} onClose={() => setEditing(null)} onSubmit={(changes) => updateRecord(editing, changes)} />}
       {payslip && <Payslip record={payslip} employee={employeeById.get(payslip.employee_id)} period={periods.find((period) => period.id === payslip.payroll_period_id)} onClose={() => setPayslip(null)} />}
     </div>
   )
@@ -351,18 +425,209 @@ function PeriodForm({ form, setForm, onClose, onSubmit }: { form: Omit<PayrollPe
   return <Modal title="Create Payroll Period" onClose={onClose}><form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4"><Input label="Period Name" value={form.name} onChange={(value) => set("name", value)} required /><Input label="Month" type="number" value={form.month} onChange={(value) => set("month", Number(value))} required /><Input label="Year" type="number" value={form.year} onChange={(value) => set("year", Number(value))} required /><Input label="Start Date" type="date" value={form.start_date} onChange={(value) => set("start_date", value)} required /><Input label="End Date" type="date" value={form.end_date} onChange={(value) => set("end_date", value)} required /><Select label="Status" value={form.status} options={PAYROLL_PERIOD_STATUSES} onChange={(value) => set("status", value)} /><Actions onClose={onClose} label="Save Period" /></form></Modal>
 }
 
-function PayrollRecordForm({ record, onClose, onSubmit }: { record: PayrollRecord; onClose: () => void; onSubmit: (changes: Partial<PayrollRecord>) => void }) {
-  const [form, setForm] = useState(record)
-  const set = (key: keyof PayrollRecord, value: string | number) => setForm(calculatePayroll({ ...form, [key]: value }))
-  return <Modal title="Edit Payroll Record" onClose={onClose}><form onSubmit={(event) => { event.preventDefault(); onSubmit(form) }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-    {(["basic_salary", "allowances", "overtime_pay", "bonus", "other_earnings", "tax", "pension", "absence_deduction", "loan_deduction", "other_deductions"] as const).map((key) => <Input key={key} label={key.replaceAll("_", " ")} type="number" value={form[key]} onChange={(value) => set(key, Number(value))} />)}
-    <Input label="Gross Pay" type="number" value={form.gross_pay} onChange={() => undefined} />
-    <Input label="Total Deductions" type="number" value={form.total_deductions} onChange={() => undefined} />
-    <Input label="Net Pay" type="number" value={form.net_pay} onChange={() => undefined} />
-    <Select label="Payment Status" value={form.payment_status} options={PAYMENT_STATUSES} onChange={(value) => set("payment_status", value)} />
-    <Input label="Notes" value={form.notes} onChange={(value) => set("notes", value)} />
-    <Actions onClose={onClose} label="Save Payroll Record" />
-  </form></Modal>
+function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: PayrollRecord; employee?: Employee; onClose: () => void; onSubmit: (changes: Partial<PayrollRecord>) => void }) {
+  const s = financeStore.getCompanySettings()
+  const pensionConfig = useMemo(() => ({
+    employeeRatePercent: s.pension_employee_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent,
+    employerRatePercent: s.pension_employer_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent,
+    expatExempt: s.pension_expat_exempt ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt,
+  }), [s])
+
+  const taxBrackets = useMemo(() => (
+    s.tax_brackets_config && s.tax_brackets_config.length > 0
+      ? s.tax_brackets_config
+      : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+  ), [s])
+
+  // Initialize form with live Ethiopian calculations applied immediately
+  const [form, setForm] = useState(() => {
+    const initialCalculated = calculateEthiopianPayroll({
+      basicSalary: Number(record.basic_salary || 0),
+      allowances: Number(record.allowances || 0),
+      overtimePay: Number(record.overtime_pay || 0),
+      bonus: Number(record.bonus || 0),
+      otherEarnings: Number(record.other_earnings || 0),
+      absenceDeduction: Number(record.absence_deduction || 0),
+      loanDeduction: Number(record.loan_deduction || 0),
+      otherDeductions: Number(record.other_deductions || 0),
+      pensionConfig,
+      taxBrackets,
+    })
+
+    return {
+      ...record,
+      pension: initialCalculated.employeePension,
+      tax: initialCalculated.incomeTaxDeducted,
+      gross_pay: initialCalculated.grossSalary,
+      total_deductions: initialCalculated.totalEmployeeDeductions,
+      net_pay: initialCalculated.netTakeHomePay,
+    }
+  })
+
+  // Compute live Ethiopian breakdown
+  const ethiopian = useMemo(() => calculateEthiopianPayroll({
+    basicSalary: Number(form.basic_salary || 0),
+    allowances: Number(form.allowances || 0),
+    overtimePay: Number(form.overtime_pay || 0),
+    bonus: Number(form.bonus || 0),
+    otherEarnings: Number(form.other_earnings || 0),
+    absenceDeduction: Number(form.absence_deduction || 0),
+    loanDeduction: Number(form.loan_deduction || 0),
+    otherDeductions: Number(form.other_deductions || 0),
+    pensionConfig,
+    taxBrackets,
+  }), [form.basic_salary, form.allowances, form.overtime_pay, form.bonus, form.other_earnings, form.absence_deduction, form.loan_deduction, form.other_deductions, pensionConfig, taxBrackets])
+
+  const setField = (key: keyof PayrollRecord, value: string | number) => {
+    const nextValue = typeof value === "number" ? value : Number(value) || 0
+    const bSalary = key === "basic_salary" ? nextValue : Number(form.basic_salary || 0)
+    const allow = key === "allowances" ? nextValue : Number(form.allowances || 0)
+    const ot = key === "overtime_pay" ? nextValue : Number(form.overtime_pay || 0)
+    const bon = key === "bonus" ? nextValue : Number(form.bonus || 0)
+    const otherEarn = key === "other_earnings" ? nextValue : Number(form.other_earnings || 0)
+    const absDed = key === "absence_deduction" ? nextValue : Number(form.absence_deduction || 0)
+    const loanDed = key === "loan_deduction" ? nextValue : Number(form.loan_deduction || 0)
+    const otherDed = key === "other_deductions" ? nextValue : Number(form.other_deductions || 0)
+
+    const calculated = calculateEthiopianPayroll({
+      basicSalary: bSalary,
+      allowances: allow,
+      overtimePay: ot,
+      bonus: bon,
+      otherEarnings: otherEarn,
+      absenceDeduction: absDed,
+      loanDeduction: loanDed,
+      otherDeductions: otherDed,
+      pensionConfig,
+      taxBrackets,
+    })
+
+    setForm({
+      ...form,
+      [key]: value,
+      basic_salary: bSalary,
+      allowances: allow,
+      overtime_pay: ot,
+      bonus: bon,
+      other_earnings: otherEarn,
+      absence_deduction: absDed,
+      loan_deduction: loanDed,
+      other_deductions: otherDed,
+      pension: calculated.employeePension,
+      tax: calculated.incomeTaxDeducted,
+      gross_pay: calculated.grossSalary,
+      total_deductions: calculated.totalEmployeeDeductions,
+      net_pay: calculated.netTakeHomePay,
+    })
+  }
+
+  return (
+    <Modal title="Edit Payroll Record" onClose={onClose}>
+      <form onSubmit={(event) => { event.preventDefault(); onSubmit(form) }} className="space-y-5">
+        {/* Ethiopian Statutory Deduction Calculation Card */}
+        <div className="p-4 rounded-2xl bg-zinc-950 text-white shadow-md">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                Statutory Computation • Proclamation No. 1395/2025 &amp; No. 1268/2022
+              </span>
+              <p className="text-xs font-bold text-zinc-300">Live Ethiopian Tax &amp; Pension Breakdown (Auto-Calculated)</p>
+            </div>
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              Locked &amp; Auto-Calculated
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Gross Basic Salary</span>
+              <span className="text-sm font-black text-white">{money(ethiopian.grossBasicSalary)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Total Allowances</span>
+              <span className="text-sm font-black text-white">{money(ethiopian.totalAllowances)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employee Pension ({pensionConfig.employeeRatePercent}%)</span>
+              <span className="text-sm font-black text-amber-400">{money(ethiopian.employeePension)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employer Pension ({pensionConfig.employerRatePercent}%)</span>
+              <span className="text-sm font-black text-amber-200">{money(ethiopian.employerPension)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Taxable Income Base</span>
+              <span className="text-sm font-black text-sky-400">{money(ethiopian.taxableIncomeBase)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Income Tax Deducted</span>
+              <span className="text-sm font-black text-rose-400">{money(ethiopian.incomeTaxDeducted)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Total Deductions</span>
+              <span className="text-sm font-black text-rose-300">{money(form.total_deductions)} ETB</span>
+            </div>
+            <div className="bg-emerald-600/30 border border-emerald-500/40 p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-emerald-300 font-sans font-bold">Net Take-Home Pay</span>
+              <span className="text-sm font-black text-emerald-400">{money(form.net_pay)} ETB</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Employee Profile Salary Mismatch Notice */}
+        {employee && Number(employee.basic_salary || 0) !== Number(form.basic_salary || 0) && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs text-amber-900">
+            <div>
+              <span className="font-black">Employee Profile Salary Updated:</span> Master employee record currently has <strong>ETB {money(employee.basic_salary)}</strong>, but this pending payroll record still has <strong>ETB {money(form.basic_salary)}</strong>.
+            </div>
+            <button
+              type="button"
+              onClick={() => setField("basic_salary", Number(employee.basic_salary || 0))}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shrink-0 transition-colors shadow-xs"
+            >
+              Sync Profile Salary (ETB {money(employee.basic_salary)})
+            </button>
+          </div>
+        )}
+
+        {/* Input Fields */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input label="Basic Salary (ETB)" type="number" value={form.basic_salary} onChange={(value) => setField("basic_salary", value)} />
+          <Input label="Allowances (ETB)" type="number" value={form.allowances} onChange={(value) => setField("allowances", value)} />
+          <Input label="Overtime Pay (ETB)" type="number" value={form.overtime_pay} onChange={(value) => setField("overtime_pay", value)} />
+          <Input label="Bonus (ETB)" type="number" value={form.bonus} onChange={(value) => setField("bonus", value)} />
+          <Input label="Other Earnings (ETB)" type="number" value={form.other_earnings} onChange={(value) => setField("other_earnings", value)} />
+          <Input label="Absence Deduction (ETB)" type="number" value={form.absence_deduction} onChange={(value) => setField("absence_deduction", value)} />
+          <Input label="Loan Deduction (ETB)" type="number" value={form.loan_deduction} onChange={(value) => setField("loan_deduction", value)} />
+          <Input label="Other Deductions (ETB)" type="number" value={form.other_deductions} onChange={(value) => setField("other_deductions", value)} />
+
+          {/* Automatic Read-Only Statutory Calculated Fields */}
+          <ReadOnlyField label="Employee Pension (7% - Auto)" value={`ETB ${money(form.pension)}`} subtitle="Computed on Basic Salary" />
+          <ReadOnlyField label="Income Tax (Auto - Proc. 1395/2025)" value={`ETB ${money(form.tax)}`} subtitle="Computed on Taxable Base" />
+          <ReadOnlyField label="Gross Pay (Calculated)" value={`ETB ${money(form.gross_pay)}`} subtitle="Basic + Allowances + Extras" />
+          <ReadOnlyField label="Total Deductions (Calculated)" value={`ETB ${money(form.total_deductions)}`} subtitle="Tax + Pension + Deductions" />
+          <ReadOnlyField label="Net Pay (Take-Home)" value={`ETB ${money(form.net_pay)}`} subtitle="Gross Pay - Deductions" highlight />
+
+          <Select label="Payment Status" value={form.payment_status} options={PAYMENT_STATUSES} onChange={(value) => setField("payment_status", value)} />
+          <div className="md:col-span-2">
+            <Input label="Notes / Remarks" value={form.notes} onChange={(value) => setField("notes", value)} />
+          </div>
+        </div>
+
+        <Actions onClose={onClose} label="Save Payroll Record" />
+      </form>
+    </Modal>
+  )
+}
+
+function ReadOnlyField({ label, value, subtitle, highlight = false }: { label: string; value: string; subtitle?: string; highlight?: boolean }) {
+  return (
+    <div className={`p-3 rounded-xl border ${highlight ? "bg-emerald-50/80 border-emerald-200" : "bg-black/[0.03] border-black/10"}`}>
+      <span className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}</span>
+      <span className={`text-sm font-black font-mono mt-0.5 block ${highlight ? "text-emerald-700 font-bold text-base" : "text-zinc-950"}`}>{value}</span>
+      {subtitle && <span className="block text-[9px] font-semibold text-zinc-400 mt-0.5">{subtitle}</span>}
+    </div>
+  )
 }
 
 function Payslip({ record, employee, period, onClose }: { record: PayrollRecord; employee?: Employee; period?: PayrollPeriod; onClose: () => void }) {

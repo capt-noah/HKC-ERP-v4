@@ -126,51 +126,133 @@ export const emptyEmployee: Omit<Employee, "id"> = {
   status: "Active",
 }
 
-function isStringValue(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0
-}
-
-function isHRModuleEmployee(row: Partial<Employee> & Record<string, unknown>) {
-  return isStringValue(row.full_name) && isStringValue(row.employee_number)
-}
-
-function isHRModuleAttendance(row: Partial<AttendanceRecord> & Record<string, unknown>) {
-  return isStringValue(row.employee_id) && isStringValue(row.attendance_date) && isStringValue(row.status)
-}
-
-function isHRModuleLeave(row: Partial<LeaveRequest> & Record<string, unknown>) {
-  return isStringValue(row.employee_id) && isStringValue(row.leave_type) && isStringValue(row.start_date) && isStringValue(row.end_date)
-}
-
-function isHRModulePayrollPeriod(row: Partial<PayrollPeriod> & Record<string, unknown>) {
-  return isStringValue(row.name) && Number(row.month) > 0 && Number(row.year) > 0
-}
-
-function isHRModulePayrollRecord(row: Partial<PayrollRecord> & Record<string, unknown>) {
-  return isStringValue(row.employee_id) && isStringValue(row.payroll_period_id)
-}
-
 function normalizeEmployee(row: Partial<Employee> & Record<string, unknown>): Employee {
-  const fullName = String(row.full_name || "")
+  const id = String(row.id || row.employee_number || row.employeeId || makeId("EMP"))
+  const fullName = String(row.full_name || row.name || row.fullname || "")
+  const employeeNumber = String(row.employee_number || row.employeeId || row.id || id)
   return {
-    id: String(row.id || row.employee_number || makeId("EMP")),
-    employee_number: String(row.employee_number || row.id || ""),
-    full_name: fullName,
+    id,
+    employee_number: employeeNumber,
+    full_name: fullName || "Employee",
     phone: String(row.phone || ""),
     email: String(row.email || ""),
     address: String(row.address || ""),
-    date_of_birth: String(row.date_of_birth || ""),
+    date_of_birth: String(row.date_of_birth || row.dateOfBirth || ""),
     gender: String(row.gender || ""),
-    warehouse_id: String(row.warehouse_id || "Not Assigned"),
-    employment_type: String(row.employment_type || "Permanent"),
-    start_date: String(row.start_date || ""),
-    basic_salary: Number(row.basic_salary || 0),
-    payment_method: String(row.payment_method || ""),
+    warehouse_id: String(row.warehouse_id || row.warehouse || row.department || "Not Assigned"),
+    employment_type: String(row.employment_type || row.employmentType || row.role || "Permanent"),
+    start_date: String(row.start_date || row.startDate || row.joinDate || ""),
+    basic_salary: Number(row.basic_salary ?? row.salary ?? 0),
+    payment_method: String(row.payment_method || row.paymentMethod || ""),
     bank_account: String(row.bank_account || row.bankAccount || ""),
     emergency_contact_name: String(row.emergency_contact_name || row.emergencyContactName || ""),
     emergency_contact_phone: String(row.emergency_contact_phone || row.emergencyContactPhone || ""),
     national_id_image: String(row.national_id_image || ""),
     status: String(row.status || "Active"),
+    created_at: row.created_at ? String(row.created_at) : undefined,
+    updated_at: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
+function normalizeAttendance(row: Partial<AttendanceRecord> & Record<string, unknown>): AttendanceRecord {
+  const checkIn = String(row.check_in_time || row.checkIn || "")
+  const checkOut = String(row.check_out_time || row.checkOut || "")
+  const hoursWorked = row.hours_worked !== undefined && row.hours_worked !== null 
+    ? Number(row.hours_worked) 
+    : calculateHours(checkIn, checkOut)
+  return {
+    id: String(row.id || makeId("ATT")),
+    employee_id: String(row.employee_id || row.employeeId || ""),
+    attendance_date: String(row.attendance_date || row.date || ""),
+    check_in_time: checkIn,
+    check_out_time: checkOut,
+    status: String(row.status || "Present"),
+    hours_worked: hoursWorked,
+    overtime_hours: Number(row.overtime_hours ?? row.overtimeHours ?? 0),
+    warehouse_id: String(row.warehouse_id || row.warehouse || "Head Office"),
+    notes: String(row.notes || ""),
+    locked_by_payroll: Boolean(row.locked_by_payroll),
+    created_at: row.created_at ? String(row.created_at) : undefined,
+    updated_at: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
+function normalizeLeave(row: Partial<LeaveRequest> & Record<string, unknown>): LeaveRequest {
+  const startDate = String(row.start_date || row.startDate || "")
+  const endDate = String(row.end_date || row.endDate || "")
+  const numDays = row.number_of_days !== undefined && row.number_of_days !== null
+    ? Number(row.number_of_days)
+    : (row.totalDays !== undefined && row.totalDays !== null ? Number(row.totalDays) : leaveDays(startDate, endDate))
+  return {
+    id: String(row.id || makeId("LR")),
+    employee_id: String(row.employee_id || row.employeeId || ""),
+    leave_type: String(row.leave_type || row.type || "Annual Leave"),
+    start_date: startDate,
+    end_date: endDate,
+    number_of_days: numDays || 1,
+    reason: String(row.reason || ""),
+    document_path: String(row.document_path || ""),
+    status: String(row.status || "Pending"),
+    notes: String(row.notes || ""),
+    created_at: row.created_at ? String(row.created_at) : undefined,
+    updated_at: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
+function normalizePayrollPeriod(row: Partial<PayrollPeriod> & Record<string, unknown>): PayrollPeriod {
+  return {
+    id: String(row.id || makeId("PER")),
+    name: String(row.name || "Payroll Period"),
+    month: Number(row.month || 1),
+    year: Number(row.year || new Date().getFullYear()),
+    start_date: String(row.start_date || row.startDate || ""),
+    end_date: String(row.end_date || row.endDate || ""),
+    status: String(row.status || "Draft"),
+    created_at: row.created_at ? String(row.created_at) : undefined,
+    updated_at: row.updated_at ? String(row.updated_at) : undefined,
+  }
+}
+
+function normalizePayrollRecord(row: Partial<PayrollRecord> & Record<string, unknown>): PayrollRecord {
+  const basicSalary = Number(row.basic_salary ?? row.salary ?? 0)
+  const allowances = Number(row.allowances ?? 0)
+  const overtimePay = Number(row.overtime_pay ?? 0)
+  const bonus = Number(row.bonus ?? 0)
+  const otherEarnings = Number(row.other_earnings ?? 0)
+  const tax = Number(row.tax ?? 0)
+  const pension = Number(row.pension ?? 0)
+  const absenceDeduction = Number(row.absence_deduction ?? 0)
+  const loanDeduction = Number(row.loan_deduction ?? 0)
+  const otherDeductions = Number(row.other_deductions ?? 0)
+  const grossPay = row.gross_pay !== undefined && row.gross_pay !== null
+    ? Number(row.gross_pay)
+    : (basicSalary + allowances + overtimePay + bonus + otherEarnings)
+  const totalDeductions = row.total_deductions !== undefined && row.total_deductions !== null
+    ? Number(row.total_deductions)
+    : (tax + pension + absenceDeduction + loanDeduction + otherDeductions)
+  const netPay = row.net_pay !== undefined && row.net_pay !== null
+    ? Number(row.net_pay)
+    : (grossPay - totalDeductions)
+
+  return {
+    id: String(row.id || makeId("PAY")),
+    payroll_period_id: String(row.payroll_period_id || row.payrollPeriodId || ""),
+    employee_id: String(row.employee_id || row.employeeId || ""),
+    basic_salary: basicSalary,
+    allowances,
+    overtime_pay: overtimePay,
+    bonus,
+    other_earnings: otherEarnings,
+    tax,
+    pension,
+    absence_deduction: absenceDeduction,
+    loan_deduction: loanDeduction,
+    other_deductions: otherDeductions,
+    gross_pay: grossPay,
+    total_deductions: totalDeductions,
+    net_pay: netPay,
+    payment_status: String(row.payment_status || row.status || "Pending"),
+    notes: String(row.notes || ""),
     created_at: row.created_at ? String(row.created_at) : undefined,
     updated_at: row.updated_at ? String(row.updated_at) : undefined,
   }
@@ -278,11 +360,11 @@ export async function loadHRData(): Promise<HRData> {
   ])
 
   return {
-    employees: employees.filter(isHRModuleEmployee).map(normalizeEmployee),
-    attendance: attendance.filter(isHRModuleAttendance) as AttendanceRecord[],
-    leaves: leaves.filter(isHRModuleLeave) as LeaveRequest[],
-    payrollPeriods: payrollPeriods.filter(isHRModulePayrollPeriod) as PayrollPeriod[],
-    payrollRecords: payrollRecords.filter(isHRModulePayrollRecord) as PayrollRecord[],
+    employees: employees.map(normalizeEmployee).filter((e) => e.full_name && e.id),
+    attendance: attendance.map(normalizeAttendance).filter((a) => a.id),
+    leaves: leaves.map(normalizeLeave).filter((l) => l.id),
+    payrollPeriods: payrollPeriods.map(normalizePayrollPeriod).filter((p) => p.name),
+    payrollRecords: payrollRecords.map(normalizePayrollRecord).filter((r) => r.id),
   }
 }
 

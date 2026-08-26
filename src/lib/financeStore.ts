@@ -174,6 +174,10 @@ export interface CompanySettings {
   default_cogs_account_id?: string
   default_damage_account_id?: string
   default_cash_account_id?: string
+  pension_employee_rate?: number
+  pension_employer_rate?: number
+  pension_expat_exempt?: boolean
+  tax_brackets_config?: { min: number; max: number | null; ratePercent: number; deductible: number }[]
 }
 
 const emptyCompanySettings: CompanySettings = {
@@ -203,6 +207,9 @@ const emptyCompanySettings: CompanySettings = {
   default_cogs_account_id: "",
   default_damage_account_id: "",
   default_cash_account_id: "",
+  pension_employee_rate: 7,
+  pension_employer_rate: 11,
+  pension_expat_exempt: true,
 }
 
 export interface PayrollDeduction {
