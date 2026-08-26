@@ -7,7 +7,6 @@ import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar } from "@/components/HRTable"
 import { useFeedback } from "@/context/FeedbackContext"
-import { LoadingDots } from "@/components/ui/LoadingDots"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { WAREHOUSE_OPTIONS, hrApi, initials, loadHRData, makeId, type AttendanceRecord, type Employee } from "@/lib/hrApi"
 
