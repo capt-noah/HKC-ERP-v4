@@ -28,47 +28,13 @@ import { DataTable } from "@/components/DataTable"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 
-export interface ShipmentDocAttachment {
-  id: string
-  record_id: string
-  record_type: 'purchase_order' | 'sales_order' | 'processing_service'
-  document_type: string
-  file_name: string
-  file_size: number
-  file_url: string
-  uploaded_at: string
-  uploaded_by: string
-}
-
-import { API_BASE } from "@/lib/apiPersistence"
-
-async function fetchShipmentDocs(recordId: string, recordType: string): Promise<ShipmentDocAttachment[]> {
-  try {
-    const url = new URL(`${API_BASE}/api/shipment-documents`, window.location.origin)
-    url.searchParams.set('record_id', recordId)
-    url.searchParams.set('record_type', recordType)
-    const res = await fetch(url.toString())
-    if (res.ok) {
-      const data = await res.json()
-      if (Array.isArray(data)) return data
-    }
-  } catch (err) {
-    console.warn('fetchShipmentDocs error:', err)
-  }
-  return []
-}
-
-async function uploadShipmentDoc(doc: Partial<ShipmentDocAttachment>): Promise<ShipmentDocAttachment> {
-  const res = await fetch(`${API_BASE}/api/shipment-documents`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(doc),
-  })
-  if (!res.ok) {
-    throw new Error('Failed to upload shipment document.')
-  }
-  return res.json()
-}
+import {
+  type ShipmentDocAttachment,
+  saveTradeLicense,
+  savePaymentAdvice,
+  fetchDocumentsForRecord,
+  fetchAllShipmentDocs,
+} from "@/lib/tradeDocumentService"
 
 function resolveSalesOrderDocs(
   soId: string,
@@ -77,9 +43,9 @@ function resolveSalesOrderDocs(
   tradePaperFileName: string | undefined,
   attachments: ShipmentDocAttachment[]
 ) {
-  const docsList = [...attachments]
-  let tradeLicense = attachments.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-  const paymentAdvice = attachments.find((d) => d.document_type === "Payment Advice")
+  const docsList = [...(attachments || [])]
+  let tradeLicense = docsList.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+  const paymentAdvice = docsList.find((d) => d.document_type === "Payment Advice")
 
   if (!tradeLicense && tradePaperUrl) {
     tradeLicense = {
@@ -126,10 +92,35 @@ export default function SalesOrders() {
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null)
 
   const [soAttachmentsMap, setSoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
+  const [soAttachmentsLoaded, setSoAttachmentsLoaded] = useState(false)
+
+  // Batch load all shipment documents on mount to eliminate N separate async calls
+  useEffect(() => {
+    let cancelled = false
+    fetchAllShipmentDocs()
+      .then((docs) => {
+        if (!cancelled && Array.isArray(docs)) {
+          const map: Record<string, ShipmentDocAttachment[]> = {}
+          docs.forEach((d) => {
+            if (!map[d.record_id]) map[d.record_id] = []
+            map[d.record_id].push(d)
+          })
+          setSoAttachmentsMap(map)
+          setSoAttachmentsLoaded(true)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSoAttachmentsLoaded(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (selectedOrder?.id) {
-      fetchShipmentDocs(selectedOrder.id, "sales_order").then((docs) => {
+      fetchDocumentsForRecord(selectedOrder.id, "sales_order").then((docs) => {
         setSoAttachmentsMap((prev) => ({ ...prev, [selectedOrder.id]: docs }))
       })
     }
@@ -148,16 +139,6 @@ export default function SalesOrders() {
       document.removeEventListener("mousedown", handleClickOutside)
     }
   }, [])
-
-  useEffect(() => {
-    if (salesOrders.length > 0) {
-      salesOrders.forEach((so) => {
-        fetchShipmentDocs(so.id, "sales_order").then((docs) => {
-          setSoAttachmentsMap((prev) => ({ ...prev, [so.id]: docs }))
-        })
-      })
-    }
-  }, [salesOrders.length])
 
   // Modals
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false)
@@ -351,8 +332,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     ])
 
-    // Load existing attached docs for editing using the unified resolution engine
-    const existingDocs = await fetchShipmentDocs(so.id, "sales_order")
+    // 1. Instant resolution from in-memory cache and customer profile for 0ms delay
+    const cachedDocs = soAttachmentsMap[so.id] || []
     const cust = customers.find((c) => c.id === so.customerId || c.name === so.customer)
 
     const resolved = resolveSalesOrderDocs(
@@ -360,7 +341,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       so.customer,
       cust?.tradePaperUrl,
       cust?.tradePaperFileName,
-      existingDocs
+      cachedDocs
     )
 
     setStagedTradePaperName(resolved.tradeLicense?.file_name || "")
@@ -368,7 +349,30 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setStagedPaymentAdviceName(resolved.paymentAdvice?.file_name || "")
     setStagedPaymentAdviceUrl(resolved.paymentAdvice?.file_url || "")
 
+    // Open modal immediately without waiting on network
     setIsEditOrderOpen(true)
+
+    // 2. Refresh attachments in background
+    fetchDocumentsForRecord(so.id, "sales_order").then((freshDocs) => {
+      if (Array.isArray(freshDocs) && freshDocs.length > 0) {
+        setSoAttachmentsMap((prev) => ({ ...prev, [so.id]: freshDocs }))
+        const updatedResolved = resolveSalesOrderDocs(
+          so.id,
+          so.customer,
+          cust?.tradePaperUrl,
+          cust?.tradePaperFileName,
+          freshDocs
+        )
+        if (updatedResolved.tradeLicense) {
+          setStagedTradePaperName(updatedResolved.tradeLicense.file_name || "")
+          setStagedTradePaperUrl(updatedResolved.tradeLicense.file_url || "")
+        }
+        if (updatedResolved.paymentAdvice) {
+          setStagedPaymentAdviceName(updatedResolved.paymentAdvice.file_name || "")
+          setStagedPaymentAdviceUrl(updatedResolved.paymentAdvice.file_url || "")
+        }
+      }
+    }).catch(() => {})
   }
 
   const handleSaveEditOrder = async (e: React.FormEvent) => {
@@ -406,30 +410,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     erp.updateSalesOrder(updatedSo)
 
-    // Sync attachments to customer registry profile
-    if (matchedCust) {
-      const isNewFile = stagedTradePaperUrl !== (matchedCust.tradePaperUrl || "")
-      const uploadedAt = isNewFile ? new Date().toISOString() : matchedCust.tradePaperUploadedAt
-      
-      erp.updateCustomer(matchedCust.id, {
-        tradePaperFileName: stagedTradePaperName || matchedCust.tradePaperFileName,
-        tradePaperUrl: stagedTradePaperUrl || matchedCust.tradePaperUrl,
-        tradePaperUploadedAt: uploadedAt,
-      })
-    }
-
-    // Save/Upload staged files
+    // Save/Upload staged files using unified synchronizer
     if (stagedTradePaperUrl && stagedTradePaperName) {
       try {
-        await uploadShipmentDoc({
-          record_id: editingOrder.id,
-          record_type: "sales_order",
-          document_type: "Trade License",
-          file_name: stagedTradePaperName,
-          file_size: 102400,
-          file_url: stagedTradePaperUrl,
-          uploaded_at: new Date().toISOString(),
-          uploaded_by: "Sales Officer",
+        await saveTradeLicense({
+          customerId: matchedCust?.id,
+          customerName: matchedCust?.name || editingOrder.customer,
+          salesOrderId: editingOrder.id,
+          fileName: stagedTradePaperName,
+          fileUrl: stagedTradePaperUrl,
+          uploadedBy: "Sales Officer",
         })
       } catch (err) {
         console.error("Failed uploading Trade License:", err)
@@ -438,15 +428,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
       try {
-        await uploadShipmentDoc({
-          record_id: editingOrder.id,
-          record_type: "sales_order",
-          document_type: "Payment Advice",
-          file_name: stagedPaymentAdviceName,
-          file_size: 102400,
-          file_url: stagedPaymentAdviceUrl,
-          uploaded_at: new Date().toISOString(),
-          uploaded_by: "Sales Officer",
+        await savePaymentAdvice({
+          salesOrderId: editingOrder.id,
+          fileName: stagedPaymentAdviceName,
+          fileUrl: stagedPaymentAdviceUrl,
+          uploadedBy: "Sales Officer",
         })
       } catch (err) {
         console.error("Failed uploading Payment Advice:", err)
@@ -456,7 +442,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     try {
       setIsSavingEditOrder(true)
       // Refresh attachments map for order
-      const updatedDocs = await fetchShipmentDocs(editingOrder.id, "sales_order")
+      const updatedDocs = await fetchDocumentsForRecord(editingOrder.id, "sales_order")
       setSoAttachmentsMap((prev) => ({ ...prev, [editingOrder.id]: updatedDocs }))
 
       setIsEditOrderOpen(false)
@@ -484,18 +470,13 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }
 
     let selectedCust = customers.find(
-      (c) => c.id === newCustomerId || (c.name && c.name.toLowerCase() === finalCustName.toLowerCase())
+      (c) => c.name.toLowerCase() === finalCustName.toLowerCase() || c.id === newCustomerId
     )
 
     if (selectedCust) {
       const evaluation = getTradeLicenseStatus(selectedCust)
       if (evaluation.status !== "valid" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
         showToast("Validation Error", "warning", "An active (unexpired) Trade License must be uploaded for this customer.")
-        return
-      }
-    } else {
-      if (!stagedTradePaperUrl || !stagedTradePaperName) {
-        showToast("Validation Error", "warning", "A Trade License must be uploaded for a new customer registration.")
         return
       }
     }
@@ -505,61 +486,52 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       return
     }
 
-    if (!selectedCust) {
-      const generatedCustId = `CUST-${Date.now().toString().slice(-4)}`
-      selectedCust = {
-        id: generatedCustId,
-        name: finalCustName,
-        country: "Ethiopia",
-        category: "Commercial Union",
-        phone: custPhone.trim(),
-        email: custEmail,
-        address: custAddress,
-        tradePaperFileName: stagedTradePaperName,
-        tradePaperUrl: stagedTradePaperUrl,
-        tradePaperUploadedAt: stagedTradePaperUrl ? new Date().toISOString() : undefined,
-        status: "Active",
-      }
-      if (saveCustomerToRegistry) {
-        erp.addCustomer(selectedCust)
-      }
-    } else {
-      const isNewFile = stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "")
-      const uploadedAt = isNewFile ? new Date().toISOString() : selectedCust.tradePaperUploadedAt
+    if (orderItems.length === 0) {
+      showToast("Validation Error", "warning", "Please add at least one line item.")
+      return
+    }
 
+    if (selectedCust && (stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "") || stagedTradePaperName !== (selectedCust.tradePaperFileName || ""))) {
       erp.updateCustomer(selectedCust.id, {
         tradePaperFileName: stagedTradePaperName || selectedCust.tradePaperFileName,
         tradePaperUrl: stagedTradePaperUrl || selectedCust.tradePaperUrl,
-        tradePaperUploadedAt: uploadedAt,
+        tradePaperUploadedAt: new Date().toISOString(),
       })
     }
 
-    const rawItems = orderItems.length > 0 ? orderItems : [
-      {
-        productId: products[0]?.id || "PRD-001",
-        name: products[0]?.name || "Amoxicillin 500mg",
-        qty: 10,
-        unit: products[0]?.unit || "Box",
-        unitPrice: products[0]?.valuationRate || 150,
-        total: (products[0]?.valuationRate || 150) * 10,
+    if (!selectedCust) {
+      const newCustId = `CUST-${Date.now().toString().slice(-4)}`
+      selectedCust = {
+        id: newCustId,
+        name: finalCustName,
+        country: "Ethiopia",
+        region: "Addis Ababa",
+        contactPerson: finalCustName,
+        phone: custPhone.trim(),
+        email: custEmail.trim() || `${finalCustName.toLowerCase().replace(/\s+/g, "")}@example.com`,
+        address: custAddress.trim() || "Addis Ababa, Ethiopia",
+        category: "Pharmaceutical Distributor",
+        tradePaperFileName: stagedTradePaperName || "Trade License.pdf",
+        tradePaperUrl: stagedTradePaperUrl,
+        tradePaperUploadedAt: new Date().toISOString(),
       }
-    ]
+      erp.addCustomer(selectedCust)
+    }
 
-    const finalItems: SalesOrderItem[] = rawItems.map((i) => {
-      const q = Math.max(1, Number(i.qty) || 1)
-      const p = Math.max(0, Number(i.unitPrice) || 0)
-      return { ...i, qty: q, unitPrice: p, total: q * p }
-    })
+    const soId = `SO-${Date.now().toString().slice(-6)}`
+    const finalItems = orderItems.map((i) => ({
+      ...i,
+      total: i.qty * i.unitPrice,
+    }))
+    const totalAmt = finalItems.reduce((sum, i) => sum + i.total, 0)
 
-    const totalAmt = finalItems.reduce((sum, item) => sum + item.total, 0)
     const targetWh = newWarehouse || (warehouses[0]?.code || "WH1")
     const wh = warehouses.find((w) => w.code === targetWh || w.id === targetWh)
-    const soId = `SO-${Date.now().toString().slice(-4)}`
 
     const newSo: SalesOrder = {
       id: soId,
-      customer: selectedCust.name,
       customerId: selectedCust.id,
+      customer: selectedCust.name,
       customerPhone: custPhone.trim(),
       customerGroup: selectedCust.category,
       warehouse: targetWh,
@@ -583,18 +555,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       paymentType: newPaymentType,
     }
 
-    // Upload staged attachments
-    if (stagedTradePaperUrl && stagedTradePaperName) {
+    // Persist Trade License and Payment Advice via unified tradeDocumentService
+    const activeTradeName = stagedTradePaperName || selectedCust.tradePaperFileName || "Trade License.pdf"
+    const activeTradeUrl = stagedTradePaperUrl || selectedCust.tradePaperUrl || ""
+
+    if (activeTradeUrl && activeTradeName) {
       try {
-        await uploadShipmentDoc({
-          record_id: soId,
-          record_type: "sales_order",
-          document_type: "Trade License",
-          file_name: stagedTradePaperName,
-          file_size: 102400,
-          file_url: stagedTradePaperUrl,
-          uploaded_at: new Date().toISOString(),
-          uploaded_by: "Sales Officer",
+        await saveTradeLicense({
+          customerId: selectedCust.id,
+          customerName: selectedCust.name,
+          salesOrderId: soId,
+          fileName: activeTradeName,
+          fileUrl: activeTradeUrl,
+          uploadedBy: "Sales Officer",
         })
       } catch (err) {
         console.error("Failed uploading Trade License:", err)
@@ -603,15 +576,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
       try {
-        await uploadShipmentDoc({
-          record_id: soId,
-          record_type: "sales_order",
-          document_type: "Payment Advice",
-          file_name: stagedPaymentAdviceName,
-          file_size: 102400,
-          file_url: stagedPaymentAdviceUrl,
-          uploaded_at: new Date().toISOString(),
-          uploaded_by: "Sales Officer",
+        await savePaymentAdvice({
+          salesOrderId: soId,
+          fileName: stagedPaymentAdviceName,
+          fileUrl: stagedPaymentAdviceUrl,
+          uploadedBy: "Sales Officer",
         })
       } catch (err) {
         console.error("Failed uploading Payment Advice:", err)
@@ -620,7 +589,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     try {
       setIsSubmittingOrder(true)
-      const docs = await fetchShipmentDocs(soId, "sales_order")
+      const docs = await fetchDocumentsForRecord(soId, "sales_order")
       setSoAttachmentsMap((prev) => ({ ...prev, [soId]: docs }))
 
       erp.addSalesOrder(newSo)
@@ -743,7 +712,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           subtitle={`Total: ${filteredOrders.length} sales contracts`}
           columns={salesOrderColumns}
           data={filteredOrders}
-          isLoading={isLoading}
+          isLoading={isLoading || !soAttachmentsLoaded}
           searchQuery={soSearch}
           onSearchChange={setSoSearch}
           searchPlaceholder="Search order ID, client..."
@@ -812,7 +781,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               <td style={{ width: `${colWidths.docsStatus}px` }} className="py-4 px-4 overflow-hidden">
                 {(() => {
                   const docs = soAttachmentsMap[so.id] || []
-                  const hasTrade = docs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                  const cust = customers.find((c) => c.id === so.customerId || c.name === so.customer)
+                  const hasTrade = docs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper") || !!cust?.tradePaperUrl
                   const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
                   const isCredit = so.paymentType === "Credit"
 

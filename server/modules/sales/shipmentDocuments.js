@@ -95,13 +95,27 @@ export async function saveShipmentDoc(input) {
     uploaded_by: input?.uploaded_by || "Current User",
   }
 
+  // Deduplicate existing document for the same record and document_type
+  for (const [existingId, existingDoc] of memoryShipmentDocs.entries()) {
+    if (existingDoc.record_id === doc.record_id && existingDoc.document_type === doc.document_type) {
+      memoryShipmentDocs.delete(existingId)
+    }
+  }
   memoryShipmentDocs.set(id, doc)
 
   try {
     const url = new URL("shipment_documents", config.supabaseRestUrl)
+    // Clean up previous doc of same type for record_id
+    try {
+      const delUrl = new URL("shipment_documents", config.supabaseRestUrl)
+      delUrl.searchParams.set("record_id", `eq.${doc.record_id}`)
+      delUrl.searchParams.set("document_type", `eq.${doc.document_type}`)
+      await fetch(delUrl, { method: "DELETE", headers: headers() })
+    } catch {}
+
     const response = await fetch(url, {
       method: "POST",
-      headers: headers("resolution=merge-duplicates,return=representation"),
+      headers: headers("return=representation"),
       body: JSON.stringify(doc),
     })
     const rows = await parseResponse(response)

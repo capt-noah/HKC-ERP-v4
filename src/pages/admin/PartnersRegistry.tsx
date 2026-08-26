@@ -27,6 +27,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { saveTradeLicense } from "@/lib/tradeDocumentService"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -164,7 +165,7 @@ export default function PartnersRegistry() {
     reader.readAsDataURL(file)
   }
 
-  const handleSaveCustomer = (e: React.FormEvent) => {
+  const handleSaveCustomer = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!custName.trim()) {
       showToast("Validation Error", "warning", "Customer name is required.")
@@ -190,11 +191,23 @@ export default function PartnersRegistry() {
           tradePaperUrl: custTradePaperUrl,
           tradePaperUploadedAt: uploadedAt,
         })
+
+        if (custTradePaperUrl && custTradePaperName) {
+          await saveTradeLicense({
+            customerId: editingCustomer.id,
+            customerName: custName.trim(),
+            fileName: custTradePaperName,
+            fileUrl: custTradePaperUrl,
+            uploadedBy: "Admin / Registry",
+          })
+        }
+
         showToast("Customer Updated", "success", `Customer ${custName} successfully updated in registry.`)
       } else {
         const hasFile = !!custTradePaperUrl
+        const newCustId = `CUST-${Date.now().toString().slice(-4)}`
         const newCust: Customer = {
-          id: `CUST-${Date.now().toString().slice(-4)}`,
+          id: newCustId,
           name: custName.trim(),
           country: custCountry,
           region: custRegion,
@@ -208,6 +221,17 @@ export default function PartnersRegistry() {
           tradePaperUploadedAt: hasFile ? new Date().toISOString() : undefined,
         }
         erp.addCustomer(newCust)
+
+        if (custTradePaperUrl && custTradePaperName) {
+          await saveTradeLicense({
+            customerId: newCustId,
+            customerName: custName.trim(),
+            fileName: custTradePaperName,
+            fileUrl: custTradePaperUrl,
+            uploadedBy: "Admin / Registry",
+          })
+        }
+
         showToast("Customer Added", "success", `New customer ${custName} added to registry.`)
       }
       setShowAddCustomerModal(false)

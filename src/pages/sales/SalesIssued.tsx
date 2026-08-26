@@ -18,47 +18,13 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 import SalesIssuePrintModal from "@/components/sales/SalesIssuePrintModal"
 
-export interface ShipmentDocAttachment {
-  id: string
-  record_id: string
-  record_type: 'purchase_order' | 'sales_order' | 'processing_service'
-  document_type: string
-  file_name: string
-  file_size: number
-  file_url: string
-  uploaded_at: string
-  uploaded_by: string
-}
-
-import { API_BASE } from "@/lib/apiPersistence"
-
-async function fetchShipmentDocs(recordId: string, recordType: string): Promise<ShipmentDocAttachment[]> {
-  try {
-    const url = new URL(`${API_BASE}/api/shipment-documents`, window.location.origin)
-    url.searchParams.set('record_id', recordId)
-    url.searchParams.set('record_type', recordType)
-    const res = await fetch(url.toString())
-    if (res.ok) {
-      const data = await res.json()
-      if (Array.isArray(data)) return data
-    }
-  } catch (err) {
-    console.warn('fetchShipmentDocs error:', err)
-  }
-  return []
-}
-
-async function uploadShipmentDoc(doc: Partial<ShipmentDocAttachment>): Promise<ShipmentDocAttachment> {
-  const res = await fetch(`${API_BASE}/api/shipment-documents`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(doc),
-  })
-  if (!res.ok) {
-    throw new Error('Failed to upload shipment document.')
-  }
-  return res.json()
-}
+import {
+  type ShipmentDocAttachment,
+  saveTradeLicense,
+  savePaymentAdvice,
+  fetchTradeAndAdviceDocs,
+  fetchAllShipmentDocs,
+} from "@/lib/tradeDocumentService"
 
 import {
   createSalesIssue,
@@ -121,6 +87,7 @@ export default function SalesIssued() {
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
+  const customers = erp.getCustomers()
 
   const [rows, setRows] = useState<SalesIssue[]>([])
   const [total, setTotal] = useState(0)
@@ -151,20 +118,28 @@ export default function SalesIssued() {
   const [stagedPaymentAdviceUrl, setStagedPaymentAdviceUrl] = useState("")
   const [stagedTradePaperName, setStagedTradePaperName] = useState("")
   const [stagedTradePaperUrl, setStagedTradePaperUrl] = useState("")
+  const [isDocsLoading, setIsDocsLoading] = useState(false)
   const [previewDocUrl, setPreviewDocUrl] = useState("")
   const [previewDocName, setPreviewDocName] = useState("")
 
   const salesOrders = erp.getSalesOrders()
 
   useEffect(() => {
-    if (salesOrders.length > 0) {
-      salesOrders.forEach((so) => {
-        fetchShipmentDocs(so.id, "sales_order").then((docs) => {
-          setSoAttachmentsMap((prev) => ({ ...prev, [so.id]: docs }))
+    let cancelled = false
+    fetchAllShipmentDocs().then((docs) => {
+      if (!cancelled && Array.isArray(docs)) {
+        const map: Record<string, ShipmentDocAttachment[]> = {}
+        docs.forEach((d) => {
+          if (!map[d.record_id]) map[d.record_id] = []
+          map[d.record_id].push(d)
         })
-      })
+        setSoAttachmentsMap(map)
+      }
+    }).catch(() => {})
+    return () => {
+      cancelled = true
     }
-  }, [salesOrders.length])
+  }, [])
 
   const pendingSalesOrders = useMemo(() => {
     return salesOrders.filter((so) => {
@@ -180,7 +155,7 @@ export default function SalesIssued() {
     return warehouse?.id || value
   }
 
-  const handleTogglePullSalesOrder = (so: any) => {
+  const handleTogglePullSalesOrder = async (so: any) => {
     let nextSelected = [...selectedSoIds]
     if (nextSelected.includes(so.id)) {
       nextSelected = nextSelected.filter((id) => id !== so.id)
@@ -212,21 +187,32 @@ export default function SalesIssued() {
     setReferenceNo("")
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
 
-    // Pull attached docs from referenced sales orders
-    const soDocs = soAttachmentsMap[firstSo.id] || []
-    const tradeDoc = soDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-    const adviceDoc = soDocs.find((d) => d.document_type === "Payment Advice")
-    if (tradeDoc) {
-      setStagedTradePaperName(tradeDoc.file_name)
-      setStagedTradePaperUrl(tradeDoc.file_url)
-    } else {
+    // Pull attached docs from referenced sales order & customer profile
+    try {
+      const resolved = await fetchTradeAndAdviceDocs({
+        salesOrderId: firstSo.id,
+        customerId: firstSo.customerId,
+        customerName: firstSo.customer,
+      })
+
+      if (resolved.tradeLicense) {
+        setStagedTradePaperName(resolved.tradeLicense.name)
+        setStagedTradePaperUrl(resolved.tradeLicense.url)
+      } else {
+        setStagedTradePaperName("")
+        setStagedTradePaperUrl("")
+      }
+
+      if (resolved.paymentAdvice) {
+        setStagedPaymentAdviceName(resolved.paymentAdvice.name)
+        setStagedPaymentAdviceUrl(resolved.paymentAdvice.url)
+      } else {
+        setStagedPaymentAdviceName("")
+        setStagedPaymentAdviceUrl("")
+      }
+    } catch {
       setStagedTradePaperName("")
       setStagedTradePaperUrl("")
-    }
-    if (adviceDoc) {
-      setStagedPaymentAdviceName(adviceDoc.file_name)
-      setStagedPaymentAdviceUrl(adviceDoc.file_url)
-    } else {
       setStagedPaymentAdviceName("")
       setStagedPaymentAdviceUrl("")
     }
@@ -375,13 +361,33 @@ export default function SalesIssued() {
     setFsNo(issue.fs_no || (issue as any).fsNo || "")
     setReferenceNo(issue.reference_no || (issue as any).referenceNo || "")
     setSaleDate(issue.sale_date || (issue as any).issueDate || issue.sale_date || new Date().toISOString().split("T")[0])
-    setCustomerName(issue.customer_name || (issue as any).customer || issue.customer_id || "")
+    const cName = issue.customer_name || (issue as any).customer || issue.customer_id || ""
+    setCustomerName(cName)
     setWarehouseId(normalizedWarehouseId)
     setPaymentType(((issue.payment_type || (issue as any).paymentType || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
-    setStagedPaymentAdviceName("")
-    setStagedPaymentAdviceUrl("")
-    setStagedTradePaperName("")
-    setStagedTradePaperUrl("")
+
+    // Synchronously pre-populate from customer registry and sales order attachment cache for 0ms instant display
+    const matchedCust = customers.find((c) => c.name === cName || c.id === cName)
+    if (matchedCust?.tradePaperUrl) {
+      setStagedTradePaperName(matchedCust.tradePaperFileName || "Trade License.pdf")
+      setStagedTradePaperUrl(matchedCust.tradePaperUrl)
+    } else {
+      setStagedTradePaperName("")
+      setStagedTradePaperUrl("")
+    }
+
+    const refSoId = issue.reference_no || ""
+    const cachedDocs = soAttachmentsMap[issue.id] || soAttachmentsMap[refSoId] || []
+    const cachedAdvice = cachedDocs.find((d) => d.document_type === "Payment Advice")
+    if (cachedAdvice) {
+      setStagedPaymentAdviceName(cachedAdvice.file_name || "")
+      setStagedPaymentAdviceUrl(cachedAdvice.file_url || "")
+    } else {
+      setStagedPaymentAdviceName("")
+      setStagedPaymentAdviceUrl("")
+    }
+
+    setIsDocsLoading(true)
 
     const rawItems = (issue.items && issue.items.length > 0) ? issue.items : [blankItem()]
     const populatedItems = rawItems.map((item) => {
@@ -408,10 +414,14 @@ export default function SalesIssued() {
     // Concurrently fetch detailed issue data, attachments, and available batches in parallel
     void (async () => {
       try {
-        const [fetchRes, issueDocs, refDocs] = await Promise.all([
+        const [fetchRes, resolvedDocs] = await Promise.all([
           getSalesIssue(issue.id).catch(() => null),
-          fetchShipmentDocs(issue.id, "sales_issue").catch(() => []),
-          issue.reference_no ? fetchShipmentDocs(issue.reference_no, "sales_order").catch(() => []) : Promise.resolve([]),
+          fetchTradeAndAdviceDocs({
+            salesIssueId: issue.id,
+            salesOrderId: issue.reference_no,
+            fsNo: issue.fs_no,
+            customerName: issue.customer_name || (issue as any).customer,
+          }).catch(() => null),
         ])
 
         if (fetchRes && typeof fetchRes === "object" && fetchRes.id) {
@@ -435,16 +445,13 @@ export default function SalesIssued() {
           }
         }
 
-        const adviceDoc = issueDocs.find((d) => d.document_type === "Payment Advice") || refDocs.find((d) => d.document_type === "Payment Advice")
-        const tradeDoc = issueDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper") || refDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-
-        if (adviceDoc) {
-          setStagedPaymentAdviceName(adviceDoc.file_name || "")
-          setStagedPaymentAdviceUrl(adviceDoc.file_url || "")
+        if (resolvedDocs?.tradeLicense) {
+          setStagedTradePaperName(resolvedDocs.tradeLicense.name || "")
+          setStagedTradePaperUrl(resolvedDocs.tradeLicense.url || "")
         }
-        if (tradeDoc) {
-          setStagedTradePaperName(tradeDoc.file_name || "")
-          setStagedTradePaperUrl(tradeDoc.file_url || "")
+        if (resolvedDocs?.paymentAdvice) {
+          setStagedPaymentAdviceName(resolvedDocs.paymentAdvice.name || "")
+          setStagedPaymentAdviceUrl(resolvedDocs.paymentAdvice.url || "")
         }
 
         if (normalizedWarehouseId) {
@@ -457,6 +464,8 @@ export default function SalesIssued() {
         }
       } catch (err) {
         console.warn("Non-blocking background load error for sales issue:", err)
+      } finally {
+        setIsDocsLoading(false)
       }
     })()
   }
@@ -536,25 +545,44 @@ export default function SalesIssued() {
 
     try {
       setIsSaving(true)
+      let savedIssueId = editing?.id || ""
       if (editing) {
         await updateSalesIssue(editing.id, payload)
+        savedIssueId = editing.id
       } else {
-        await createSalesIssue(payload)
+        const createdRes = await createSalesIssue(payload)
+        savedIssueId = (createdRes as any)?.id || payload.id || `SI-${Date.now().toString().slice(-6)}`
       }
 
-      // Persist newly attached Payment Advice if uploaded
-      if (stagedPaymentAdviceName && stagedPaymentAdviceUrl) {
-        const issueId = editing?.id || payload.id || fsNo.trim()
+      const issueId = savedIssueId || editing?.id || fsNo.trim()
+
+      // 1. Persist Trade License
+      if (stagedTradePaperUrl && stagedTradePaperName) {
         try {
-          await uploadShipmentDoc({
-            record_id: issueId,
-            record_type: "sales_order",
-            document_type: "Payment Advice",
-            file_name: stagedPaymentAdviceName,
-            file_size: 102400,
-            file_url: stagedPaymentAdviceUrl,
-            uploaded_at: new Date().toISOString(),
-            uploaded_by: "Sales Officer",
+          await saveTradeLicense({
+            customerName: enteredCustomer,
+            salesIssueId: issueId,
+            salesOrderId: referenceNo.trim() || undefined,
+            fileName: stagedTradePaperName,
+            fileUrl: stagedTradePaperUrl,
+            uploadedBy: "Sales Officer",
+          })
+        } catch (err) {
+          console.warn("Failed saving Trade License on sales issue:", err)
+        }
+      }
+
+      // 2. Persist Payment Advice
+      if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
+        try {
+          await savePaymentAdvice({
+            salesIssueId: issueId,
+            salesOrderId: referenceNo.trim() || undefined,
+            fsNo: fsNo.trim(),
+            invoiceId: `INV-SI-${issueId}`,
+            fileName: stagedPaymentAdviceName,
+            fileUrl: stagedPaymentAdviceUrl,
+            uploadedBy: "Sales Officer",
           })
         } catch (docErr) {
           console.warn("Payment advice upload notice:", docErr)
@@ -1029,6 +1057,8 @@ export default function SalesIssued() {
                         <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
                           Attached
                         </span>
+                      ) : isDocsLoading ? (
+                        <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
                       ) : (
                         <span className="text-[9px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
                           Not on file
@@ -1036,20 +1066,29 @@ export default function SalesIssued() {
                       )}
                     </div>
                     <div className="flex items-center justify-between pt-1 text-xs">
-                      <span className="text-[11px] font-mono text-zinc-600 truncate">
-                        {stagedTradePaperName || "No file attached from order"}
-                      </span>
-                      {stagedTradePaperUrl && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewDocUrl(stagedTradePaperUrl)
-                            setPreviewDocName(stagedTradePaperName || "Trade License")
-                          }}
-                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                        >
-                          View Doc ↗
-                        </button>
+                      {isDocsLoading && !stagedTradePaperName ? (
+                        <div className="flex items-center justify-between w-full">
+                          <Skeleton className="h-4 w-44 bg-zinc-200/80 rounded-md" />
+                          <Skeleton className="h-6 w-16 bg-zinc-200/80 rounded-md" />
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-[11px] font-mono text-zinc-600 truncate">
+                            {stagedTradePaperName || "No file attached from order"}
+                          </span>
+                          {stagedTradePaperUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewDocUrl(stagedTradePaperUrl)
+                                setPreviewDocName(stagedTradePaperName || "Trade License")
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                            >
+                              View Doc ↗
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -1064,6 +1103,8 @@ export default function SalesIssued() {
                         <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
                           Attached
                         </span>
+                      ) : isDocsLoading ? (
+                        <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
                       ) : (
                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paymentType === "Cash" ? "text-amber-700 bg-amber-50" : "text-zinc-500 bg-zinc-100"}`}>
                           {paymentType === "Cash" ? "Required for Cash" : "Optional"}
@@ -1071,27 +1112,36 @@ export default function SalesIssued() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 pt-1">
-                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                        <Upload className="size-3" /> Select File
-                        <input
-                          type="file"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0]
-                            if (f) {
-                              const reader = new FileReader()
-                              reader.onload = () => {
-                                setStagedPaymentAdviceName(f.name)
-                                setStagedPaymentAdviceUrl(reader.result as string)
-                              }
-                              reader.readAsDataURL(f)
-                            }
-                          }}
-                        />
-                      </label>
-                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                        {stagedPaymentAdviceName || "No slip uploaded"}
-                      </span>
+                      {isDocsLoading && !stagedPaymentAdviceName ? (
+                        <div className="flex items-center gap-2 w-full">
+                          <Skeleton className="h-7 w-24 bg-zinc-200/80 rounded-lg" />
+                          <Skeleton className="h-4 flex-1 bg-zinc-200/80 rounded-md" />
+                        </div>
+                      ) : (
+                        <>
+                          <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                            <Upload className="size-3" /> Select File
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0]
+                                if (f) {
+                                  const reader = new FileReader()
+                                  reader.onload = () => {
+                                    setStagedPaymentAdviceName(f.name)
+                                    setStagedPaymentAdviceUrl(reader.result as string)
+                                  }
+                                  reader.readAsDataURL(f)
+                                }
+                              }}
+                            />
+                          </label>
+                          <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                            {stagedPaymentAdviceName || "No slip uploaded"}
+                          </span>
+                        </>
+                      )}
                       {stagedPaymentAdviceUrl && (
                         <button
                           type="button"

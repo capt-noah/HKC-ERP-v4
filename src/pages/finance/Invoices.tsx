@@ -26,17 +26,17 @@ import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import InvoicePrintModal from "@/components/finance/InvoicePrintModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { API_BASE } from "@/lib/apiPersistence"
+import {
+  type ShipmentDocAttachment,
+  savePaymentAdvice,
+  fetchTradeAndAdviceDocs,
+  readFileAsDataUrl,
+} from "@/lib/tradeDocumentService"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
-export interface InvoiceAttachment {
-  id: string
-  record_id: string
-  document_type: string
-  file_name: string
-  file_size: number
-}
+export type InvoiceAttachment = ShipmentDocAttachment
 
 export default function Invoices() {
   const { showToast } = useFeedback()
@@ -55,6 +55,7 @@ export default function Invoices() {
 
   // Attachments State for Active Invoice
   const [invoiceAttachments, setInvoiceAttachments] = useState<InvoiceAttachment[]>([])
+  const [isAttachmentsLoading, setIsAttachmentsLoading] = useState(false)
   const [previewDocUrl, setPreviewDocUrl] = useState("")
   const [previewDocName, setPreviewDocName] = useState("")
 
@@ -154,29 +155,39 @@ export default function Invoices() {
   useEffect(() => {
     if (!activeInvoice) {
       setInvoiceAttachments([])
+      setIsAttachmentsLoading(false)
       return
     }
+
+    // Immediately clear previous attachments to prevent stale flash
+    setInvoiceAttachments([])
+    setIsAttachmentsLoading(true)
+
     let cancelled = false
     const invId = activeInvoice.id
     const siId = activeInvoice.sales_issue_id || ""
     const soId = activeInvoice.sales_order_id || ""
     const fsNo = activeInvoice.fs_no || ""
 
-    fetch(`${API_BASE}/api/shipment_documents`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((docs: any[]) => {
-        if (!cancelled && Array.isArray(docs)) {
-          const matches = docs.filter((d) => 
-            d.record_id === invId ||
-            (siId && d.record_id === siId) ||
-            (soId && d.record_id === soId) ||
-            (fsNo && d.record_id === fsNo) ||
-            (activeInvoice.invoice_number && d.record_id === activeInvoice.invoice_number)
-          )
-          setInvoiceAttachments(matches)
+    fetchTradeAndAdviceDocs({
+      invoiceId: invId,
+      salesIssueId: siId,
+      salesOrderId: soId,
+      fsNo: fsNo,
+      customerName: activeInvoice.customer_name,
+    })
+      .then((res) => {
+        if (!cancelled) {
+          setInvoiceAttachments(res?.allDocs || [])
+          setIsAttachmentsLoading(false)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) {
+          setIsAttachmentsLoading(false)
+        }
+      })
+
     return () => {
       cancelled = true
     }
@@ -284,20 +295,28 @@ export default function Invoices() {
       // 1. Upload Payment Advice if attached
       if (editAdviceFile) {
         try {
-          const form = new FormData()
-          form.append("file", editAdviceFile)
-          form.append("record_id", editingInvoice.id)
-          form.append("record_type", "sales_order")
-          form.append("document_type", "Payment Advice")
-          await fetch(`${API_BASE}/api/shipment_documents`, { method: "POST", body: form })
+          const fileData = await readFileAsDataUrl(editAdviceFile)
+          await savePaymentAdvice({
+            invoiceId: editingInvoice.id,
+            salesIssueId: editingInvoice.sales_issue_id || undefined,
+            salesOrderId: editingInvoice.sales_order_id || undefined,
+            fsNo: editingInvoice.fs_no || undefined,
+            fileName: fileData.fileName,
+            fileUrl: fileData.fileUrl,
+            fileSize: fileData.fileSize,
+            uploadedBy: "Finance Officer",
+          })
 
-          if (editingInvoice.sales_issue_id) {
-            const siForm = new FormData()
-            siForm.append("file", editAdviceFile)
-            siForm.append("record_id", editingInvoice.sales_issue_id)
-            siForm.append("record_type", "sales_order")
-            siForm.append("document_type", "Payment Advice")
-            await fetch(`${API_BASE}/api/shipment_documents`, { method: "POST", body: siForm })
+          // Re-fetch attachments immediately
+          const res = await fetchTradeAndAdviceDocs({
+            invoiceId: editingInvoice.id,
+            salesIssueId: editingInvoice.sales_issue_id,
+            salesOrderId: editingInvoice.sales_order_id,
+            fsNo: editingInvoice.fs_no,
+            customerName: editingInvoice.customer_name,
+          })
+          if (res?.allDocs) {
+            setInvoiceAttachments(res.allDocs)
           }
         } catch (err) {
           console.warn("Payment advice upload failed:", err)
@@ -528,11 +547,20 @@ export default function Invoices() {
                       <Paperclip className="size-3.5" /> Attached Supporting Documents & Payment Advice
                     </span>
                     <span className="text-[10px] font-bold text-zinc-400">
-                      {invoiceAttachments.length} {invoiceAttachments.length === 1 ? "file" : "files"}
+                      {isAttachmentsLoading ? (
+                        <Skeleton className="h-3 w-10 bg-zinc-200/80 rounded-full" />
+                      ) : (
+                        `${invoiceAttachments.length} ${invoiceAttachments.length === 1 ? "file" : "files"}`
+                      )}
                     </span>
                   </div>
 
-                  {invoiceAttachments.length === 0 ? (
+                  {isAttachmentsLoading ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Skeleton className="h-8 w-44 bg-zinc-200/80 rounded-xl" />
+                      <Skeleton className="h-8 w-36 bg-zinc-200/80 rounded-xl" />
+                    </div>
+                  ) : invoiceAttachments.length === 0 ? (
                     <p className="text-xs text-zinc-400 font-medium italic">
                       No payment advice or supporting documents attached yet. Click "Edit" to attach payment advice.
                     </p>
@@ -543,7 +571,7 @@ export default function Invoices() {
                           key={att.id}
                           type="button"
                           onClick={() => {
-                            setPreviewDocUrl(`${API_BASE}/api/shipment_documents/${att.id}/file`)
+                            setPreviewDocUrl(att.file_url)
                             setPreviewDocName(att.file_name)
                           }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-800 text-xs font-bold transition-all shadow-xs cursor-pointer"
