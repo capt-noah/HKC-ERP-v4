@@ -251,6 +251,10 @@ export interface SalesOrder {
   shippingAddress?: string
   deliveryNoteIds?: string[]
   invoiceIds?: string[]
+  approvalStatus?: "Pending" | "Approved" | "Declined"
+  approvedBy?: string
+  approvedAt?: string
+  declineReason?: string
 }
 
 export interface PurchaseOrderItem {
@@ -1285,9 +1289,10 @@ class ErpStore {
   }
 
   // Actions - Sales Orders
-  public addSalesOrder(so: SalesOrder) {
+  public async addSalesOrder(so: SalesOrder): Promise<SalesOrder> {
     const enrichedSo: SalesOrder = {
       ...so,
+      approvalStatus: so.approvalStatus || "Pending",
       deliveredAmount: so.deliveredAmount || (so.stage === "Shipped" || so.stage === "Delivered" ? so.amount : 0),
       billedAmount: so.billedAmount || so.amount,
       deliveryStatus: so.deliveryStatus || (so.stage === "Shipped" || so.stage === "Delivered" ? "Fully Delivered" : "Not Delivered"),
@@ -1326,7 +1331,96 @@ class ErpStore {
       console.error("Auto-posting Sales Order to Finance failed:", err)
     }
 
+    // Persist directly to Supabase
+    try {
+      await createResource<SalesOrder>("sales_orders", enrichedSo)
+      // Also log creation in user activity logs
+      await createResource("user_activity_logs", {
+        id: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        user_id: null,
+        username: so.salesPerson || "Sales Officer",
+        fullname: so.salesPerson || "Sales Officer",
+        action: "Create",
+        resource: "sales_orders",
+        details: { orderId: enrichedSo.id, customer: enrichedSo.customer, amount: enrichedSo.amount, status: "Pending" },
+        created_at: new Date().toISOString(),
+      }).catch(() => {})
+    } catch (err) {
+      console.error("Failed to persist new Sales Order to DB:", err)
+    }
+
     this.notify()
+    return enrichedSo
+  }
+
+  public async approveSalesOrder(soId: string, approverName: string = "Super Admin"): Promise<SalesOrder | null> {
+    const existing = this.salesOrders.find((so) => so.id === soId)
+    if (!existing) return null
+
+    const updated: SalesOrder = {
+      ...existing,
+      approvalStatus: "Approved",
+      approvedBy: approverName,
+      approvedAt: new Date().toISOString(),
+      declineReason: undefined,
+    }
+
+    this.salesOrders = this.salesOrders.map((so) => (so.id === soId ? updated : so))
+    this.notify()
+
+    try {
+      await updateResource<SalesOrder>("sales_orders", soId, updated)
+      // Log to user_activity_logs
+      await createResource("user_activity_logs", {
+        id: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        user_id: null,
+        username: approverName,
+        fullname: approverName,
+        action: "Approve",
+        resource: "sales_orders",
+        details: { orderId: soId, customer: existing.customer, amount: existing.amount },
+        created_at: new Date().toISOString(),
+      }).catch(() => {})
+    } catch (err) {
+      console.error("Failed to persist approved Sales Order to DB:", err)
+    }
+
+    return updated
+  }
+
+  public async declineSalesOrder(soId: string, declinerName: string = "Super Admin", reason?: string): Promise<SalesOrder | null> {
+    const existing = this.salesOrders.find((so) => so.id === soId)
+    if (!existing) return null
+
+    const updated: SalesOrder = {
+      ...existing,
+      approvalStatus: "Declined",
+      approvedBy: declinerName,
+      approvedAt: new Date().toISOString(),
+      declineReason: reason || "Declined by Super Admin",
+    }
+
+    this.salesOrders = this.salesOrders.map((so) => (so.id === soId ? updated : so))
+    this.notify()
+
+    try {
+      await updateResource<SalesOrder>("sales_orders", soId, updated)
+      // Log to user_activity_logs
+      await createResource("user_activity_logs", {
+        id: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        user_id: null,
+        username: declinerName,
+        fullname: declinerName,
+        action: "Decline",
+        resource: "sales_orders",
+        details: { orderId: soId, customer: existing.customer, reason: updated.declineReason },
+        created_at: new Date().toISOString(),
+      }).catch(() => {})
+    } catch (err) {
+      console.error("Failed to persist declined Sales Order to DB:", err)
+    }
+
+    return updated
   }
 
   public updateSalesOrder(updatedSo: SalesOrder) {

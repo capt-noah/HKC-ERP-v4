@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Bell, User, Check, Inbox } from "lucide-react"
+import { Bell, User, Check, Inbox, Clock } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/lib/authStore"
+import { useErpStore } from "@/lib/erpStore"
 import type { Role } from "@/lib/authStore"
 
 const sectionRoleMapping: Record<string, Role[]> = {
@@ -46,11 +47,33 @@ export function FloatingNav({
   const isDark = variant === "dark"
   const [showNotifications, setShowNotifications] = useState(false)
   const { user } = useAuthStore()
-  const [notifications, setNotifications] = useState<Array<{ id: string; title: string; desc: string; time: string; type: string; icon?: typeof Inbox; unread: boolean }>>([])
+  const erp = useErpStore()
+  const salesOrders = erp.getSalesOrders()
+
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([])
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([])
 
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
   const isSuperAdmin = userRoles.includes("superadmin")
   const userWarehouseIds = (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
+
+  // Dynamic notifications for Super Admin (e.g. pending sales orders)
+  const notifications = useMemo(() => {
+    if (!isSuperAdmin) return []
+    const pendingOrders = salesOrders.filter((so) => (so.approvalStatus || "Pending") === "Pending")
+    return pendingOrders
+      .filter((so) => !dismissedNotificationIds.includes(so.id))
+      .map((so) => ({
+        id: so.id,
+        title: `Sales Order Pending Approval: ${so.id}`,
+        desc: `${so.customer} • ETB ${Number(so.amount || 0).toLocaleString()} (${so.paymentType || "Cash"}) awaiting Super Admin approval.`,
+        time: so.date || "Today",
+        type: "approval",
+        icon: Clock,
+        unread: !readNotificationIds.includes(so.id),
+        orderId: so.id,
+      }))
+  }, [isSuperAdmin, salesOrders, dismissedNotificationIds, readNotificationIds])
 
   // WH1 access: true if superadmin, or if no specific warehouse restriction is set, or if WH1 is in assigned warehouses
   const hasWH1Access = isSuperAdmin || userWarehouseIds.length === 0 || userWarehouseIds.some(id => id.includes("WH1") || id.includes("WH-01") || id.includes("WH 1") || id.includes("WAREHOUSE 1"))
@@ -65,17 +88,22 @@ export function FloatingNav({
   const unreadCount = notifications.filter((n) => n.unread).length
 
   const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })))
+    setReadNotificationIds(notifications.map((n) => n.id))
   }
 
   const handleClearAll = () => {
-    setNotifications([])
+    setDismissedNotificationIds(notifications.map((n) => n.id))
   }
 
   const handleToggleRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, unread: !n.unread } : n))
+    setReadNotificationIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     )
+  }
+
+  const handleNotificationClick = (_orderId?: string) => {
+    setShowNotifications(false)
+    navigate("/admin?tab=approvals")
   }
 
   const activeSection =
@@ -199,23 +227,25 @@ export function FloatingNav({
           >
             {rightActions ?? (
               <div className="flex items-center gap-2 relative">
-                {/* Minimalist Notification Bell */}
+                {/* Notification Bell */}
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
                   className={cn(
-                    "size-8 rounded-full flex items-center justify-center transition-all duration-300 relative border hover:scale-105 active:scale-95",
+                    "size-9 rounded-full flex items-center justify-center transition-all duration-300 relative border hover:scale-105 active:scale-95 cursor-pointer",
                     showNotifications 
                       ? "bg-black text-white border-black" 
                       : isDark
                         ? "hover:bg-white/10 text-zinc-300 border-white/10"
                         : "hover:bg-black/5 text-[#505054] border-black/5 bg-white/40"
                   )}
-                  title="Notifications"
+                  title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
                 >
-                  {unreadCount > 0 && (
-                    <span className="absolute top-2 right-2 size-1.5 rounded-full bg-green-600 animate-pulse z-0" />
-                  )}
                   <Bell className="size-[18px] relative z-10" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[19px] h-[19px] px-1 bg-red-600 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900 shadow-md animate-pulse z-20">
+                      {unreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {/* Dropdown Floating Card Popover */}
@@ -277,16 +307,18 @@ export function FloatingNav({
                               return (
                                 <div
                                   key={n.id}
+                                  onClick={() => handleNotificationClick(n.orderId)}
                                   className={cn(
-                                    "flex items-start gap-3 p-3 rounded-2xl border transition-all text-left relative group",
+                                    "flex items-start gap-3 p-3 rounded-2xl border transition-all text-left relative group cursor-pointer",
                                     n.unread
-                                      ? "bg-zinc-50/70 border-zinc-100/70"
-                                      : "bg-transparent border-transparent opacity-85 hover:opacity-100"
+                                      ? "bg-amber-50/60 border-amber-200/70 hover:bg-amber-50"
+                                      : "bg-transparent border-transparent opacity-85 hover:opacity-100 hover:bg-zinc-50"
                                   )}
                                 >
                                   {/* Icon Indicator */}
                                   <div className={cn(
                                     "size-8 rounded-full flex items-center justify-center shrink-0 border",
+                                    n.type === "approval" && "bg-amber-100 text-amber-800 border-amber-200",
                                     n.type === "success" && "bg-emerald-50 text-emerald-600 border-emerald-100",
                                     n.type === "info" && "bg-blue-50 text-blue-600 border-blue-100",
                                     n.type === "calendar" && "bg-purple-50 text-purple-600 border-purple-100"
@@ -299,21 +331,24 @@ export function FloatingNav({
                                     <h4 className="text-xs font-extrabold leading-tight tracking-tight text-zinc-900 flex items-center gap-1.5">
                                       {n.title}
                                       {n.unread && (
-                                        <span className="size-1.5 rounded-full bg-green-600 shrink-0 animate-pulse" />
+                                        <span className="size-1.5 rounded-full bg-amber-600 shrink-0 animate-pulse" />
                                       )}
                                     </h4>
-                                    <p className="text-[10px] font-semibold text-zinc-500 leading-relaxed mt-0.5">
+                                    <p className="text-[10px] font-semibold text-zinc-600 leading-relaxed mt-0.5">
                                       {n.desc}
                                     </p>
                                     <span className="text-[9px] font-mono font-bold text-zinc-400 block mt-1">
-                                      {n.time}
+                                      {n.time} • <span className="text-emerald-700 font-bold underline">Review in Approvals</span>
                                     </span>
                                   </div>
 
                                   {/* Action Buttons overlaying the list item */}
                                   <div className="absolute right-2.5 top-2.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                                     <button
-                                      onClick={() => handleToggleRead(n.id)}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleToggleRead(n.id)
+                                      }}
                                       className="p-1 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-900 transition-colors"
                                       title={n.unread ? "Mark as read" : "Mark as unread"}
                                     >

@@ -13,6 +13,7 @@ import {
   ChevronUp,
   Phone,
   ExternalLink,
+  Clock,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -87,6 +88,7 @@ export default function SalesOrders() {
   // Search & Filter states for Sales Orders
   const [soSearch, setSoSearch] = useState("")
   const [soWhFilter, setSoWhFilter] = useState("ALL")
+  const [soApprovalFilter, setSoApprovalFilter] = useState("ALL")
 
   // Selected Sales Order for Inspection / Fulfillment / Invoicing
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null)
@@ -198,6 +200,10 @@ export default function SalesOrders() {
       so.desc.toLowerCase().includes(soSearch.toLowerCase())
     if (!matchesSearch) return false
     if (soWhFilter !== "ALL" && so.warehouse !== soWhFilter) return false
+    if (soApprovalFilter !== "ALL") {
+      const currentApproval = so.approvalStatus || "Pending"
+      if (currentApproval !== soApprovalFilter) return false
+    }
     return true
   })
 
@@ -207,6 +213,7 @@ export default function SalesOrders() {
     { key: "customer", label: "Customer", align: "left" },
     { key: "warehouse", label: "Warehouse", align: "left" },
     { key: "paymentType", label: "Payment Method", align: "left" },
+    { key: "approvalStatus", label: "Approval Status", align: "center" },
     { key: "docsStatus", label: "Required Docs", align: "left" },
     { key: "amount", label: "Amount (ETB)", align: "right" },
     { key: "_actions", label: "Action", align: "center", noSort: true },
@@ -723,6 +730,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               ariaLabel: "Filter by Warehouse",
               options: [{ value: "ALL", label: "All Warehouses" }, ...warehouseOptions],
             },
+            {
+              value: soApprovalFilter,
+              onChange: setSoApprovalFilter,
+              ariaLabel: "Filter by Approval Status",
+              options: [
+                { value: "ALL", label: "All Approvals" },
+                { value: "Pending", label: "Pending Approval" },
+                { value: "Approved", label: "Approved" },
+                { value: "Declined", label: "Declined" },
+              ],
+            },
           ]}
           actions={[
             {
@@ -734,11 +752,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           ]}
           defaultWidths={{
             id: 110,
-            customer: 240,
-            warehouse: 110,
-            paymentType: 130,
-            docsStatus: 180,
-            amount: 150,
+            customer: 220,
+            warehouse: 100,
+            paymentType: 120,
+            approvalStatus: 140,
+            docsStatus: 170,
+            amount: 140,
             _actions: 110,
           }}
           keyExtractor={(so) => so.id}
@@ -776,6 +795,32 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
                   {so.paymentType === "Credit" ? "Credit" : "Cash"}
                 </span>
+              </td>
+
+              {/* Approval Status */}
+              <td style={{ width: `${colWidths.approvalStatus}px` }} className="py-4 px-4 text-center overflow-hidden">
+                {(() => {
+                  const status = so.approvalStatus || "Pending"
+                  if (status === "Approved") {
+                    return (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200" title={so.approvedBy ? `Approved by ${so.approvedBy}` : "Approved by Super Admin"}>
+                        <CheckCircle2 className="size-3 text-emerald-600" /> Approved
+                      </span>
+                    )
+                  }
+                  if (status === "Declined") {
+                    return (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-900 border border-rose-200" title={so.declineReason || "Declined by Super Admin"}>
+                        <X className="size-3 text-rose-600" /> Declined
+                      </span>
+                    )
+                  }
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                      <Clock className="size-3 text-amber-600" /> Pending Approval
+                    </span>
+                  )
+                })()}
               </td>
 
               <td style={{ width: `${colWidths.docsStatus}px` }} className="py-4 px-4 overflow-hidden">

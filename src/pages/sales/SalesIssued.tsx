@@ -947,10 +947,15 @@ export default function SalesIssued() {
                       const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
                       const isCredit = so.paymentType === "Credit"
 
+                      // Dual-gate rule: Must be Approved AND have required docs
+                      const isApproved = so.approvalStatus === "Approved"
+                      const isPendingApproval = (so.approvalStatus || "Pending") === "Pending"
+                      const isDeclined = so.approvalStatus === "Declined"
+
                       // Cash requires both; Credit requires only Trade License
                       const isTradeMissing = !hasTrade
                       const isAdviceMissing = !isCredit && !hasAdvice
-                      const isLocked = isTradeMissing || isAdviceMissing
+                      const isLocked = isTradeMissing || isAdviceMissing || !isApproved
 
                       return (
                         <button
@@ -959,7 +964,11 @@ export default function SalesIssued() {
                           disabled={isLocked}
                           onClick={() => {
                             if (isLocked) {
-                              if (isTradeMissing) {
+                              if (isDeclined) {
+                                showToast("Order Declined", "warning", `Sales Order ${so.id} was declined by Super Admin: ${so.declineReason || "Approval rejected."}`)
+                              } else if (isPendingApproval) {
+                                showToast("Pending Approval", "warning", `Sales Order ${so.id} requires Super Admin approval before it can be fulfilled.`)
+                              } else if (isTradeMissing) {
                                 showToast("Missing Document", "warning", "Trade License is required before issuing stock.")
                               } else if (isAdviceMissing) {
                                 showToast("Payment Advice Required", "warning", "Payment Advice is mandatory before issuing stock for Cash sales.")
@@ -970,7 +979,9 @@ export default function SalesIssued() {
                           }}
                           className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold text-left transition-all ${
                             isLocked
-                              ? "bg-amber-50/80 border-amber-200/90 text-amber-900 cursor-not-allowed opacity-80"
+                              ? isDeclined 
+                                ? "bg-rose-50/80 border-rose-200/90 text-rose-900 cursor-not-allowed opacity-80"
+                                : "bg-amber-50/80 border-amber-200/90 text-amber-900 cursor-not-allowed opacity-80"
                               : isSelected 
                               ? "bg-emerald-700 text-white border-emerald-700 shadow-sm" 
                               : "bg-white text-zinc-800 border-zinc-200 hover:bg-zinc-100"
@@ -983,9 +994,17 @@ export default function SalesIssued() {
                                 {isCredit ? "Credit" : "Cash"}
                               </span>
                               {isLocked && (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-black bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded-full">
-                                  <AlertTriangle className="size-2.5 text-amber-700" />
-                                  {isTradeMissing && isAdviceMissing
+                                <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full ${
+                                  isDeclined 
+                                    ? "bg-rose-200/90 text-rose-950" 
+                                    : "bg-amber-200/80 text-amber-950"
+                                }`}>
+                                  <AlertTriangle className="size-2.5" />
+                                  {isDeclined
+                                    ? "Declined by Admin"
+                                    : isPendingApproval
+                                    ? "Pending Admin Approval"
+                                    : isTradeMissing && isAdviceMissing
                                     ? "Trade & Advice Missing"
                                     : isAdviceMissing
                                     ? "Payment Advice Missing"
@@ -993,12 +1012,20 @@ export default function SalesIssued() {
                                 </span>
                               )}
                             </div>
-                            <div className={`text-[10px] mt-0.5 ${isLocked ? "text-amber-800 font-semibold" : isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
+                            <div className={`text-[10px] mt-0.5 ${isLocked ? (isDeclined ? "text-rose-800 font-semibold" : "text-amber-800 font-semibold") : isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
                               {so.warehouse} • ETB {so.amount.toLocaleString()} ({so.items.length} contract items)
                             </div>
                           </div>
-                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${isLocked ? "bg-amber-100 border-amber-300 text-amber-800" : isSelected ? "bg-white text-emerald-700 border-white" : "border-zinc-300"}`}>
-                            {isLocked ? <Lock className="size-3 text-amber-700" /> : isSelected ? <Check className="size-3 stroke-[3]" /> : null}
+                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${
+                            isLocked 
+                              ? isDeclined
+                                ? "bg-rose-100 border-rose-300 text-rose-800"
+                                : "bg-amber-100 border-amber-300 text-amber-800" 
+                              : isSelected 
+                              ? "bg-white text-emerald-700 border-white" 
+                              : "border-zinc-300"
+                          }`}>
+                            {isLocked ? <Lock className="size-3" /> : isSelected ? <Check className="size-3 stroke-[3]" /> : null}
                           </div>
                         </button>
                       )

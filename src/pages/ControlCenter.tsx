@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
-import { motion } from "framer-motion"
+import { useNavigate, useSearchParams } from "react-router-dom"
+import { motion, AnimatePresence } from "framer-motion"
 import {
   ArrowUpRight,
   DollarSign,
@@ -16,6 +16,18 @@ import {
   BarChart3,
   Layers,
   Users,
+  CheckCircle2,
+  X,
+  Clock,
+  FileCheck,
+  ShieldCheck,
+  Check,
+  ShoppingCart,
+  AlertCircle,
+  Eye,
+  Phone,
+  Building2,
+  FileText,
 } from "lucide-react"
 import {
   ResponsiveContainer,
@@ -32,8 +44,12 @@ import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore } from "@/lib/erpStore"
+import { useErpStore, type SalesOrder } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
+import { useAuthStore } from "@/lib/authStore"
+import { useFeedback } from "@/context/FeedbackContext"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
+import { fetchAllShipmentDocs, type ShipmentDocAttachment } from "@/lib/tradeDocumentService"
 import { type HRData, loadHRData, money } from "@/lib/hrApi"
 import { loadResource } from "@/lib/apiPersistence"
 import { cn } from "@/lib/utils"
@@ -173,9 +189,25 @@ export default function ControlCenter() {
   const erp = useErpStore()
   const finance = useFinanceStore()
   const navigate = useNavigate()
+  const { showToast } = useFeedback()
+  const { user } = useAuthStore()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [activeTab, setActiveTab] = useState<"overview" | "logs">("overview")
+  const tabParam = searchParams.get("tab")
+  const initialTab = tabParam === "approvals" || tabParam === "logs" || tabParam === "overview" ? tabParam : "overview"
+  const [activeTab, setActiveTab] = useState<"overview" | "logs" | "approvals">(initialTab)
   const [chartMode, setChartMode] = useState<"revenue" | "inventory">("revenue")
+
+  useEffect(() => {
+    if (tabParam === "approvals" || tabParam === "logs" || tabParam === "overview") {
+      setActiveTab(tabParam)
+    }
+  }, [tabParam])
+
+  const handleTabChange = (newTab: "overview" | "logs" | "approvals") => {
+    setActiveTab(newTab)
+    setSearchParams({ tab: newTab })
+  }
 
   // Data states
   const [hrData, setHrData] = useState<HRData>(emptyHRData)
@@ -192,6 +224,90 @@ export default function ControlCenter() {
   const [selectedModule, setSelectedModule] = useState("All")
   const [selectedAction, setSelectedAction] = useState("All")
   const [selectedTimeframe, setSelectedTimeframe] = useState("All")
+
+  // Sales Order Approvals State
+  const salesOrders = erp.getSalesOrders()
+  const pendingOrders = useMemo(() => salesOrders.filter((so) => (so.approvalStatus || "Pending") === "Pending"), [salesOrders])
+  const approvedOrders = useMemo(() => salesOrders.filter((so) => so.approvalStatus === "Approved"), [salesOrders])
+  const declinedOrders = useMemo(() => salesOrders.filter((so) => so.approvalStatus === "Declined"), [salesOrders])
+
+  const [approvalFilter, setApprovalFilter] = useState<string>("ALL")
+  const [approvalSearch, setApprovalSearch] = useState<string>("")
+  const [approveModalOrder, setApproveModalOrder] = useState<SalesOrder | null>(null)
+  const [declineModalOrder, setDeclineModalOrder] = useState<SalesOrder | null>(null)
+  const [viewModalOrder, setViewModalOrder] = useState<SalesOrder | null>(null)
+  const [declineReasonText, setDeclineReasonText] = useState<string>("")
+  const [isProcessingAction, setIsProcessingAction] = useState<string | null>(null)
+
+  // Document preview state
+  const [previewDocUrl, setPreviewDocUrl] = useState<string>("")
+  const [previewDocName, setPreviewDocName] = useState<string>("")
+  const [soDocsMap, setSoDocsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
+
+  useEffect(() => {
+    fetchAllShipmentDocs().then((docs) => {
+      if (Array.isArray(docs)) {
+        const map: Record<string, ShipmentDocAttachment[]> = {}
+        docs.forEach((d) => {
+          if (!map[d.record_id]) map[d.record_id] = []
+          map[d.record_id].push(d)
+        })
+        setSoDocsMap(map)
+      }
+    }).catch(() => {})
+  }, [])
+
+  const filteredApprovals = useMemo(() => {
+    return salesOrders.filter((so) => {
+      const matchesSearch =
+        so.id.toLowerCase().includes(approvalSearch.toLowerCase()) ||
+        so.customer.toLowerCase().includes(approvalSearch.toLowerCase()) ||
+        so.warehouse.toLowerCase().includes(approvalSearch.toLowerCase()) ||
+        (so.salesPerson && so.salesPerson.toLowerCase().includes(approvalSearch.toLowerCase()))
+
+      if (!matchesSearch) return false
+
+      const currentStatus = so.approvalStatus || "Pending"
+      if (approvalFilter !== "ALL" && currentStatus !== approvalFilter) return false
+
+      return true
+    })
+  }, [salesOrders, approvalSearch, approvalFilter])
+
+  const handleConfirmApprove = async () => {
+    if (!approveModalOrder) return
+    setIsProcessingAction(approveModalOrder.id)
+    try {
+      const approver = user?.fullname || user?.username || "Super Admin"
+      await erp.approveSalesOrder(approveModalOrder.id, approver)
+      showToast("Order Approved", "success", `Sales Order ${approveModalOrder.id} approved for ${approveModalOrder.customer}. It can now be fulfilled into Sales Issues.`)
+      setApproveModalOrder(null)
+    } catch (err) {
+      showToast("Approval Failed", "warning", err instanceof Error ? err.message : "Failed to approve order.")
+    } finally {
+      setIsProcessingAction(null)
+    }
+  }
+
+  const handleOpenDeclineModal = (so: SalesOrder) => {
+    setDeclineModalOrder(so)
+    setDeclineReasonText("Pricing / terms adjustments required before fulfillment.")
+  }
+
+  const handleConfirmDecline = async () => {
+    if (!declineModalOrder) return
+    setIsProcessingAction(declineModalOrder.id)
+    try {
+      const decliner = user?.fullname || user?.username || "Super Admin"
+      await erp.declineSalesOrder(declineModalOrder.id, decliner, declineReasonText)
+      showToast("Order Declined", "info", `Sales Order ${declineModalOrder.id} has been marked as Declined.`)
+      setDeclineModalOrder(null)
+    } catch (err) {
+      showToast("Decline Failed", "warning", err instanceof Error ? err.message : "Failed to decline order.")
+    } finally {
+      setIsProcessingAction(null)
+    }
+  }
 
   // Load standard overview HR data
   useEffect(() => {
@@ -547,7 +663,7 @@ export default function ControlCenter() {
         {/* Tab Toggle Navigation */}
         <motion.div variants={fade} className="flex gap-2 mb-6 border-b border-black/5 pb-3">
           <button
-            onClick={() => setActiveTab("overview")}
+            onClick={() => handleTabChange("overview")}
             className={cn(
               "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all",
               activeTab === "overview" ? "bg-zinc-900 text-white shadow-sm" : "text-gray-500 hover:text-black hover:bg-black/5"
@@ -556,7 +672,7 @@ export default function ControlCenter() {
             System Overview & Analytics
           </button>
           <button
-            onClick={() => setActiveTab("logs")}
+            onClick={() => handleTabChange("logs")}
             className={cn(
               "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2",
               activeTab === "logs" ? "bg-zinc-900 text-white shadow-sm" : "text-gray-500 hover:text-black hover:bg-black/5"
@@ -564,6 +680,21 @@ export default function ControlCenter() {
           >
             <Activity className="size-4 shrink-0" />
             Audit Activity Logs
+          </button>
+          <button
+            onClick={() => handleTabChange("approvals")}
+            className={cn(
+              "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2",
+              activeTab === "approvals" ? "bg-zinc-900 text-white shadow-sm" : "text-gray-500 hover:text-black hover:bg-black/5"
+            )}
+          >
+            <ShieldCheck className="size-4 shrink-0" />
+            Sales Order Approvals
+            {pendingOrders.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white leading-none shadow-xs">
+                {pendingOrders.length}
+              </span>
+            )}
           </button>
         </motion.div>
 
@@ -996,7 +1127,702 @@ export default function ControlCenter() {
             </GlassCard>
           </motion.div>
         )}
+
+        {/* Tab Content 3: Sales Order Approvals */}
+        {activeTab === "approvals" && (
+          <motion.div key="approvals" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+            {/* Top Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <GlassCard className="p-4 flex items-center justify-between border-black/5 bg-white/60">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Total Sales Orders</p>
+                  <p className="text-2xl font-black text-zinc-950 mt-1">{salesOrders.length}</p>
+                </div>
+                <div className="p-2.5 rounded-2xl bg-zinc-100 text-zinc-700">
+                  <ShoppingCart className="size-5" />
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-4 flex items-center justify-between border-amber-200 bg-amber-50/50">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Pending Approval</p>
+                  <p className="text-2xl font-black text-amber-950 mt-1">{pendingOrders.length}</p>
+                </div>
+                <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-800">
+                  <Clock className="size-5" />
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-4 flex items-center justify-between border-emerald-200 bg-emerald-50/50">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Approved Orders</p>
+                  <p className="text-2xl font-black text-emerald-950 mt-1">{approvedOrders.length}</p>
+                </div>
+                <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-800">
+                  <CheckCircle2 className="size-5" />
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-4 flex items-center justify-between border-rose-200 bg-rose-50/50">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-rose-700">Declined Orders</p>
+                  <p className="text-2xl font-black text-rose-950 mt-1">{declinedOrders.length}</p>
+                </div>
+                <div className="p-2.5 rounded-2xl bg-rose-100 text-rose-800">
+                  <X className="size-5" />
+                </div>
+              </GlassCard>
+            </div>
+
+            {/* Filter & Search Toolbar */}
+            <GlassCard className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-black/5">
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="relative flex-1 md:w-80">
+                  <Search className="size-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search order ID, customer, warehouse..."
+                    value={approvalSearch}
+                    onChange={(e) => setApprovalSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/[0.04] border border-black/5 text-xs font-bold outline-none placeholder:text-zinc-400"
+                  />
+                </div>
+              </div>
+
+              {/* Status Filter Buttons */}
+              <div className="flex items-center gap-1.5 p-1 bg-black/[0.04] rounded-xl w-full md:w-auto overflow-x-auto">
+                {[
+                  { key: "ALL", label: `All (${salesOrders.length})` },
+                  { key: "Pending", label: `Pending (${pendingOrders.length})` },
+                  { key: "Approved", label: `Approved (${approvedOrders.length})` },
+                  { key: "Declined", label: `Declined (${declinedOrders.length})` },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setApprovalFilter(tab.key)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                      approvalFilter === tab.key
+                        ? "bg-zinc-950 text-white shadow-xs"
+                        : "text-zinc-600 hover:text-zinc-950 hover:bg-white/60"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </GlassCard>
+
+            {/* Approvals Table */}
+            <GlassCard className="p-0 overflow-hidden border-black/5 shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-black/5 bg-black/[0.02] text-[10px] text-zinc-400 font-black uppercase tracking-wider">
+                      <th className="py-4 px-5">Order ID & Date</th>
+                      <th className="py-4 px-4">Customer & Channel</th>
+                      <th className="py-4 px-4">Warehouse & Terms</th>
+                      <th className="py-4 px-4">Contract Items</th>
+                      <th className="py-4 px-4 text-right">Amount (ETB)</th>
+                      <th className="py-4 px-4">Attached Documents</th>
+                      <th className="py-4 px-4 text-center">Approval Status</th>
+                      <th className="py-4 px-5 text-right">Super Admin Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5 text-xs font-medium">
+                    {filteredApprovals.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-16 text-center text-xs font-bold text-zinc-400">
+                          No sales orders match your approval filter criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredApprovals.map((so) => {
+                        const status = so.approvalStatus || "Pending"
+                        const docs = soDocsMap[so.id] || []
+                        const tradeDoc = docs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                        const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
+                        const isCredit = so.paymentType === "Credit"
+                        const isProcessing = isProcessingAction === so.id
+
+                        return (
+                          <tr key={so.id} className="hover:bg-black/[0.015] transition-colors">
+                            {/* Order ID & Date */}
+                            <td className="py-4 px-5">
+                              <div className="flex flex-col">
+                                <span className="font-mono font-black text-xs text-zinc-950">{so.id}</span>
+                                <span className="text-[10px] font-bold text-zinc-400">{so.date}</span>
+                              </div>
+                            </td>
+
+                            {/* Customer */}
+                            <td className="py-4 px-4">
+                              <div className="flex flex-col">
+                                <span className="font-black text-zinc-900">{so.customer}</span>
+                                <span className="text-[10px] text-zinc-500 font-medium">
+                                  {so.customerPhone ? `📞 ${so.customerPhone} • ` : ""}{so.customerGroup || "Direct Client"}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Warehouse & Terms */}
+                            <td className="py-4 px-4">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-200">
+                                  {so.warehouse}
+                                </span>
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded-full text-[10px] font-bold border",
+                                  isCredit ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                )}>
+                                  {isCredit ? "Credit" : "Cash"}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Items breakdown */}
+                            <td className="py-4 px-4">
+                              <div className="text-[11px] text-zinc-700 max-w-[200px] truncate" title={(so.items || []).map((i) => `${i.qty}x ${i.name}`).join(", ")}>
+                                {(so.items || []).length > 0
+                                  ? (so.items || []).map((i) => `${i.qty}x ${i.name}`).join(", ")
+                                  : "Standard Contract"}
+                              </div>
+                              <span className="text-[9px] text-zinc-400 font-bold block">
+                                {(so.items || []).length} line items
+                              </span>
+                            </td>
+
+                            {/* Amount */}
+                            <td className="py-4 px-4 text-right font-mono font-black text-xs text-zinc-950">
+                              ETB {Number(so.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                            </td>
+
+                            {/* Attached Documents */}
+                            <td className="py-4 px-4">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {tradeDoc?.file_url ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPreviewDocUrl(tradeDoc.file_url)
+                                      setPreviewDocName(tradeDoc.file_name || "Trade License.pdf")
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                                    title="Click to preview Trade License"
+                                  >
+                                    <FileCheck className="size-3 text-emerald-600" />
+                                    Trade License
+                                  </button>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                    No Trade Doc
+                                  </span>
+                                )}
+
+                                {isCredit ? (
+                                  <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                                    Advice N/A
+                                  </span>
+                                ) : adviceDoc?.file_url ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPreviewDocUrl(adviceDoc.file_url)
+                                      setPreviewDocName(adviceDoc.file_name || "Payment Advice.pdf")
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                                    title="Click to preview Payment Advice"
+                                  >
+                                    <FileCheck className="size-3 text-blue-600" />
+                                    Payment Advice
+                                  </button>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                    No Advice
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Status */}
+                            <td className="py-4 px-4 text-center">
+                              {status === "Approved" ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    <CheckCircle2 className="size-3 text-emerald-600" /> Approved
+                                  </span>
+                                  {so.approvedBy && (
+                                    <span className="text-[9px] text-zinc-400 font-medium mt-0.5">by {so.approvedBy}</span>
+                                  )}
+                                </div>
+                              ) : status === "Declined" ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200" title={so.declineReason || "Declined"}>
+                                    <X className="size-3 text-rose-600" /> Declined
+                                  </span>
+                                  {so.declineReason && (
+                                    <span className="text-[9px] text-rose-600 font-semibold max-w-[120px] truncate mt-0.5" title={so.declineReason}>
+                                      {so.declineReason}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                  <Clock className="size-3 text-amber-600" /> Pending Approval
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Action Buttons */}
+                            <td className="py-4 px-5 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-2">
+                                {status !== "Approved" && (
+                                  <button
+                                    type="button"
+                                    disabled={isProcessing}
+                                    onClick={() => setApproveModalOrder(so)}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] transition-all shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                                    title="Approve Sales Order"
+                                  >
+                                    <Check className="size-3.5" /> Approve
+                                  </button>
+                                )}
+
+                                {/* View Details Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => setViewModalOrder(so)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-[11px] transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                  title="View Full Order Details"
+                                >
+                                  <Eye className="size-3.5 text-zinc-600" /> View
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
       </motion.div>
+
+      {/* Approve Confirmation Modal */}
+      <AnimatePresence>
+        {approveModalOrder && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-4 text-zinc-900"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2.5 text-emerald-700">
+                  <div className="p-2 rounded-2xl bg-emerald-100">
+                    <CheckCircle2 className="size-5 text-emerald-700" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-zinc-950">Approve Sales Order</h3>
+                    <p className="text-[11px] font-bold text-zinc-400">Confirmation Required</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setApproveModalOrder(null)}
+                  className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500 font-bold">Order ID:</span>
+                  <span className="font-mono font-black text-zinc-900">{approveModalOrder.id}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500 font-bold">Customer:</span>
+                  <span className="font-bold text-zinc-900 truncate max-w-[200px]">{approveModalOrder.customer}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500 font-bold">Warehouse & Terms:</span>
+                  <span className="font-bold text-zinc-800">{approveModalOrder.warehouse} • {approveModalOrder.paymentType || "Cash"}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-zinc-200">
+                  <span className="text-zinc-700 font-black">Total Contract Amount:</span>
+                  <span className="font-mono font-black text-emerald-700 text-sm">
+                    ETB {Number(approveModalOrder.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-600 leading-relaxed font-medium">
+                Approving this order will unlock it in <span className="font-bold text-zinc-950">Sales Issue</span>, allowing warehouse operators to pull and fulfill the items.
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setApproveModalOrder(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessingAction === approveModalOrder.id}
+                  onClick={handleConfirmApprove}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  <Check className="size-4 stroke-[3]" /> Confirm Approval
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Decline Confirmation Modal */}
+      <AnimatePresence>
+        {declineModalOrder && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-4 text-zinc-900"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2.5 text-rose-600">
+                  <div className="p-2 rounded-2xl bg-rose-100">
+                    <AlertCircle className="size-5 text-rose-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-zinc-950">Decline Sales Order</h3>
+                    <p className="text-[11px] font-bold text-zinc-400">Lock Order Fulfillment</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeclineModalOrder(null)}
+                  className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <p className="text-xs font-semibold text-zinc-600 leading-relaxed">
+                You are declining Sales Order <span className="font-mono font-bold text-zinc-950">{declineModalOrder.id}</span> for <span className="font-bold text-zinc-950">{declineModalOrder.customer}</span> (ETB {Number(declineModalOrder.amount || 0).toLocaleString()}). This will lock the order from being issued.
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">
+                  Decline Reason / Feedback Notes:
+                </label>
+                <textarea
+                  rows={3}
+                  value={declineReasonText}
+                  onChange={(e) => setDeclineReasonText(e.target.value)}
+                  placeholder="Provide a reason for declining..."
+                  className="w-full p-3 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none focus:border-zinc-400 focus:bg-white transition-all"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setDeclineModalOrder(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessingAction === declineModalOrder.id}
+                  onClick={handleConfirmDecline}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  Confirm Decline
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* View Full Sales Order Details Modal */}
+      <AnimatePresence>
+        {viewModalOrder && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-5 text-zinc-900 max-h-[90vh] overflow-y-auto no-scrollbar"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between pb-3 border-b border-zinc-100">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-black text-zinc-950 font-mono">{viewModalOrder.id}</h3>
+                    {(() => {
+                      const status = viewModalOrder.approvalStatus || "Pending"
+                      if (status === "Approved") {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="size-3 text-emerald-600" /> Approved
+                          </span>
+                        )
+                      }
+                      if (status === "Declined") {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                            <X className="size-3 text-rose-600" /> Declined
+                          </span>
+                        )
+                      }
+                      return (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                          <Clock className="size-3 text-amber-600" /> Pending Super Admin Approval
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  <p className="text-xs font-semibold text-zinc-500 mt-0.5">Created on {viewModalOrder.date} • Warehouse: {viewModalOrder.warehouse}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewModalOrder(null)}
+                  className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              {/* Customer & Order Metadata */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                    <Building2 className="size-3 text-zinc-500" /> Customer Information
+                  </p>
+                  <p className="text-sm font-black text-zinc-950">{viewModalOrder.customer}</p>
+                  <div className="space-y-1 text-xs text-zinc-600 font-medium">
+                    {viewModalOrder.customerPhone && (
+                      <p className="flex items-center gap-1.5">
+                        <Phone className="size-3.5 text-zinc-400" /> {viewModalOrder.customerPhone}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-zinc-500 font-semibold">
+                      Account Type: {viewModalOrder.customerGroup || "Direct Client"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                    <FileText className="size-3 text-zinc-500" /> Payment & Logistics
+                  </p>
+                  <div className="flex items-center justify-between text-xs font-semibold">
+                    <span className="text-zinc-500">Payment Method:</span>
+                    <span className={cn(
+                      "px-2.5 py-0.5 rounded-full text-xs font-black",
+                      viewModalOrder.paymentType === "Credit" ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"
+                    )}>
+                      {viewModalOrder.paymentType || "Cash"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-semibold">
+                    <span className="text-zinc-500">Sales Officer:</span>
+                    <span className="text-zinc-900 font-bold">{viewModalOrder.salesPerson || "HKC Sales Rep"}</span>
+                  </div>
+                  {viewModalOrder.approvedBy && (
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span className="text-zinc-500">Approved By:</span>
+                      <span className="text-emerald-700 font-bold">{viewModalOrder.approvedBy}</span>
+                    </div>
+                  )}
+                  {viewModalOrder.declineReason && (
+                    <div className="text-xs pt-1 border-t border-zinc-200">
+                      <span className="text-rose-700 font-bold">Decline Reason: </span>
+                      <span className="text-zinc-700">{viewModalOrder.declineReason}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Line Items Table */}
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-zinc-900 mb-2">
+                  Contract Line Items ({(viewModalOrder.items || []).length})
+                </p>
+                <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
+                  <table className="w-full text-left">
+                    <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
+                      <tr>
+                        <th className="px-3.5 py-2.5">Product Name</th>
+                        <th className="px-3.5 py-2.5 text-center">Quantity</th>
+                        <th className="px-3.5 py-2.5 text-right">Unit Price (ETB)</th>
+                        <th className="px-3.5 py-2.5 text-right">Total (ETB)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 font-medium">
+                      {(viewModalOrder.items || []).map((item, idx) => (
+                        <tr key={idx} className="hover:bg-zinc-50/50">
+                          <td className="px-3.5 py-2.5 font-bold text-zinc-900">{item.name}</td>
+                          <td className="px-3.5 py-2.5 text-center font-mono font-bold">{item.qty} {item.unit || "units"}</td>
+                          <td className="px-3.5 py-2.5 text-right font-mono">{Number(item.unitPrice || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+                          <td className="px-3.5 py-2.5 text-right font-mono font-black text-zinc-950">
+                            {Number(item.total || item.qty * item.unitPrice || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-zinc-50 border-t border-zinc-200 font-mono font-black text-xs">
+                      <tr>
+                        <td colSpan={3} className="px-3.5 py-2.5 text-right font-sans font-black text-zinc-700">
+                          Total Contract Amount:
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right text-emerald-800 text-sm">
+                          ETB {Number(viewModalOrder.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Attached Documents */}
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-zinc-900 mb-2">
+                  Attached Shipment Documents
+                </p>
+                {(() => {
+                  const docs = soDocsMap[viewModalOrder.id] || []
+                  const tradeDoc = docs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                  const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
+                  const isCredit = viewModalOrder.paymentType === "Credit"
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Trade License Card */}
+                      <div className="p-3 rounded-2xl border border-zinc-200 bg-zinc-50 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileCheck className="size-4 text-emerald-600" />
+                          <div>
+                            <p className="text-xs font-bold text-zinc-900">Trade License</p>
+                            <p className="text-[10px] text-zinc-500">{tradeDoc?.file_name || "Document verification"}</p>
+                          </div>
+                        </div>
+                        {tradeDoc?.file_url ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewDocUrl(tradeDoc.file_url)
+                              setPreviewDocName(tradeDoc.file_name || "Trade License.pdf")
+                            }}
+                            className="px-3 py-1 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-100 text-[11px] font-bold text-emerald-700 transition-colors shadow-2xs cursor-pointer"
+                          >
+                            Preview Doc
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                            Missing
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Payment Advice Card */}
+                      <div className="p-3 rounded-2xl border border-zinc-200 bg-zinc-50 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileCheck className="size-4 text-blue-600" />
+                          <div>
+                            <p className="text-xs font-bold text-zinc-900">Payment Advice</p>
+                            <p className="text-[10px] text-zinc-500">{adviceDoc?.file_name || (isCredit ? "Not required for credit sale" : "Mandatory for cash sales")}</p>
+                          </div>
+                        </div>
+                        {isCredit ? (
+                          <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-200 px-2 py-0.5 rounded-full">
+                            Optional (Credit)
+                          </span>
+                        ) : adviceDoc?.file_url ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewDocUrl(adviceDoc.file_url)
+                              setPreviewDocName(adviceDoc.file_name || "Payment Advice.pdf")
+                            }}
+                            className="px-3 py-1 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-100 text-[11px] font-bold text-blue-700 transition-colors shadow-2xs cursor-pointer"
+                          >
+                            Preview Doc
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                            Missing
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Bottom Actions inside View Modal */}
+              <div className="flex items-center justify-between pt-3 border-t border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setViewModalOrder(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+                <div className="flex items-center gap-2">
+                  {viewModalOrder.approvalStatus !== "Declined" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleOpenDeclineModal(viewModalOrder)
+                        setViewModalOrder(null)
+                      }}
+                      className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer"
+                    >
+                      Decline Order
+                    </button>
+                  )}
+                  {viewModalOrder.approvalStatus !== "Approved" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApproveModalOrder(viewModalOrder)
+                        setViewModalOrder(null)
+                      }}
+                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check className="size-4 stroke-[3]" /> Approve Order
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={!!previewDocUrl}
+        onClose={() => {
+          setPreviewDocUrl("")
+          setPreviewDocName("")
+        }}
+        fileUrl={previewDocUrl}
+        fileName={previewDocName}
+      />
     </div>
   )
 }
