@@ -648,12 +648,12 @@ export default function ControlCenter() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
         {/* Header Block */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 gap-4">
+        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 gap-3 sm:gap-4">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">Control Center</h1>
-            <p className="text-sm text-gray-500 mt-1">Operational analytics and live audit logs across all ERP modules.</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">Control Center</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">Operational analytics and live audit logs across all ERP modules.</p>
           </div>
           <SubPageNav items={getSectionChildren("/admin")} />
         </motion.div>
@@ -661,11 +661,11 @@ export default function ControlCenter() {
         {hrError && <GlassCard className="p-4 mb-5 text-xs font-bold text-rose-700 bg-rose-50 border-rose-200">{hrError}</GlassCard>}
 
         {/* Tab Toggle Navigation */}
-        <motion.div variants={fade} className="flex gap-2 mb-6 border-b border-black/5 pb-3">
+        <motion.div variants={fade} className="flex items-center gap-1.5 sm:gap-2 mb-6 border-b border-black/5 pb-3 overflow-x-auto no-scrollbar overscroll-x-contain py-1">
           <button
             onClick={() => handleTabChange("overview")}
             className={cn(
-              "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all",
+              "px-3.5 sm:px-4 py-2 sm:py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-wider rounded-xl transition-all whitespace-nowrap shrink-0 active:scale-95 cursor-pointer",
               activeTab === "overview" ? "bg-zinc-900 text-white shadow-sm" : "text-gray-500 hover:text-black hover:bg-black/5"
             )}
           >
@@ -674,7 +674,7 @@ export default function ControlCenter() {
           <button
             onClick={() => handleTabChange("logs")}
             className={cn(
-              "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2",
+              "px-3.5 sm:px-4 py-2 sm:py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 whitespace-nowrap shrink-0 active:scale-95 cursor-pointer",
               activeTab === "logs" ? "bg-zinc-900 text-white shadow-sm" : "text-gray-500 hover:text-black hover:bg-black/5"
             )}
           >
@@ -684,7 +684,7 @@ export default function ControlCenter() {
           <button
             onClick={() => handleTabChange("approvals")}
             className={cn(
-              "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2",
+              "px-3.5 sm:px-4 py-2 sm:py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 whitespace-nowrap shrink-0 active:scale-95 cursor-pointer",
               activeTab === "approvals" ? "bg-zinc-900 text-white shadow-sm" : "text-gray-500 hover:text-black hover:bg-black/5"
             )}
           >
@@ -1131,283 +1131,276 @@ export default function ControlCenter() {
         {/* Tab Content 3: Sales Order Approvals */}
         {activeTab === "approvals" && (
           <motion.div key="approvals" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-            {/* Top Metric Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <GlassCard className="p-4 flex items-center justify-between border-black/5 bg-white/60">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Total Sales Orders</p>
-                  <p className="text-2xl font-black text-zinc-950 mt-1">{salesOrders.length}</p>
+            {erp.isLoading() ? (
+              <div className="space-y-6 animate-pulse">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatCardSkeleton />
+                  <StatCardSkeleton />
+                  <StatCardSkeleton />
+                  <StatCardSkeleton />
                 </div>
-                <div className="p-2.5 rounded-2xl bg-zinc-100 text-zinc-700">
-                  <ShoppingCart className="size-5" />
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-4 flex items-center justify-between border-amber-200 bg-amber-50/50">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Pending Approval</p>
-                  <p className="text-2xl font-black text-amber-950 mt-1">{pendingOrders.length}</p>
-                </div>
-                <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-800">
-                  <Clock className="size-5" />
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-4 flex items-center justify-between border-emerald-200 bg-emerald-50/50">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Approved Orders</p>
-                  <p className="text-2xl font-black text-emerald-950 mt-1">{approvedOrders.length}</p>
-                </div>
-                <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-800">
-                  <CheckCircle2 className="size-5" />
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-4 flex items-center justify-between border-rose-200 bg-rose-50/50">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-rose-700">Declined Orders</p>
-                  <p className="text-2xl font-black text-rose-950 mt-1">{declinedOrders.length}</p>
-                </div>
-                <div className="p-2.5 rounded-2xl bg-rose-100 text-rose-800">
-                  <X className="size-5" />
-                </div>
-              </GlassCard>
-            </div>
-
-            {/* Filter & Search Toolbar */}
-            <GlassCard className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-black/5">
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="relative flex-1 md:w-80">
-                  <Search className="size-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Search order ID, customer, warehouse..."
-                    value={approvalSearch}
-                    onChange={(e) => setApprovalSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/[0.04] border border-black/5 text-xs font-bold outline-none placeholder:text-zinc-400"
-                  />
-                </div>
+                <TableSkeleton />
               </div>
+            ) : (
+              <>
+                {/* Top Metric Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <GlassCard className="p-4 flex items-center justify-between border-black/5 bg-white/60">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Total Sales Orders</p>
+                      <p className="text-2xl font-black text-zinc-950 mt-1">{salesOrders.length}</p>
+                    </div>
+                    <div className="p-2.5 rounded-2xl bg-zinc-100 text-zinc-700">
+                      <ShoppingCart className="size-5" />
+                    </div>
+                  </GlassCard>
 
-              {/* Status Filter Buttons */}
-              <div className="flex items-center gap-1.5 p-1 bg-black/[0.04] rounded-xl w-full md:w-auto overflow-x-auto">
-                {[
-                  { key: "ALL", label: `All (${salesOrders.length})` },
-                  { key: "Pending", label: `Pending (${pendingOrders.length})` },
-                  { key: "Approved", label: `Approved (${approvedOrders.length})` },
-                  { key: "Declined", label: `Declined (${declinedOrders.length})` },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setApprovalFilter(tab.key)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                      approvalFilter === tab.key
-                        ? "bg-zinc-950 text-white shadow-xs"
-                        : "text-zinc-600 hover:text-zinc-950 hover:bg-white/60"
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </GlassCard>
+                  <GlassCard className="p-4 flex items-center justify-between border-amber-200 bg-amber-50/50">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Pending Approval</p>
+                      <p className="text-2xl font-black text-amber-950 mt-1">{pendingOrders.length}</p>
+                    </div>
+                    <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-800">
+                      <Clock className="size-5" />
+                    </div>
+                  </GlassCard>
 
-            {/* Approvals Table */}
-            <GlassCard className="p-0 overflow-hidden border-black/5 shadow-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-black/5 bg-black/[0.02] text-[10px] text-zinc-400 font-black uppercase tracking-wider">
-                      <th className="py-4 px-5">Order ID & Date</th>
-                      <th className="py-4 px-4">Customer & Channel</th>
-                      <th className="py-4 px-4">Warehouse & Terms</th>
-                      <th className="py-4 px-4">Contract Items</th>
-                      <th className="py-4 px-4 text-right">Amount (ETB)</th>
-                      <th className="py-4 px-4">Attached Documents</th>
-                      <th className="py-4 px-4 text-center">Approval Status</th>
-                      <th className="py-4 px-5 text-right">Super Admin Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-black/5 text-xs font-medium">
-                    {filteredApprovals.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-16 text-center text-xs font-bold text-zinc-400">
-                          No sales orders match your approval filter criteria.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredApprovals.map((so) => {
-                        const status = so.approvalStatus || "Pending"
-                        const docs = soDocsMap[so.id] || []
-                        const tradeDoc = docs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-                        const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
-                        const isCredit = so.paymentType === "Credit"
-                        const isProcessing = isProcessingAction === so.id
+                  <GlassCard className="p-4 flex items-center justify-between border-emerald-200 bg-emerald-50/50">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Approved Orders</p>
+                      <p className="text-2xl font-black text-emerald-950 mt-1">{approvedOrders.length}</p>
+                    </div>
+                    <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-800">
+                      <CheckCircle2 className="size-5" />
+                    </div>
+                  </GlassCard>
 
-                        return (
-                          <tr key={so.id} className="hover:bg-black/[0.015] transition-colors">
-                            {/* Order ID & Date */}
-                            <td className="py-4 px-5">
-                              <div className="flex flex-col">
-                                <span className="font-mono font-black text-xs text-zinc-950">{so.id}</span>
-                                <span className="text-[10px] font-bold text-zinc-400">{so.date}</span>
-                              </div>
-                            </td>
+                  <GlassCard className="p-4 flex items-center justify-between border-rose-200 bg-rose-50/50">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-rose-700">Declined Orders</p>
+                      <p className="text-2xl font-black text-rose-950 mt-1">{declinedOrders.length}</p>
+                    </div>
+                    <div className="p-2.5 rounded-2xl bg-rose-100 text-rose-800">
+                      <X className="size-5" />
+                    </div>
+                  </GlassCard>
+                </div>
 
-                            {/* Customer */}
-                            <td className="py-4 px-4">
-                              <div className="flex flex-col">
-                                <span className="font-black text-zinc-900">{so.customer}</span>
-                                <span className="text-[10px] text-zinc-500 font-medium">
-                                  {so.customerPhone ? `📞 ${so.customerPhone} • ` : ""}{so.customerGroup || "Direct Client"}
-                                </span>
-                              </div>
-                            </td>
+                {/* Filter & Search Toolbar */}
+                <GlassCard className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-black/5">
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    <div className="relative flex-1 md:w-80">
+                      <Search className="size-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search order ID, customer, warehouse..."
+                        value={approvalSearch}
+                        onChange={(e) => setApprovalSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/[0.04] border border-black/5 text-xs font-bold outline-none placeholder:text-zinc-400"
+                      />
+                    </div>
+                  </div>
 
-                            {/* Warehouse & Terms */}
-                            <td className="py-4 px-4">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-200">
-                                  {so.warehouse}
-                                </span>
-                                <span className={cn(
-                                  "px-2 py-0.5 rounded-full text-[10px] font-bold border",
-                                  isCredit ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                )}>
-                                  {isCredit ? "Credit" : "Cash"}
-                                </span>
-                              </div>
-                            </td>
+                  {/* Status Filter Buttons */}
+                  <div className="flex items-center gap-1.5 p-1 bg-black/[0.04] rounded-xl w-full md:w-auto overflow-x-auto">
+                    {[
+                      { key: "ALL", label: `All (${salesOrders.length})` },
+                      { key: "Pending", label: `Pending (${pendingOrders.length})` },
+                      { key: "Approved", label: `Approved (${approvedOrders.length})` },
+                      { key: "Declined", label: `Declined (${declinedOrders.length})` },
+                    ].map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setApprovalFilter(tab.key)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                          approvalFilter === tab.key
+                            ? "bg-zinc-950 text-white shadow-xs"
+                            : "text-zinc-600 hover:text-zinc-950 hover:bg-white/60"
+                        )}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </GlassCard>
 
-                            {/* Items breakdown */}
-                            <td className="py-4 px-4">
-                              <div className="text-[11px] text-zinc-700 max-w-[200px] truncate" title={(so.items || []).map((i) => `${i.qty}x ${i.name}`).join(", ")}>
-                                {(so.items || []).length > 0
-                                  ? (so.items || []).map((i) => `${i.qty}x ${i.name}`).join(", ")
-                                  : "Standard Contract"}
-                              </div>
-                              <span className="text-[9px] text-zinc-400 font-bold block">
-                                {(so.items || []).length} line items
-                              </span>
-                            </td>
-
-                            {/* Amount */}
-                            <td className="py-4 px-4 text-right font-mono font-black text-xs text-zinc-950">
-                              ETB {Number(so.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                            </td>
-
-                            {/* Attached Documents */}
-                            <td className="py-4 px-4">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {tradeDoc?.file_url ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setPreviewDocUrl(tradeDoc.file_url)
-                                      setPreviewDocName(tradeDoc.file_name || "Trade License.pdf")
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
-                                    title="Click to preview Trade License"
-                                  >
-                                    <FileCheck className="size-3 text-emerald-600" />
-                                    Trade License
-                                  </button>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                                    No Trade Doc
-                                  </span>
-                                )}
-
-                                {isCredit ? (
-                                  <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
-                                    Advice N/A
-                                  </span>
-                                ) : adviceDoc?.file_url ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setPreviewDocUrl(adviceDoc.file_url)
-                                      setPreviewDocName(adviceDoc.file_name || "Payment Advice.pdf")
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-                                    title="Click to preview Payment Advice"
-                                  >
-                                    <FileCheck className="size-3 text-blue-600" />
-                                    Payment Advice
-                                  </button>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                                    No Advice
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* Status */}
-                            <td className="py-4 px-4 text-center">
-                              {status === "Approved" ? (
-                                <div className="flex flex-col items-center">
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    <CheckCircle2 className="size-3 text-emerald-600" /> Approved
-                                  </span>
-                                  {so.approvedBy && (
-                                    <span className="text-[9px] text-zinc-400 font-medium mt-0.5">by {so.approvedBy}</span>
-                                  )}
-                                </div>
-                              ) : status === "Declined" ? (
-                                <div className="flex flex-col items-center">
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200" title={so.declineReason || "Declined"}>
-                                    <X className="size-3 text-rose-600" /> Declined
-                                  </span>
-                                  {so.declineReason && (
-                                    <span className="text-[9px] text-rose-600 font-semibold max-w-[120px] truncate mt-0.5" title={so.declineReason}>
-                                      {so.declineReason}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                                  <Clock className="size-3 text-amber-600" /> Pending Approval
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Action Buttons */}
-                            <td className="py-4 px-5 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-2">
-                                {status !== "Approved" && (
-                                  <button
-                                    type="button"
-                                    disabled={isProcessing}
-                                    onClick={() => setApproveModalOrder(so)}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] transition-all shadow-xs active:scale-95 disabled:opacity-50 cursor-pointer"
-                                    title="Approve Sales Order"
-                                  >
-                                    <Check className="size-3.5" /> Approve
-                                  </button>
-                                )}
-
-                                {/* View Details Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => setViewModalOrder(so)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-[11px] transition-all shadow-2xs active:scale-95 cursor-pointer"
-                                  title="View Full Order Details"
-                                >
-                                  <Eye className="size-3.5 text-zinc-600" /> View
-                                </button>
-                              </div>
+                {/* Approvals Table */}
+                <GlassCard className="p-0 overflow-hidden border-black/5 shadow-xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-black/5 bg-black/[0.02] text-[10px] text-zinc-400 font-black uppercase tracking-wider">
+                          <th className="py-4 px-5">Order ID & Date</th>
+                          <th className="py-4 px-4">Customer & Channel</th>
+                          <th className="py-4 px-4">Warehouse & Terms</th>
+                          <th className="py-4 px-4">Contract Items</th>
+                          <th className="py-4 px-4 text-right">Amount (ETB)</th>
+                          <th className="py-4 px-4">Attached Documents</th>
+                          <th className="py-4 px-4 text-center">Approval Status</th>
+                          <th className="py-4 px-5 text-right">Super Admin Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-black/5 text-xs font-medium">
+                        {filteredApprovals.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-16 text-center text-xs font-bold text-zinc-400">
+                              No sales orders match your approval filter criteria.
                             </td>
                           </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </GlassCard>
+                        ) : (
+                          filteredApprovals.map((so) => {
+                            const status = so.approvalStatus || "Pending"
+                            const docs = soDocsMap[so.id] || []
+                            const tradeDoc = docs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                            const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
+                            const isCredit = so.paymentType === "Credit"
+                            const isProcessing = isProcessingAction === so.id
+
+                            return (
+                              <tr key={so.id} className="hover:bg-black/[0.015] transition-colors">
+                                <td className="py-4 px-5">
+                                  <span className="font-mono font-black text-xs text-zinc-950 block">{so.id}</span>
+                                  <span className="text-[10px] text-zinc-400 font-medium">{so.date || "Recent"}</span>
+                                </td>
+
+                                <td className="py-4 px-4">
+                                  <span className="font-bold text-zinc-900 block">{so.customer}</span>
+                                  <span className="text-[10px] text-zinc-500 font-medium">Customer Order</span>
+                                </td>
+
+                                <td className="py-4 px-4">
+                                  <span className="font-semibold text-zinc-800 block">{so.warehouse}</span>
+                                  <span className={cn(
+                                    "inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase mt-0.5",
+                                    isCredit ? "bg-purple-100 text-purple-800" : "bg-emerald-100 text-emerald-800"
+                                  )}>
+                                    {isCredit ? "Credit Sale" : "Cash Sale"}
+                                  </span>
+                                </td>
+
+                                <td className="py-4 px-4">
+                                  <span className="font-bold text-zinc-800 block">
+                                    {so.items.length} {so.items.length === 1 ? "Line Item" : "Line Items"}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-400 truncate max-w-[140px] block">
+                                    {so.items.map((i) => i.name).join(", ")}
+                                  </span>
+                                </td>
+
+                                <td className="py-4 px-4 text-right font-mono">
+                                  <span className="font-black text-zinc-950 block">{so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                                  <span className="text-[9px] text-zinc-400 font-medium">ETB Gross</span>
+                                </td>
+
+                                <td className="py-4 px-4">
+                                  <div className="flex flex-col gap-1">
+                                    {tradeDoc ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPreviewDocUrl(tradeDoc.file_url)
+                                          setPreviewDocName(tradeDoc.file_name || "Trade License.pdf")
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer"
+                                      >
+                                        <FileText className="size-3 text-emerald-600" />
+                                        <span className="max-w-[100px] truncate">{tradeDoc.file_name || "Trade License"}</span>
+                                        <Eye className="size-2.5 opacity-60" />
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] text-zinc-400 flex items-center gap-1">
+                                        <AlertCircle className="size-3 text-amber-500" /> No Trade License
+                                      </span>
+                                    )}
+
+                                    {adviceDoc ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPreviewDocUrl(adviceDoc.file_url)
+                                          setPreviewDocName(adviceDoc.file_name || "Payment Advice.pdf")
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                                      >
+                                        <FileText className="size-3 text-blue-600" />
+                                        <span className="max-w-[100px] truncate">{adviceDoc.file_name || "Payment Advice"}</span>
+                                        <Eye className="size-2.5 opacity-60" />
+                                      </button>
+                                    ) : (
+                                      <span className="text-[10px] text-zinc-400 flex items-center gap-1">
+                                        <AlertCircle className="size-3 text-amber-500" /> No Payment Advice
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Approval Status Indicator */}
+                                <td className="py-4 px-4 text-center">
+                                  {status === "Approved" ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                        <CheckCircle2 className="size-3 text-emerald-600" /> Approved
+                                      </span>
+                                      {so.approvedBy && (
+                                        <span className="text-[9px] text-zinc-400 font-medium mt-0.5">by {so.approvedBy}</span>
+                                      )}
+                                    </div>
+                                  ) : status === "Declined" ? (
+                                    <div className="flex flex-col items-center">
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200" title={so.declineReason || "Declined"}>
+                                        <X className="size-3 text-rose-600" /> Declined
+                                      </span>
+                                      {so.declineReason && (
+                                        <span className="text-[9px] text-rose-600 font-semibold max-w-[120px] truncate mt-0.5" title={so.declineReason}>
+                                          {so.declineReason}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                      <Clock className="size-3 text-amber-600" /> Pending Approval
+                                    </span>
+                                  )}
+                                </td>
+
+                                {/* Action Buttons */}
+                                <td className="py-4 px-5 text-right whitespace-nowrap">
+                                  <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                    {status !== "Approved" && (
+                                      <button
+                                        type="button"
+                                        disabled={isProcessing}
+                                        onClick={() => setApproveModalOrder(so)}
+                                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs disabled:opacity-50 cursor-pointer"
+                                        title="Approve Sales Order"
+                                      >
+                                        <Check className="size-3 text-emerald-700" /> Approve
+                                      </button>
+                                    )}
+
+                                    {/* View Details Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setViewModalOrder(so)}
+                                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                      title="View Full Order Details"
+                                    >
+                                      <Eye className="size-3 text-zinc-700" /> View
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+              </>
+            )}
           </motion.div>
         )}
       </motion.div>

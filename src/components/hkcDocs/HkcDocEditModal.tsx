@@ -105,29 +105,32 @@ export default function HkcDocEditModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-zinc-200"
+        className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-zinc-200"
       >
-        <div className="flex items-start justify-between pb-4 mb-6 border-b border-zinc-200">
+        {/* Modal Header */}
+        <div className="flex items-start justify-between pb-3.5 mb-4 border-b border-zinc-200 shrink-0">
           <div>
-            <h3 className="text-lg font-black text-zinc-900">Manage Shipment Documentation</h3>
-            <p className="text-xs text-zinc-500">Record ID: {record.id}</p>
+            <h3 className="text-base sm:text-lg font-black text-zinc-900">Manage Shipment Documentation</h3>
+            <p className="text-[11px] sm:text-xs text-zinc-500">Record ID: {record.id}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400"
+            className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400 cursor-pointer"
+            aria-label="Close modal"
           >
             <X className="size-5" />
           </button>
         </div>
 
-        <div className="space-y-4 text-xs font-semibold">
-          <div className="grid gap-4 md:grid-cols-2">
+        {/* Modal Body */}
+        <div className="space-y-4 text-xs font-semibold overflow-y-auto pr-1 flex-1">
+          <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
             <label className="space-y-1 block">
               <span className="text-[11px] font-black uppercase text-zinc-700">Shipment ID <span className="text-rose-600">*</span></span>
               <input
@@ -178,34 +181,35 @@ export default function HkcDocEditModal({
             onAddAttachments={handleAddAttachments}
             onRemoveAttachment={handleRemoveAttachment}
           />
+        </div>
 
-          <div className="flex justify-between items-center border-t border-zinc-200 pt-4 mt-6">
+        {/* Modal Footer */}
+        <div className="flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center border-t border-zinc-200 pt-3.5 mt-4 gap-2.5 shrink-0">
+          <button
+            type="button"
+            disabled={isDeleting}
+            onClick={handleDelete}
+            className="h-11 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-700 font-black px-4 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Trash2 className="size-4" /> {isDeleting ? "Deleting..." : "Delete Record"}
+          </button>
+          <div className="flex gap-2">
             <button
               type="button"
-              disabled={isDeleting}
-              onClick={handleDelete}
-              className="h-10 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-700 font-black px-4 inline-flex items-center gap-1.5"
+              disabled={isSaving}
+              onClick={onClose}
+              className="h-11 flex-1 sm:flex-none rounded-xl border border-zinc-200 px-4 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
             >
-              <Trash2 className="size-4" /> {isDeleting ? "Deleting..." : "Delete Record"}
+              Cancel
             </button>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={onClose}
-                className="h-10 rounded-xl border border-zinc-200 px-4 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={handleSave}
-                className="h-10 min-w-[125px] rounded-xl bg-zinc-950 text-white font-bold px-5 inline-flex items-center justify-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Changes</>}
-              </button>
-            </div>
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={handleSave}
+              className="h-11 flex-1 sm:flex-none min-w-[130px] rounded-xl bg-zinc-950 text-white font-bold px-5 inline-flex items-center justify-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Changes</>}
+            </button>
           </div>
         </div>
       </motion.div>

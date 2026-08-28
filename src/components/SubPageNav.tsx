@@ -48,7 +48,7 @@ export function SubPageNav({ items, variant = "light" }: SubPageNavProps) {
   })
 
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
+    <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar overscroll-x-contain max-w-full py-1 -my-1">
       {visibleItems.map((item) => {
         const isActive = location.pathname === item.path
         return (
@@ -56,7 +56,7 @@ export function SubPageNav({ items, variant = "light" }: SubPageNavProps) {
             key={item.path}
             to={item.path}
             className={cn(
-              "px-5 py-2.5 rounded-full text-sm font-semibold transition-all whitespace-nowrap shrink-0",
+              "px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 active:scale-95",
               isActive
                 ? "bg-green-700 text-white font-bold shadow-sm"
                 : isDark

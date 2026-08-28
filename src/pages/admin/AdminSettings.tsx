@@ -8,7 +8,6 @@ import { useFeedback } from "@/context/FeedbackContext"
 import {
   Building2,
   SlidersHorizontal,
-  BookOpen,
   Save,
   RotateCcw,
   Check,
@@ -33,6 +32,7 @@ import { useFinanceStore, type TaxRule } from "@/lib/financeStore"
 import { DEFAULT_ETHIOPIAN_TAX_BRACKETS, DEFAULT_ETHIOPIAN_PENSION_CONFIG, type TaxBracket } from "@/core/hr/payrollEngine"
 import { cn } from "@/lib/utils"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const listContainer = {
@@ -45,6 +45,33 @@ const listContainer = {
   },
 }
 
+function SettingsSectionSkeleton() {
+  return (
+    <div className="flex flex-col gap-5 animate-pulse">
+      <GlassCard className="p-6 border border-white/65 shadow-md">
+        <div className="flex items-center justify-between pb-4 mb-6 border-b border-black/5">
+          <div className="flex items-center gap-3.5">
+            <Skeleton className="size-10 rounded-2xl bg-zinc-200/80" />
+            <div>
+              <Skeleton className="h-5 w-44 bg-zinc-200/80 rounded-lg" />
+              <Skeleton className="h-3 w-64 bg-zinc-150/70 rounded-full mt-2" />
+            </div>
+          </div>
+          <Skeleton className="h-9 w-32 bg-zinc-200/60 rounded-2xl" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 space-y-2">
+              <Skeleton className="h-3.5 w-28 bg-zinc-200/80 rounded-full" />
+              <Skeleton className="h-10 w-full bg-zinc-200/60 rounded-xl" />
+            </div>
+          ))}
+        </div>
+      </GlassCard>
+    </div>
+  )
+}
+
 export default function AdminSettings() {
   const subPages = getSectionChildren("/admin")
   const { showToast, confirm } = useFeedback()
@@ -55,7 +82,7 @@ export default function AdminSettings() {
   const taxRules = finance.getTaxRules()
   const warehouses = erp.getWarehouses()
 
-  const [activeTab, setActiveTab] = useState<"general" | "tax" | "warehouses" | "rates" | "accounts">("general")
+  const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates">("general")
   const [isSaved, setIsSaved] = useState(false)
 
   // 1. General & Entity Profile State
@@ -415,6 +442,8 @@ export default function AdminSettings() {
     }
     setWhModalOpen(true)
   }
+  const handleOpenCreateWarehouseModal = () => handleOpenWhModal()
+  const handleOpenEditWarehouseModal = (wh: Warehouse) => handleOpenWhModal(wh)
 
   const handleSaveWarehouse = async () => {
     if (!whName.trim()) {
@@ -492,27 +521,27 @@ export default function AdminSettings() {
 
   const settingsTabs = [
     { id: "general" as const, label: "Company Profile", icon: Building2, description: "Legal entity, TIN, address & currency" },
+    { id: "pension" as const, label: "Pension & Employment Tax", icon: Scale, description: "Statutory 7%/11% rates & progressive income tax tiers" },
     { id: "tax" as const, label: "Tax Rates & Rules", icon: Receipt, description: "Configure VAT, withholding & customs rates" },
     { id: "warehouses" as const, label: "Warehouse Facilities", icon: WarehouseIcon, description: "Change warehouse names, codes & details" },
     { id: "rates" as const, label: "Processing & Storage", icon: SlidersHorizontal, description: "Toll fee rates & tiered monthly storage" },
-    { id: "accounts" as const, label: "GL Account Mappings", icon: BookOpen, description: "Default inventory, revenue, and COGS accounts" },
   ]
 
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
         {/* Header */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-zinc-900 text-white flex items-center gap-1">
                 <Sparkles className="size-3 text-emerald-400" /> Operational Configurations
               </span>
             </div>
-            <h1 className="text-3xl font-black text-black tracking-tight">System Settings</h1>
-            <p className="text-sm text-gray-500 mt-1">Configure company profile, tax rules, warehouse locations, fee schedules, and ledger mappings.</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">System Settings</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">Configure company profile, tax rules, warehouse locations, fee schedules, and statutory rates.</p>
           </div>
           <div className="shrink-0">
             <SubPageNav items={subPages} />
@@ -526,7 +555,7 @@ export default function AdminSettings() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 text-sm font-semibold px-4 py-3 rounded-2xl mb-6 flex items-center gap-2 shadow-sm"
+              className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 text-xs sm:text-sm font-semibold px-4 py-3 rounded-2xl mb-6 flex items-center gap-2 shadow-sm"
             >
               <Check className="size-4 shrink-0 text-emerald-600" />
               Configurations have been synchronized to Supabase!
@@ -535,9 +564,9 @@ export default function AdminSettings() {
         </AnimatePresence>
 
         {/* Layout Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
-          {/* Sidebar Tabs */}
-          <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4 sm:gap-6">
+          {/* Sidebar Tabs (Horizontal swipe on mobile/tablet, vertical stack on desktop) */}
+          <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible no-scrollbar overscroll-x-contain pb-2 lg:pb-0 py-1 -my-1">
             {settingsTabs.map((tab) => {
               const TabIcon = tab.icon
               const isSelected = activeTab === tab.id
@@ -546,7 +575,7 @@ export default function AdminSettings() {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    "w-full text-left p-3.5 rounded-2xl border transition-all flex items-start gap-3.5 group",
+                    "text-left p-3 sm:p-3.5 rounded-2xl border transition-all flex items-center lg:items-start gap-3 group shrink-0 min-w-[200px] sm:min-w-[240px] lg:min-w-0 lg:w-full active:scale-95 cursor-pointer",
                     isSelected
                       ? "bg-[#1c1c1e] border-transparent text-white shadow-md shadow-black/10"
                       : "glass-card border-black/[0.03] text-[#505054] hover:text-black hover:bg-white/80 hover:border-black/10"
@@ -562,11 +591,11 @@ export default function AdminSettings() {
                   >
                     <TabIcon className="size-4" />
                   </div>
-                  <div className="min-w-0">
-                    <p className={cn("text-sm font-bold leading-tight", isSelected ? "text-white" : "text-black")}>
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("text-xs sm:text-sm font-bold leading-tight truncate lg:whitespace-normal", isSelected ? "text-white" : "text-black")}>
                       {tab.label}
                     </p>
-                    <p className={cn("text-xs mt-0.5 truncate", isSelected ? "text-zinc-400" : "text-gray-400")}>
+                    <p className={cn("text-[10px] sm:text-xs mt-0.5 truncate hidden sm:block", isSelected ? "text-zinc-400" : "text-gray-400")}>
                       {tab.description}
                     </p>
                   </div>
@@ -577,719 +606,596 @@ export default function AdminSettings() {
 
           {/* Settings Tab Content */}
           <div className="flex flex-col gap-6">
-            <AnimatePresence mode="wait">
-              {/* Tab 1: Company Profile */}
-              {activeTab === "general" && (
-                <motion.div key="general" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
-                  <GlassCard>
-                    <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
-                      <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
-                        <Building2 className="size-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-black">Company & Entity Profile</h3>
-                        <p className="text-xs text-gray-400">Configure legal enterprise metadata, tax identity, and official business contacts.</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Legal Enterprise Name</label>
-                        <input
-                          type="text"
-                          value={companyName}
-                          placeholder="e.g. HKC Trading Enterprise"
-                          onChange={(e) => setCompanyName(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">TIN / Tax Number</label>
-                        <input
-                          type="text"
-                          value={tinNumber}
-                          placeholder="e.g. 0012345678"
-                          onChange={(e) => setTinNumber(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Contact Email</label>
-                        <input
-                          type="email"
-                          value={contactEmail}
-                          placeholder="e.g. info@hkctrading.com"
-                          onChange={(e) => setContactEmail(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Contact Phone</label>
-                        <input
-                          type="text"
-                          value={contactPhone}
-                          placeholder="e.g. +251 11 662 4580"
-                          onChange={(e) => setContactPhone(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mb-5">
-                      <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Head Office Physical Address</label>
-                      <input
-                        type="text"
-                        value={address}
-                        placeholder="e.g. Bole Subcity, Woreda 03, Addis Ababa, Ethiopia"
-                        onChange={(e) => setAddress(e.target.value)}
-                        className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Primary Operating Currency</label>
-                        <select
-                          value={baseCurrency}
-                          onChange={(e) => setBaseCurrency(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                        >
-                          <option value="ETB">ETB (Br) - Ethiopian Birr</option>
-                          <option value="USD">USD ($) - United States Dollar</option>
-                          <option value="EUR">EUR (€) - Euro</option>
-                          <option value="GBP">GBP (£) - British Pound</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Fiscal Year Start Month</label>
-                        <select
-                          value={fiscalYearStart}
-                          onChange={(e) => setFiscalYearStart(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
-                        >
-                          <option value="July">July (Hamle 1 - Ethiopian Fiscal Calendar)</option>
-                          <option value="January">January (Gregorian Fiscal Calendar)</option>
-                          <option value="September">September (Meskerem 1)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </GlassCard>
-                </motion.div>
-              )}
-
-              {/* Tab 2: Tax Rates & Rules */}
-              {activeTab === "tax" && (
-                <motion.div key="tax" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
-                  {/* 1. Ethiopian Statutory Pension Configuration */}
-                  <GlassCard>
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
-                      <div className="flex items-center gap-3.5">
-                        <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
-                          <Coins className="size-5" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-black">Ethiopian Pension Scheme</h3>
-                          <p className="text-xs text-gray-400">
-                            Statutory contribution rates under Proclamation No. 1267/2022 (Public) &amp; No. 1268/2022 (Private Organization Employees).
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap shrink-0">
-                        <span className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
-                          <ShieldCheck className="size-3.5" />
-                          Mandatory Local Scheme
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleResetPension}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-2xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-bold transition-all shadow-xs"
-                        >
-                          <RotateCcw className="size-3.5" /> Reset to 7%/11%
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSave}
-                          className="flex items-center gap-1 px-3.5 py-1.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs active:scale-95"
-                        >
-                          <Save className="size-3.5" /> Save Pension
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-                      <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5">
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
-                          Employee Contribution Rate
-                        </label>
-                        <p className="text-[11px] text-gray-400 mb-2">Deducted from gross monthly basic salary (Default 7%).</p>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            max="100"
-                            value={pensionEmpRate}
-                            onChange={(e) => setPensionEmpRate(e.target.value === "" ? "" : Number(e.target.value))}
-                            className="w-full bg-white border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-black text-black font-mono outline-none focus:border-amber-600"
-                          />
-                          <span className="text-sm font-bold text-gray-500 font-mono">%</span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5">
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
-                          Employer Contribution Rate
-                        </label>
-                        <p className="text-[11px] text-gray-400 mb-2">Company co-contribution on basic salary (Default 11%).</p>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            max="100"
-                            value={pensionCompRate}
-                            onChange={(e) => setPensionCompRate(e.target.value === "" ? "" : Number(e.target.value))}
-                            className="w-full bg-white border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-black text-black font-mono outline-none focus:border-amber-600"
-                          />
-                          <span className="text-sm font-bold text-gray-500 font-mono">%</span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 flex flex-col justify-between">
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
-                            Expatriate Exemption Rule
-                          </label>
-                          <p className="text-[11px] text-gray-400 mb-2">Foreign expatriate employees are legally exempt from Ethiopian pension.</p>
-                        </div>
-                        <label className="flex items-center gap-2.5 cursor-pointer mt-2">
-                          <input
-                            type="checkbox"
-                            checked={pensionExpatExempt}
-                            onChange={(e) => setPensionExpatExempt(e.target.checked)}
-                            className="size-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span className="text-xs font-bold text-black">Exempt Foreign Expats</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/70 text-xs text-amber-900 leading-relaxed">
-                      <span className="font-bold">Statutory Sequence:</span> Employee pension (7%) is computed on the <strong>Gross Basic Salary</strong> and deducted <em>prior</em> to applying progressive employment income tax brackets.
-                    </div>
-                  </GlassCard>
-
-                  {/* 2. Progressive Employment Income Tax Brackets */}
-                  <GlassCard>
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
-                      <div className="flex items-center gap-3.5">
+            {erp.isLoading() || finance.isLoading() ? (
+              <SettingsSectionSkeleton />
+            ) : (
+              <AnimatePresence mode="wait">
+                {/* Tab 1: Company Profile */}
+                {activeTab === "general" && (
+                  <motion.div key="general" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                    <GlassCard>
+                      <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
                         <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
-                          <Scale className="size-5" />
+                          <Building2 className="size-5" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-black">Employment Income Tax Brackets</h3>
-                          <p className="text-xs text-gray-400">
-                            Progressive tax rates and deductibles under Proclamation No. 1395/2025 applied to Taxable Base ((Basic + Allowances) - 7% Pension).
-                          </p>
+                          <h3 className="text-lg font-bold text-black">Company & Entity Profile</h3>
+                          <p className="text-xs text-gray-400">Configure legal enterprise metadata, tax identity, and official business contacts.</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap shrink-0">
-                        <button
-                          type="button"
-                          onClick={handleResetDefaultBrackets}
-                          className="flex items-center gap-1 px-3 py-2 rounded-2xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-bold transition-all shadow-xs"
-                        >
-                          <RotateCcw className="size-3.5" /> Reset to Proc. 1395/2025
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenBracketModal()}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
-                        >
-                          <Plus className="size-4" /> Add Tax Tier
-                        </button>
-                      </div>
-                    </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-black/5 bg-black/[0.02] text-[10px] font-black uppercase tracking-wider text-zinc-500">
-                            <th className="py-3 px-4">Taxable Income Range (ETB)</th>
-                            <th className="py-3 px-4">Marginal Tax Rate</th>
-                            <th className="py-3 px-4">Statutory Deductible</th>
-                            <th className="py-3 px-4">Calculation Quick Formula</th>
-                            <th className="py-3 px-4 text-right">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-black/5 text-xs">
-                          {taxBrackets.map((bracket, index) => {
-                            const rangeLabel =
-                              bracket.max === null
-                                ? `Over ${bracket.min.toLocaleString()} ETB`
-                                : `${bracket.min.toLocaleString()} - ${bracket.max.toLocaleString()} ETB`
-                            const formula =
-                              bracket.ratePercent === 0
-                                ? "0.00 ETB (Exempt)"
-                                : `(Taxable Base × ${bracket.ratePercent}%) - ${bracket.deductible.toLocaleString()} ETB`
-
-                            return (
-                              <tr key={index} className="hover:bg-black/[0.02] transition-colors">
-                                <td className="py-3.5 px-4 font-bold text-zinc-950 font-mono">
-                                  {rangeLabel}
-                                  {bracket.min === 0 && bracket.ratePercent === 0 && (
-                                    <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800">
-                                      EXEMPT
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-3.5 px-4 font-black text-zinc-900 font-mono text-sm">
-                                  {bracket.ratePercent}%
-                                </td>
-                                <td className="py-3.5 px-4 font-bold text-zinc-700 font-mono">
-                                  {bracket.deductible.toLocaleString()} ETB
-                                </td>
-                                <td className="py-3.5 px-4 font-mono text-zinc-500 text-[11px]">
-                                  {formula}
-                                </td>
-                                <td className="py-3.5 px-4 text-right">
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenBracketModal(index)}
-                                      className="p-1.5 rounded-lg hover:bg-black/5 text-zinc-600"
-                                      title="Edit Tier"
-                                    >
-                                      <Pencil className="size-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteBracket(index)}
-                                      className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600"
-                                      title="Delete Tier"
-                                    >
-                                      <Trash2 className="size-3.5" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </GlassCard>
-
-                  {/* 3. Standard Commercial Tax Rules (VAT, Withholding, Duties) */}
-                  <GlassCard>
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
-                      <div className="flex items-center gap-3.5">
-                        <div className="p-2.5 rounded-2xl bg-indigo-100 text-indigo-700">
-                          <Receipt className="size-5" />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Legal Enterprise Name</label>
+                          <input
+                            type="text"
+                            value={companyName}
+                            placeholder="e.g. HKC Trading Enterprise"
+                            onChange={(e) => setCompanyName(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+                          />
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-black">Commercial Transaction Taxes</h3>
-                          <p className="text-xs text-gray-400">Manage standard VAT, withholding tax (TDS), and customs duty rates.</p>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">TIN / Tax Number</label>
+                          <input
+                            type="text"
+                            value={tinNumber}
+                            placeholder="e.g. 0012345678"
+                            onChange={(e) => setTinNumber(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                          />
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleOpenTaxModal()}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95 shrink-0"
-                      >
-                        <Plus className="size-4" /> Add Tax Rule
-                      </button>
-                    </div>
 
-                    {taxRules.length === 0 ? (
-                      <div className="text-center py-12 border border-dashed border-black/10 rounded-2xl">
-                        <Percent className="size-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm font-bold text-gray-500">No Commercial Tax Rules Configured</p>
-                        <p className="text-xs text-gray-400 mt-1">Click &quot;Add Tax Rule&quot; to establish standard VAT or withholding tax rates.</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Contact Email</label>
+                          <input
+                            type="email"
+                            value={contactEmail}
+                            placeholder="e.g. info@hkctrading.com"
+                            onChange={(e) => setContactEmail(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Contact Phone</label>
+                          <input
+                            type="text"
+                            value={contactPhone}
+                            placeholder="e.g. +251 11 662 4580"
+                            onChange={(e) => setContactPhone(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                          />
+                        </div>
                       </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {taxRules.map((rule) => (
-                          <div
-                            key={rule.id}
-                            className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 hover:border-black/15 transition-all flex flex-col justify-between"
+
+                      <div className="mb-5">
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Head Office Physical Address</label>
+                        <input
+                          type="text"
+                          value={address}
+                          placeholder="e.g. Bole Subcity, Woreda 03, Addis Ababa, Ethiopia"
+                          onChange={(e) => setAddress(e.target.value)}
+                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Primary Operating Currency</label>
+                          <select
+                            value={baseCurrency}
+                            onChange={(e) => setBaseCurrency(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
                           >
-                            <div>
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <div>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                    {rule.type}
-                                  </span>
-                                  <h4 className="text-base font-bold text-black mt-1.5">{rule.name}</h4>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <span className="text-2xl font-black text-black tracking-tight">{rule.ratePercent}%</span>
-                                  <p className="text-[10px] font-semibold text-gray-400">{rule.isInclusive ? "Tax Inclusive" : "Tax Exclusive"}</p>
-                                </div>
-                              </div>
-                              {rule.description && <p className="text-xs text-gray-500 mb-3">{rule.description}</p>}
-                              <div className="flex items-center gap-2 text-xs text-gray-500 mt-2 pt-2 border-t border-black/5 font-mono">
-                                <span>GL Account:</span>
-                                <span className="font-bold text-black">{rule.accountCode || "Default Tax Ledger"}</span>
-                              </div>
-                            </div>
+                            <option value="ETB">ETB (Br) - Ethiopian Birr</option>
+                            <option value="USD">USD ($) - United States Dollar</option>
+                            <option value="EUR">EUR (€) - Euro</option>
+                            <option value="GBP">GBP (£) - British Pound</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Fiscal Year Start Month</label>
+                          <select
+                            value={fiscalYearStart}
+                            onChange={(e) => setFiscalYearStart(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+                          >
+                            <option value="July">July (Hamle 1 - Ethiopian Fiscal Calendar)</option>
+                            <option value="January">January (Gregorian Fiscal Calendar)</option>
+                            <option value="September">September (Meskerem 1)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </GlassCard>
+                  </motion.div>
+                )}
 
-                            <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-black/5">
-                              <button
-                                onClick={() => handleOpenTaxModal(rule)}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-semibold transition-all"
-                              >
-                                <Pencil className="size-3.5" /> Edit Rate
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTaxRule(rule.id, rule.name)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition-all"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </div>
+                {/* Tab 2: Pension & Employment Tax */}
+                {activeTab === "pension" && (
+                  <motion.div key="pension" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                    {/* 1. Ethiopian Statutory Pension Configuration */}
+                    <GlassCard>
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
+                        <div className="flex items-center gap-3.5">
+                          <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
+                            <Coins className="size-5" />
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </GlassCard>
-                </motion.div>
-              )}
-
-              {/* Tab 3: Warehouse Facilities */}
-              {activeTab === "warehouses" && (
-                <motion.div key="warehouses" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
-                  <GlassCard>
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
-                      <div className="flex items-center gap-3.5">
-                        <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
-                          <WarehouseIcon className="size-5" />
+                          <div>
+                            <h3 className="text-lg font-bold text-black">Ethiopian Pension Scheme</h3>
+                            <p className="text-xs text-gray-400">
+                              Statutory contribution rates under Proclamation No. 1267/2022 (Public) &amp; No. 1268/2022 (Private Organization Employees).
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-black">Warehouse & Processing Facilities</h3>
-                          <p className="text-xs text-gray-400">Change facility names, assign managers, modify physical locations, and manage storage hubs.</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleOpenWhModal()}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95 shrink-0"
-                      >
-                        <Plus className="size-4" /> Add Warehouse
-                      </button>
-                    </div>
-
-                    {warehouses.length === 0 ? (
-                      <div className="text-center py-12 border border-dashed border-black/10 rounded-2xl">
-                        <WarehouseIcon className="size-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm font-bold text-gray-500">No Warehouse Facilities</p>
-                        <p className="text-xs text-gray-400 mt-1">Click &quot;Add Warehouse&quot; to establish an active storage or processing depot.</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {warehouses.map((wh) => (
-                          <div
-                            key={wh.id}
-                            className="p-5 rounded-2xl bg-black/[0.02] border border-black/5 hover:border-black/15 transition-all flex flex-col justify-between relative"
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                          <span className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                            <ShieldCheck className="size-3.5" />
+                            Mandatory Local Scheme
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleResetPension}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-2xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-bold transition-all shadow-xs"
                           >
-                            <div>
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-black text-white font-mono">
-                                      {wh.code || wh.id}
+                            <RotateCcw className="size-3.5" /> Reset to 7%/11%
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSave}
+                            className="flex items-center gap-1 px-3.5 py-1.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs active:scale-95"
+                          >
+                            <Save className="size-3.5" /> Save Pension
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+                        <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5">
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                            Employee Contribution Rate
+                          </label>
+                          <p className="text-[11px] text-gray-400 mb-2">Deducted from gross monthly basic salary (Default 7%).</p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="100"
+                              value={pensionEmpRate}
+                              onChange={(e) => setPensionEmpRate(e.target.value === "" ? "" : Number(e.target.value))}
+                              className="w-full bg-white border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-black text-black font-mono outline-none focus:border-amber-600"
+                            />
+                            <span className="text-sm font-bold text-gray-500 font-mono">%</span>
+                          </div>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5">
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                            Employer Contribution Rate
+                          </label>
+                          <p className="text-[11px] text-gray-400 mb-2">Company co-contribution on basic salary (Default 11%).</p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="100"
+                              value={pensionCompRate}
+                              onChange={(e) => setPensionCompRate(e.target.value === "" ? "" : Number(e.target.value))}
+                              className="w-full bg-white border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-black text-black font-mono outline-none focus:border-amber-600"
+                            />
+                            <span className="text-sm font-bold text-gray-500 font-mono">%</span>
+                          </div>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 flex flex-col justify-between">
+                          <div>
+                            <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">
+                              Expatriate Exemption Rule
+                            </label>
+                            <p className="text-[11px] text-gray-400 mb-2">Foreign expatriate employees are legally exempt from Ethiopian pension.</p>
+                          </div>
+                          <label className="flex items-center gap-2.5 cursor-pointer mt-2">
+                            <input
+                              type="checkbox"
+                              checked={pensionExpatExempt}
+                              onChange={(e) => setPensionExpatExempt(e.target.checked)}
+                              className="size-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className="text-xs font-bold text-black">Exempt Foreign Expats</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/70 text-xs text-amber-900 leading-relaxed">
+                        <span className="font-bold">Statutory Sequence:</span> Employee pension (7%) is computed on the <strong>Gross Basic Salary</strong> and deducted <em>prior</em> to applying progressive employment income tax brackets.
+                      </div>
+                    </GlassCard>
+
+                    {/* 2. Progressive Employment Income Tax Brackets */}
+                    <GlassCard>
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
+                        <div className="flex items-center gap-3.5">
+                          <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
+                            <Scale className="size-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-black">Employment Income Tax Brackets</h3>
+                            <p className="text-xs text-gray-400">
+                              Progressive tax rates and deductibles under Proclamation No. 1395/2025 applied to Taxable Base ((Basic + Allowances) - 7% Pension).
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                          <button
+                            type="button"
+                            onClick={handleResetDefaultBrackets}
+                            className="flex items-center gap-1 px-3 py-2 rounded-2xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-bold transition-all shadow-xs"
+                          >
+                            <RotateCcw className="size-3.5" /> Reset to Proc. 1395/2025
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenBracketModal()}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
+                          >
+                            <Plus className="size-4" /> Add Tax Tier
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-black/5 bg-black/[0.02] text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                              <th className="py-3 px-4">Taxable Income Range (ETB)</th>
+                              <th className="py-3 px-4">Marginal Tax Rate</th>
+                              <th className="py-3 px-4">Statutory Deductible</th>
+                              <th className="py-3 px-4">Calculation Quick Formula</th>
+                              <th className="py-3 px-4 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/5 text-xs">
+                            {taxBrackets.map((bracket, index) => {
+                              const rangeLabel =
+                                bracket.max === null
+                                  ? `Over ${bracket.min.toLocaleString()} ETB`
+                                  : `${bracket.min.toLocaleString()} - ${bracket.max.toLocaleString()} ETB`
+                              const formula =
+                                bracket.ratePercent === 0
+                                  ? "0.00 ETB (Exempt)"
+                                  : `(Taxable Base × ${bracket.ratePercent}%) - ${bracket.deductible.toLocaleString()} ETB`
+
+                              return (
+                                <tr key={index} className="hover:bg-black/[0.02] transition-colors">
+                                  <td className="py-3.5 px-4 font-bold text-zinc-950 font-mono">
+                                    {rangeLabel}
+                                    {bracket.min === 0 && bracket.ratePercent === 0 && (
+                                      <span className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800">
+                                        EXEMPT
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-4 font-black text-zinc-900 font-mono text-sm">
+                                    {bracket.ratePercent}%
+                                  </td>
+                                  <td className="py-3.5 px-4 font-bold text-zinc-700 font-mono">
+                                    {bracket.deductible.toLocaleString()} ETB
+                                  </td>
+                                  <td className="py-3.5 px-4 font-mono text-zinc-500 text-[11px]">
+                                    {formula}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenBracketModal(index)}
+                                        className="p-1.5 rounded-lg hover:bg-black/5 text-zinc-600"
+                                        title="Edit Tier"
+                                      >
+                                        <Pencil className="size-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteBracket(index)}
+                                        className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600"
+                                        title="Delete Tier"
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </GlassCard>
+                  </motion.div>
+                )}
+
+                {/* Tab 3: Tax Rates & Rules (Corporate & Commercial Taxes) */}
+                {activeTab === "tax" && (
+                  <motion.div key="tax" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                    {/* Standard Commercial Tax Rules (VAT, Withholding, Duties) */}
+                    <GlassCard>
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
+                        <div className="flex items-center gap-3.5">
+                          <div className="p-2.5 rounded-2xl bg-indigo-100 text-indigo-700">
+                            <Receipt className="size-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-black">Commercial Transaction Taxes</h3>
+                            <p className="text-xs text-gray-400">Manage standard VAT, withholding tax (TDS), and customs duty rates.</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleOpenTaxModal()}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95 shrink-0"
+                        >
+                          <Plus className="size-4" /> Add Tax Rule
+                        </button>
+                      </div>
+
+                      {taxRules.length === 0 ? (
+                        <div className="text-center py-12 border border-dashed border-black/10 rounded-2xl">
+                          <Percent className="size-8 text-gray-300 mx-auto mb-2" />
+                          <p className="text-sm font-bold text-gray-500">No Commercial Tax Rules Configured</p>
+                          <p className="text-xs text-gray-400 mt-1">Click &quot;Add Tax Rule&quot; to establish standard VAT or withholding tax rates.</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {taxRules.map((rule) => (
+                            <div
+                              key={rule.id}
+                              className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 hover:border-black/15 transition-all flex flex-col justify-between"
+                            >
+                              <div>
+                                <div className="flex items-start justify-between gap-2 mb-2">
+                                  <div>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                      {rule.type}
                                     </span>
-                                    <span
-                                      className={cn(
-                                        "px-2 py-0.5 rounded-full text-[10px] font-bold border",
-                                        wh.status === "Active"
-                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                          : "bg-zinc-100 text-zinc-600 border-zinc-200"
-                                      )}
-                                    >
-                                      {wh.status || "Active"}
-                                    </span>
+                                    <h4 className="text-base font-bold text-black mt-1.5">{rule.name}</h4>
                                   </div>
-                                  <h4 className="text-base font-bold text-black mt-2">{wh.name}</h4>
+                                  <div className="text-right shrink-0">
+                                    <span className="text-2xl font-black text-black tracking-tight">{rule.ratePercent}%</span>
+                                    <p className="text-[10px] font-semibold text-gray-400">{rule.isInclusive ? "Tax Inclusive" : "Tax Exclusive"}</p>
+                                  </div>
                                 </div>
+                                {rule.description && <p className="text-xs text-gray-500 mb-3">{rule.description}</p>}
+                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-2 pt-2 border-t border-black/5 font-mono">
+                                  <span>GL Account:</span>
+                                  <span className="font-bold text-black">{rule.accountCode || "Default Tax Ledger"}</span>
+                                </div>
+                              </div>
 
-                                {/* 3-Dots Action Menu */}
-                                <div className="relative">
-                                  <button
-                                    onClick={() => setActiveWhMenuId(activeWhMenuId === wh.id ? null : wh.id)}
-                                    className="p-1.5 rounded-xl hover:bg-black/5 text-gray-400 hover:text-black transition-colors"
-                                    title="More Options"
-                                  >
-                                    <MoreVertical className="size-4" />
-                                  </button>
+                              <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-black/5">
+                                <button
+                                  onClick={() => handleOpenTaxModal(rule)}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-semibold transition-all"
+                                >
+                                  <Pencil className="size-3.5" /> Edit Rate
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTaxRule(rule.id, rule.name)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition-all"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </GlassCard>
+                  </motion.div>
+                )}
 
-                                  <AnimatePresence>
-                                    {activeWhMenuId === wh.id && (
-                                      <>
-                                        <div
-                                          className="fixed inset-0 z-20"
-                                          onClick={() => setActiveWhMenuId(null)}
-                                        />
-                                        <motion.div
-                                          initial={{ opacity: 0, scale: 0.95, y: -4 }}
-                                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                                          exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                                          className="absolute right-0 top-8 z-30 w-48 bg-white rounded-2xl shadow-xl border border-black/10 p-1.5 flex flex-col gap-1"
-                                        >
+                {/* Tab 4: Warehouse Facilities */}
+                {activeTab === "warehouses" && (
+                  <motion.div key="warehouses" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                    <GlassCard>
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
+                        <div className="flex items-center gap-3.5">
+                          <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
+                            <WarehouseIcon className="size-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-black">Operating Warehouses & Facilities</h3>
+                            <p className="text-xs text-gray-400">Add, rename, edit location, or delete processing and storage centers.</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleOpenCreateWarehouseModal}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-sm active:scale-95 shrink-0"
+                        >
+                          <Plus className="size-4" /> Add Warehouse
+                        </button>
+                      </div>
+
+                      {warehouses.length === 0 ? (
+                        <div className="text-center py-12 border border-dashed border-black/10 rounded-2xl">
+                          <WarehouseIcon className="size-8 text-gray-300 mx-auto mb-2" />
+                          <p className="text-sm font-bold text-gray-500">No Warehouse Facilities Configured</p>
+                          <p className="text-xs text-gray-400 mt-1">Add your coffee processing plants, central hubs, or regional stations.</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {warehouses.map((wh) => {
+                            const isAssignedMenuOpen = activeWhMenuId === wh.id
+                            return (
+                              <div
+                                key={wh.id}
+                                className="relative p-5 rounded-2xl bg-black/[0.02] border border-black/5 hover:border-black/15 transition-all flex flex-col justify-between"
+                              >
+                                <div>
+                                  <div className="flex items-start justify-between gap-2 mb-3">
+                                    <div>
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                                        {wh.code || "WH"}
+                                      </span>
+                                      <h4 className="text-base font-bold text-black mt-1.5 leading-snug">{wh.name}</h4>
+                                    </div>
+                                    <div className="relative">
+                                      <button
+                                        onClick={() => setActiveWhMenuId(isAssignedMenuOpen ? null : wh.id)}
+                                        className="p-1.5 rounded-xl hover:bg-black/5 text-gray-400 hover:text-black transition-colors"
+                                      >
+                                        <MoreVertical className="size-4" />
+                                      </button>
+                                      {isAssignedMenuOpen && (
+                                        <div className="absolute right-0 top-8 z-30 w-36 bg-white rounded-2xl shadow-xl border border-black/10 p-1.5 flex flex-col gap-1">
                                           <button
-                                            onClick={() => {
-                                              setActiveWhMenuId(null)
-                                              handleOpenWhModal(wh)
-                                            }}
-                                            className="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-black hover:bg-black/[0.04] rounded-xl transition-colors text-left"
+                                            onClick={() => handleOpenEditWarehouseModal(wh)}
+                                            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-black hover:bg-black/5 w-full text-left"
                                           >
-                                            <Pencil className="size-3.5 text-gray-500" /> Edit Parameters
+                                            <Pencil className="size-3.5" /> Edit Details
                                           </button>
-                                          <div className="h-px bg-black/5 my-0.5" />
                                           <button
                                             onClick={() => handleDeleteWarehouse(wh)}
-                                            className="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors text-left"
+                                            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 w-full text-left"
                                           >
-                                            <Trash2 className="size-3.5 text-rose-600" /> Delete Facility...
+                                            <Trash2 className="size-3.5" /> Delete Facility
                                           </button>
-                                        </motion.div>
-                                      </>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1.5 text-xs text-gray-600 mb-4">
+                                    <div className="flex items-center gap-2">
+                                      <MapPin className="size-3.5 text-gray-400 shrink-0" />
+                                      <span className="truncate">{wh.location || "Location not specified"}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Tag className="size-3.5 text-gray-400 shrink-0" />
+                                      <span>{wh.type || "Dry Storage / Processing"}</span>
+                                    </div>
+                                    {wh.manager && (
+                                      <div className="flex items-center gap-2">
+                                        <UserCheck className="size-3.5 text-gray-400 shrink-0" />
+                                        <span>{wh.manager}</span>
+                                      </div>
                                     )}
-                                  </AnimatePresence>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between pt-3 border-t border-black/5 text-xs">
+                                  <span className="font-semibold text-gray-400">{wh.targetMarkets || "Domestic & Export"}</span>
+                                  <button
+                                    onClick={() => handleOpenEditWarehouseModal(wh)}
+                                    className="px-3 py-1 rounded-xl bg-white border border-black/10 text-xs font-bold text-black hover:bg-black/5 transition-colors shadow-2xs"
+                                  >
+                                    Edit
+                                  </button>
                                 </div>
                               </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </GlassCard>
+                  </motion.div>
+                )}
 
-                              <div className="space-y-2 mt-3 text-xs">
-                                <div className="flex items-center gap-2 text-gray-500">
-                                  <MapPin className="size-3.5 text-gray-400 shrink-0" />
-                                  <span className="truncate">{wh.location || "Location not specified"}</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-gray-500">
-                                  <Tag className="size-3.5 text-gray-400 shrink-0" />
-                                  <span className="truncate">{wh.specialization || wh.type || "Dry Storage / Processing"}</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-gray-500">
-                                  <UserCheck className="size-3.5 text-gray-400 shrink-0" />
-                                  <span>Manager: <strong className="text-black font-semibold">{wh.manager || "Unassigned"}</strong></span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2 mt-5 pt-3 border-t border-black/5">
-                              <span className="text-[11px] text-gray-400 font-mono">ID: {wh.id}</span>
-                              <button
-                                onClick={() => handleOpenWhModal(wh)}
-                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-gray-50 text-black text-xs font-semibold transition-all shadow-2xs"
-                              >
-                                <Pencil className="size-3.5" /> Edit Warehouse
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </GlassCard>
-                </motion.div>
-              )}
-
-              {/* Tab 4: Processing & Storage Rates */}
-              {activeTab === "rates" && (
-                <motion.div key="rates" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
-                  <GlassCard>
-                    <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
-                      <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
-                        <SlidersHorizontal className="size-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-black">Processing Services & Storage Fee Rates</h3>
-                        <p className="text-xs text-gray-400">Configure global toll processing fee rates and monthly tiered storage fee schedules.</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Processing Rate (ETB / Quintal)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={procRate}
-                          placeholder="0.00"
-                          onChange={(e) => setProcRate(e.target.value === "" ? "" : Number(e.target.value))}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
-                        />
-                        <p className="text-[11px] text-gray-400 mt-1">Default fee applied per quintal of coffee processed in Toll Processing.</p>
+                {/* Tab 5: Processing & Storage Rates */}
+                {activeTab === "rates" && (
+                  <motion.div key="rates" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                    <GlassCard>
+                      <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
+                        <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
+                          <SlidersHorizontal className="size-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-black">Toll Processing &amp; Storage Fee Matrix</h3>
+                          <p className="text-xs text-gray-400">Default processing rates per quintal and tiered monthly storage charge schedules.</p>
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Base Storage Rate (ETB / Quintal / Day)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={baseStorage}
-                          placeholder="0.00"
-                          onChange={(e) => setBaseStorage(e.target.value === "" ? "" : Number(e.target.value))}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
-                        />
-                        <p className="text-[11px] text-gray-400 mt-1">Initial rate charged for warehouse inventory storage per day.</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Standard Processing Fee (ETB / Quintal)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={procRate}
+                            placeholder="0.00"
+                            onChange={(e) => setProcRate(e.target.value === "" ? "" : Number(e.target.value))}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                          />
+                          <p className="text-[11px] text-gray-400 mt-1">Base rate applied when generating Toll Processing job orders.</p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Base Storage Rate (ETB / Quintal / Day)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={baseStorage}
+                            placeholder="0.00"
+                            onChange={(e) => setBaseStorage(e.target.value === "" ? "" : Number(e.target.value))}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                          />
+                          <p className="text-[11px] text-gray-400 mt-1">Starting daily storage fee assessed per quintal for month 1.</p>
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Monthly Increment Rate (ETB)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={storageIncrement}
-                          placeholder="0.00"
-                          onChange={(e) => setStorageIncrement(e.target.value === "" ? "" : Number(e.target.value))}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
-                        />
-                        <p className="text-[11px] text-gray-400 mt-1">Automatic fee addition applied for each month goods remain stored.</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Monthly Storage Increment (ETB / Qtl / Month)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={storageIncrement}
+                            placeholder="0.00"
+                            onChange={(e) => setStorageIncrement(e.target.value === "" ? "" : Number(e.target.value))}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                          />
+                          <p className="text-[11px] text-gray-400 mt-1">Automatic fee addition applied for each month goods remain stored.</p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Max Storage Month Cap (Months)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={maxStorageMonth}
+                            placeholder="0"
+                            onChange={(e) => setMaxStorageMonth(e.target.value === "" ? "" : Number(e.target.value))}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                          />
+                          <p className="text-[11px] text-gray-400 mt-1">Maximum month cap before tiered storage rates stop compounding.</p>
+                        </div>
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Max Storage Month Cap (Months)</label>
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Free Storage Grace Period (Days)</label>
                         <input
                           type="number"
                           min="0"
-                          step="1"
-                          value={maxStorageMonth}
+                          value={storageFreeDays}
                           placeholder="0"
-                          onChange={(e) => setMaxStorageMonth(e.target.value === "" ? "" : Number(e.target.value))}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
+                          onChange={(e) => setStorageFreeDays(e.target.value === "" ? "" : Number(e.target.value))}
+                          className="w-full md:w-1/2 bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
                         />
-                        <p className="text-[11px] text-gray-400 mt-1">Maximum month cap before tiered storage rates stop compounding.</p>
+                        <p className="text-[11px] text-gray-400 mt-1">Initial grace window before storage fees begin accruing.</p>
                       </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Free Storage Grace Period (Days)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={storageFreeDays}
-                        placeholder="0"
-                        onChange={(e) => setStorageFreeDays(e.target.value === "" ? "" : Number(e.target.value))}
-                        className="w-full md:w-1/2 bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-emerald-600 focus:bg-white transition-colors font-mono"
-                      />
-                      <p className="text-[11px] text-gray-400 mt-1">Initial grace window before storage fees begin accruing.</p>
-                    </div>
-                  </GlassCard>
-                </motion.div>
-              )}
-
-              {/* Tab 5: GL Account Mappings */}
-              {activeTab === "accounts" && (
-                <motion.div key="accounts" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
-                  <GlassCard>
-                    <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
-                      <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
-                        <BookOpen className="size-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-black">Default Chart of Accounts Mappings</h3>
-                        <p className="text-xs text-gray-400">Map standard business transactions to specific accounts from your Chart of Accounts.</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Inventory Asset Account</label>
-                        <select
-                          value={defaultInventoryAcc}
-                          onChange={(e) => setDefaultInventoryAcc(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white transition-colors"
-                        >
-                          <option value="">Select Ledger Account...</option>
-                          {accounts
-                            .filter((a) => a.account_type === "Asset")
-                            .map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.code} - {a.name}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Sales Revenue Account</label>
-                        <select
-                          value={defaultRevenueAcc}
-                          onChange={(e) => setDefaultRevenueAcc(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white transition-colors"
-                        >
-                          <option value="">Select Ledger Account...</option>
-                          {accounts
-                            .filter((a) => a.account_type === "Revenue")
-                            .map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.code} - {a.name}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Cost of Goods Sold (COGS)</label>
-                        <select
-                          value={defaultCogsAcc}
-                          onChange={(e) => setDefaultCogsAcc(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white transition-colors"
-                        >
-                          <option value="">Select Ledger Account...</option>
-                          {accounts
-                            .filter((a) => a.account_type === "Expense")
-                            .map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.code} - {a.name}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Damage / Adjustment Loss Account</label>
-                        <select
-                          value={defaultDamageAcc}
-                          onChange={(e) => setDefaultDamageAcc(e.target.value)}
-                          className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white transition-colors"
-                        >
-                          <option value="">Select Ledger Account...</option>
-                          {accounts
-                            .filter((a) => a.account_type === "Expense")
-                            .map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.code} - {a.name}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Primary Settlement Cash / Bank Account</label>
-                      <select
-                        value={defaultCashAcc}
-                        onChange={(e) => setDefaultCashAcc(e.target.value)}
-                        className="w-full md:w-1/2 bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white transition-colors"
-                      >
-                        <option value="">Select Ledger Account...</option>
-                        {accounts
-                          .filter((a) => a.account_type === "Asset")
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.code} - {a.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </GlassCard>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                    </GlassCard>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
 
             {/* Bottom Action Buttons (for tabs with general form inputs) */}
-            {["general", "tax", "rates", "accounts"].includes(activeTab) && (
+            {!erp.isLoading() && !finance.isLoading() && ["general", "pension", "tax", "rates"].includes(activeTab) && (
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   onClick={handleDiscardChanges}

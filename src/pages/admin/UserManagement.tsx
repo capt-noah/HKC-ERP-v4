@@ -9,6 +9,7 @@ import { cn, sortNewestFirst } from "@/lib/utils"
 import { useFeedback } from "@/context/FeedbackContext"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
+import { Skeleton } from "@/components/ui/skeleton"
 import { loadResource, updateResource, deleteResource, API_BASE } from "@/lib/apiPersistence"
 import type { Role } from "@/lib/authStore"
 
@@ -40,24 +41,22 @@ interface Employee {
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 
-const roleLabels: Record<Role, string> = {
+const roleLabels: Record<string, string> = {
   superadmin: "Super Admin",
   sales_manager: "Sales Manager",
   hr_manager: "HR Manager",
-  finance_manager: "Finance Manager",
-  hkc_docs_manager: "HKC Docs Manager",
   inventory_admin: "Inventory Admin",
+  finance_manager: "Finance Manager",
+  hkc_docs_manager: "HKC Docs Specialist",
 }
 
 const avatarBgPresets = [
-  "bg-pink-50 text-pink-700 border border-pink-100",
-  "bg-purple-50 text-purple-700 border border-purple-100",
-  "bg-green-50 text-green-700 border border-green-100",
-  "bg-emerald-50 text-emerald-700 border border-emerald-100",
-  "bg-sky-50 text-sky-700 border border-sky-100",
-  "bg-rose-50 text-rose-700 border border-rose-100",
-  "bg-blue-50 text-blue-700 border border-blue-100",
-  "bg-indigo-50 text-indigo-700 border border-indigo-100"
+  "bg-emerald-500/15 text-emerald-700 border border-emerald-500/20",
+  "bg-blue-500/15 text-blue-700 border border-blue-500/20",
+  "bg-amber-500/15 text-amber-700 border border-amber-500/20",
+  "bg-purple-500/15 text-purple-700 border border-purple-500/20",
+  "bg-rose-500/15 text-rose-700 border border-rose-500/20",
+  "bg-cyan-500/15 text-cyan-700 border border-cyan-500/20",
 ]
 
 interface PasswordStrength {
@@ -92,38 +91,52 @@ function getPasswordStrength(password: string): PasswordStrength {
 
 function UserTableSkeleton() {
   return (
-    <div className="p-4 animate-pulse">
-      <div className="flex items-center justify-between pb-4 border-b border-black/5 px-2">
-        <div className="h-3.5 w-24 bg-black/10 rounded-full" />
-        <div className="h-3.5 w-28 bg-black/10 rounded-full" />
-        <div className="h-3.5 w-32 bg-black/10 rounded-full hidden sm:block" />
-        <div className="h-3.5 w-16 bg-black/10 rounded-full hidden md:block" />
-        <div className="h-3.5 w-20 bg-black/10 rounded-full" />
-      </div>
-      <div className="divide-y divide-black/[0.03]">
-        {[...Array(6)].map((_, idx) => (
-          <div key={idx} className="flex items-center justify-between py-4 px-2 gap-4">
-            <div className="flex items-center gap-3 min-w-[180px]">
-              <div className="size-10 rounded-full bg-black/10 shrink-0" />
-              <div className="space-y-1.5 flex-1">
-                <div className="h-3.5 w-32 bg-black/10 rounded-full" />
-                <div className="h-2.5 w-24 bg-black/5 rounded-full" />
-              </div>
-            </div>
-            <div className="flex gap-1.5 min-w-[140px]">
-              <div className="h-5 w-20 bg-black/10 rounded-full" />
-              <div className="h-5 w-16 bg-black/5 rounded-full hidden lg:block" />
-            </div>
-            <div className="h-3.5 w-28 bg-black/10 rounded-full hidden sm:block min-w-[100px]" />
-            <div className="h-5 w-16 bg-black/10 rounded-full hidden md:block" />
-            <div className="flex items-center justify-end gap-2 shrink-0">
-              <div className="size-7 rounded-lg bg-black/10" />
-              <div className="size-7 rounded-lg bg-black/10" />
-              <div className="size-7 rounded-lg bg-black/10" />
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="overflow-x-auto animate-pulse">
+      <table className="w-full text-left border-collapse">
+        <thead>
+          <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
+            <th className="py-4 px-4"><Skeleton className="h-3 w-20 bg-zinc-200/70 rounded-full" /></th>
+            <th className="py-4 px-4"><Skeleton className="h-3 w-28 bg-zinc-200/70 rounded-full" /></th>
+            <th className="py-4 px-4"><Skeleton className="h-3 w-32 bg-zinc-200/70 rounded-full" /></th>
+            <th className="py-4 px-4 text-center"><Skeleton className="h-3 w-16 bg-zinc-200/70 rounded-full mx-auto" /></th>
+            <th className="py-4 px-4 text-right"><Skeleton className="h-3 w-20 bg-zinc-200/70 rounded-full ml-auto" /></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-100">
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <tr key={idx} className="border-b border-zinc-100/60">
+              <td className="py-4 px-4">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="size-9 rounded-2xl bg-zinc-200/80 shrink-0" />
+                  <div className="space-y-1.5 flex-1">
+                    <Skeleton className="h-4 w-32 bg-zinc-200/80 rounded-md" />
+                    <Skeleton className="h-3 w-20 bg-zinc-150/60 rounded-md" />
+                  </div>
+                </div>
+              </td>
+              <td className="py-4 px-4">
+                <div className="flex gap-1.5">
+                  <Skeleton className="h-5 w-24 bg-zinc-200/70 rounded-full" />
+                  <Skeleton className="h-5 w-20 bg-zinc-200/70 rounded-full hidden sm:inline-block" />
+                </div>
+              </td>
+              <td className="py-4 px-4">
+                <Skeleton className="h-4 w-36 bg-zinc-200/70 rounded-md" />
+              </td>
+              <td className="py-4 px-4 text-center">
+                <Skeleton className="h-6 w-20 bg-zinc-200/70 rounded-full mx-auto" />
+              </td>
+              <td className="py-4 px-4 text-right">
+                <div className="flex items-center justify-end gap-1.5">
+                  <Skeleton className="h-7 w-20 bg-zinc-200/80 rounded-xl" />
+                  <Skeleton className="h-7 w-16 bg-zinc-200/80 rounded-xl" />
+                  <Skeleton className="h-7 w-16 bg-zinc-200/80 rounded-xl" />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -374,12 +387,12 @@ export default function UserManagement() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 pt-24 pb-12">
+      <motion.div initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 pt-20 sm:pt-24 pb-12">
         {/* Header Block */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
+        <motion.div variants={fade} className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">User Management</h1>
-            <p className="text-sm text-gray-500 mt-1">Manage user accounts, warehouse scopes, and authorization access levels.</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">User Management</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">Manage user accounts, warehouse scopes, and authorization access levels.</p>
           </div>
 
           <div className="shrink-0">
@@ -388,9 +401,9 @@ export default function UserManagement() {
         </motion.div>
 
         {/* Controls Row */}
-        <motion.div variants={fade} className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 mb-6">
+        <motion.div variants={fade} className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2.5 sm:gap-3 mb-6 flex-wrap">
           {/* Search */}
-          <div className="relative flex items-center h-[38px] px-3.5 rounded-full glass-card border border-black/5 hover:bg-white/50 focus-within:bg-white/80 transition-all w-full sm:w-48 shrink-0">
+          <div className="relative flex items-center h-[38px] sm:h-[40px] px-3.5 rounded-full glass-card border border-black/5 hover:bg-white/50 focus-within:bg-white/80 transition-all flex-1 min-w-[140px] sm:w-48 sm:flex-none">
             <Search className="size-3.5 text-gray-400 mr-2 shrink-0" />
             <input
               type="text"
@@ -402,7 +415,7 @@ export default function UserManagement() {
           </div>
 
           {/* Role Filter */}
-          <div className="relative flex items-center h-[38px] px-3.5 rounded-full glass-card border border-black/5 hover:bg-white/50 transition-all shrink-0">
+          <div className="relative flex items-center h-[38px] sm:h-[40px] px-3.5 rounded-full glass-card border border-black/5 hover:bg-white/50 transition-all shrink-0">
             <ShieldCheck className="size-3.5 text-gray-400 mr-2 shrink-0" />
             <select
               value={selectedRoleFilter}
@@ -417,7 +430,7 @@ export default function UserManagement() {
           </div>
 
           {/* Status Filter */}
-          <div className="relative flex items-center h-[38px] px-3.5 rounded-full glass-card border border-black/5 hover:bg-white/50 transition-all shrink-0">
+          <div className="relative flex items-center h-[38px] sm:h-[40px] px-3.5 rounded-full glass-card border border-black/5 hover:bg-white/50 transition-all shrink-0">
             <Filter className="size-3.5 text-gray-400 mr-2 shrink-0" />
             <select
               value={selectedStatusFilter}
@@ -432,7 +445,7 @@ export default function UserManagement() {
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 bg-green-700 hover:bg-green-800 text-white rounded-full h-[38px] px-4 text-xs font-bold shadow-sm transition-all active:scale-95 whitespace-nowrap"
+            className="flex items-center gap-1.5 bg-green-700 hover:bg-green-800 text-white rounded-full h-[38px] sm:h-[40px] px-4 text-xs font-bold shadow-sm transition-all active:scale-95 whitespace-nowrap cursor-pointer"
           >
             <Plus className="size-3.5" />
             <span>Add User</span>
@@ -524,36 +537,49 @@ export default function UserManagement() {
                                 {user.status}
                               </span>
                             </td>
-                            <td className="py-4 px-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="py-4 px-4 text-right whitespace-nowrap overflow-hidden">
+                              <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                                 <button
+                                  type="button"
                                   onClick={() => handleToggleStatus(user)}
                                   className={cn(
-                                    "p-1.5 rounded-lg transition-all active:scale-90 border border-black/5 hover:bg-black/5",
-                                    user.status === "active" ? "text-rose-600" : "text-emerald-600"
+                                    "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-extrabold text-[11px] transition-all border active:scale-95 shadow-2xs cursor-pointer",
+                                    user.status === "active"
+                                      ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200/80"
+                                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200/80"
                                   )}
                                   title={user.status === "active" ? "Suspend Access" : "Activate Access"}
                                 >
-                                  {user.status === "active" ? <UserX className="size-4" /> : <UserCheck className="size-4" />}
+                                  {user.status === "active" ? (
+                                    <>
+                                      <UserX className="size-3 text-amber-700" /> Suspend
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserCheck className="size-3 text-emerald-700" /> Activate
+                                    </>
+                                  )}
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     setEditingUser(user)
                                     setEditPassword("")
                                     setShowEditingUserPassword(false)
                                     setShowEditModal(true)
                                   }}
-                                  className="p-1.5 hover:bg-black/5 rounded-lg border border-black/5 text-zinc-700 transition-all active:scale-90"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
                                   title="Edit Roles"
                                 >
-                                  <Edit className="size-4" />
+                                  <Edit className="size-3 text-zinc-700" /> Edit
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleDeleteUser(user.id, user.username)}
-                                  className="p-1.5 hover:bg-red-50 rounded-lg border border-red-100 text-red-700 transition-all active:scale-90"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
                                   title="Delete User"
                                 >
-                                  <Trash2 className="size-4" />
+                                  <Trash2 className="size-3 text-rose-600" /> Delete
                                 </button>
                               </div>
                             </td>

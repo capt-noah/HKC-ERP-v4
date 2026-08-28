@@ -59,12 +59,12 @@ export default function HkcDocs() {
         variants={fade} 
         initial="hidden" 
         animate="visible" 
-        className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12"
+        className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12"
       >
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 sm:mb-8 gap-4">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">HKC Docs Control Center</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">HKC Docs Control Center</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
               Registry for tracking shipping documents, certificates, and license paperwork for import and export operations.
             </p>
@@ -73,7 +73,7 @@ export default function HkcDocs() {
 
         {/* Standalone Table Container */}
         <GlassCard className="flex flex-col overflow-hidden p-0 border border-white/65 shadow-md">
-          <div className="px-6 pt-6">
+          <div className="px-4 sm:px-6 pt-4 sm:pt-6">
             <FinanceTableToolbar
               title="HKC Docs Register"
               subtitle={`Total: ${records.length} records in registry`}

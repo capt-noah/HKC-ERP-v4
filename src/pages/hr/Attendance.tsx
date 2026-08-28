@@ -200,7 +200,7 @@ export default function Attendance() {
                   type="date"
                   value={date}
                   onChange={(event) => setDate(event.target.value)}
-                  className="rounded-full bg-black/[0.04] px-3.5 py-2 text-xs font-bold outline-none"
+                  className="rounded-xl border border-zinc-200/80 bg-white px-3 py-1.5 text-xs font-bold text-zinc-900 outline-none shadow-2xs"
                 />
               }
             />
@@ -245,7 +245,7 @@ export default function Attendance() {
                           <button
                             type="button"
                             onClick={() => setDraft(employee.id, { status: "Present" })}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
                               isPresent
                                 ? "bg-emerald-600 text-white shadow-xs"
                                 : "text-zinc-600 hover:bg-white/80"
@@ -257,7 +257,7 @@ export default function Attendance() {
                           <button
                             type="button"
                             onClick={() => setDraft(employee.id, { status: "Absent" })}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
                               !isPresent
                                 ? "bg-rose-600 text-white shadow-xs"
                                 : "text-zinc-600 hover:bg-white/80"
@@ -279,14 +279,15 @@ export default function Attendance() {
                         {/* Save Button */}
                         <div className="text-right">
                           <button
+                            type="button"
                             onClick={() => saveAttendance(employee)}
                             disabled={isSaving}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-black px-4 py-2 text-xs font-black text-white hover:bg-zinc-800 disabled:cursor-wait disabled:bg-zinc-700 transition-colors"
+                            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white font-extrabold text-[11px] transition-all active:scale-95 shadow-2xs disabled:opacity-50 cursor-pointer"
                           >
                             {isSaving ? (
-                              <span className="size-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                              <span className="size-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
                             ) : (
-                              <Save className="size-3.5" />
+                              <Save className="size-3 text-white" />
                             )}
                             Save
                           </button>

@@ -145,7 +145,7 @@ export default function HkcDocsTable({
       </TableScrollWrapper>
 
       {!isLoading && sortedRecords.length > 0 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 dark:border-zinc-800/60 px-6 py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 dark:border-zinc-800/60 px-4 sm:px-6 py-3.5 sm:py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
           <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
             <span>
               Showing {Math.min((page - 1) * pageSize + 1, sortedRecords.length)} to {Math.min(page * pageSize, sortedRecords.length)} of {sortedRecords.length} entries

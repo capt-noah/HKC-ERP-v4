@@ -396,11 +396,12 @@ export default function Recruitment() {
                                 {["Applied", "Screening", "Interview", "Offered", "Hired", "Rejected"].map((st) => (
                                   <button
                                     key={st}
+                                    type="button"
                                     onClick={() => handleStageChange(app.id, st as any)}
-                                    className={`text-[10px] font-bold px-2 py-1 rounded-full transition-all ${
+                                    className={`text-[10px] font-extrabold px-2.5 py-1 rounded-xl transition-all border cursor-pointer active:scale-95 shadow-2xs ${
                                       app.stage === st
-                                        ? "bg-black text-white shadow-xs"
-                                        : "bg-black/5 hover:bg-black/10 text-zinc-600"
+                                        ? "bg-zinc-950 text-white border-zinc-950 shadow-xs"
+                                        : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border-zinc-200/80"
                                     }`}
                                   >
                                     {st}

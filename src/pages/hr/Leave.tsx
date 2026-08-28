@@ -179,9 +179,17 @@ export default function Leave() {
                     <Cell width={colWidths.status} align="center">{request.status}</Cell>
                     <Cell width={colWidths.reason}>{request.reason || "-"}</Cell>
                     <Cell width={colWidths.actions} align="right">
-                      <button onClick={() => { setEditing(request); setForm({ ...request }); setShowForm(true) }} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500" title="Edit Draft"><Pencil className="size-4" /></button>
-                      <button onClick={() => changeStatus(request, "Approved")} className="p-1.5 hover:bg-emerald-50 rounded-lg text-emerald-700" title="Approve"><Check className="size-4" /></button>
-                      <button onClick={() => changeStatus(request, "Cancelled")} className="p-1.5 hover:bg-rose-50 rounded-lg text-rose-700" title="Cancel"><Ban className="size-4" /></button>
+                      <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        {request.status === "Pending" && (
+                          <>
+                            <button type="button" onClick={() => { setEditing(request); setForm({ ...request }); setShowForm(true) }} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer" title="Edit Draft"><Pencil className="size-3 text-zinc-700" /> Edit</button>
+                            <button type="button" onClick={() => changeStatus(request, "Approved")} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs cursor-pointer" title="Approve Leave"><Check className="size-3 text-emerald-700" /> Approve</button>
+                          </>
+                        )}
+                        {request.status !== "Cancelled" && (
+                          <button type="button" onClick={() => changeStatus(request, "Cancelled")} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer" title="Cancel Leave"><Ban className="size-3 text-rose-600" /> Cancel</button>
+                        )}
+                      </div>
                     </Cell>
                   </tr>
                 })}

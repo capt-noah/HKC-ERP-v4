@@ -88,7 +88,7 @@ export default function Employees() {
     { key: "start_date", label: "Start Date", initialWidth: 130 },
     { key: "basic_salary", label: "Gross Salary", align: "right", initialWidth: 140 },
     { key: "status", label: "Status", align: "center", initialWidth: 130 },
-    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 130 },
+    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 200 },
   ]
   const { colWidths, handleResizeStart } = useColumnWidths(Object.fromEntries(columns.map((col) => [col.key, col.initialWidth || 130])))
 
@@ -214,9 +214,34 @@ export default function Employees() {
                       <Cell width={colWidths.basic_salary} align="right">ETB {money(employee.basic_salary)}</Cell>
                       <Cell width={colWidths.status} align="center"><StatusPill status={employee.status} /></Cell>
                       <Cell width={colWidths.actions} align="right">
-                        <button onClick={() => setViewing(employee)} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500" title="View"><Eye className="size-4" /></button>
-                        <button onClick={() => openEdit(employee)} className="inline-flex items-center gap-1 rounded-full bg-black px-2.5 py-1 text-[10px] font-black text-white transition-all hover:bg-zinc-800" title="Edit employee details"><Pencil className="size-3" />Edit</button>
-                        <button onClick={() => deactivate(employee)} className="p-1.5 hover:bg-black/5 hover:text-rose-700 rounded-lg text-zinc-500" title="Deactivate"><UserMinus className="size-4" /></button>
+                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setViewing(employee)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="View Employee Details"
+                          >
+                            <Eye className="size-3 text-zinc-700" /> View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEdit(employee)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Edit Employee Details"
+                          >
+                            <Pencil className="size-3 text-zinc-700" /> Edit
+                          </button>
+                          {employee.status === "Active" && (
+                            <button
+                              type="button"
+                              onClick={() => deactivate(employee)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                              title="Deactivate Employee"
+                            >
+                              <UserMinus className="size-3 text-rose-600" /> Deactivate
+                            </button>
+                          )}
+                        </div>
                       </Cell>
                     </tr>
                   ))}

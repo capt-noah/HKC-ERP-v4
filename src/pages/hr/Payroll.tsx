@@ -149,9 +149,9 @@ export default function Payroll() {
     { key: "gross_pay", label: "Gross Pay", align: "right", initialWidth: 140 },
     { key: "total_deductions", label: "Total Deductions", align: "right", initialWidth: 160 },
     { key: "net_pay", label: "Net Pay", align: "right", initialWidth: 140 },
-    { key: "payment_status", label: "Payment Status", align: "center", initialWidth: 150 },
-    { key: "payroll_period_id", label: "Payroll Period", initialWidth: 180 },
-    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 170 },
+    { key: "payment_status", label: "Payment Status", align: "center", initialWidth: 130 },
+    { key: "payroll_period_id", label: "Period", initialWidth: 140 },
+    { key: "actions", label: "Actions", align: "right", sortable: false, initialWidth: 260 },
   ]
   const { colWidths, handleResizeStart } = useColumnWidths(Object.fromEntries(columns.map((col) => [col.key, col.initialWidth || 130])))
 
@@ -405,12 +405,66 @@ export default function Payroll() {
                     <Cell width={colWidths.payment_status} align="center">{record.payment_status}</Cell>
                     <Cell width={colWidths.payroll_period_id}>{period?.name || record.payroll_period_id}</Cell>
                     <Cell width={colWidths.actions} align="right">
-                      <button onClick={() => setPayslip(record)} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500" title="View"><Eye className="size-4" /></button>
-                      <button onClick={() => setEditing(record)} disabled={!canEdit} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed" title="Edit Draft"><Pencil className="size-4" /></button>
-                      <button onClick={() => transitionPaymentStatus(record, "Approved")} disabled={!canApprove} className="p-1.5 hover:bg-emerald-50 rounded-lg text-emerald-700 disabled:opacity-30 disabled:cursor-not-allowed" title="Approve"><BadgeCheck className="size-4" /></button>
-                      <button onClick={() => transitionPaymentStatus(record, "Paid")} disabled={!canMarkPaid} className="p-1.5 hover:bg-emerald-50 rounded-lg text-emerald-700 disabled:opacity-30 disabled:cursor-not-allowed" title="Mark Paid"><CheckCircle2 className="size-4" /></button>
-                      <button onClick={() => transitionPaymentStatus(record, "Cancelled")} disabled={record.payment_status === "Paid" || period?.status === "Cancelled"} className="p-1.5 hover:bg-rose-50 rounded-lg text-rose-700 disabled:opacity-30 disabled:cursor-not-allowed" title="Cancel"><Ban className="size-4" /></button>
-                      <button onClick={() => printPayslip(record)} disabled={!canPrint} className="p-1.5 hover:bg-black/5 rounded-lg text-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed" title="Print Payslip"><Printer className="size-4" /></button>
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setPayslip(record)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                          title="View Payslip"
+                        >
+                          <Eye className="size-3 text-zinc-700" /> View
+                        </button>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => setEditing(record)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Edit Draft"
+                          >
+                            <Pencil className="size-3 text-zinc-700" /> Edit
+                          </button>
+                        )}
+                        {canApprove && (
+                          <button
+                            type="button"
+                            onClick={() => transitionPaymentStatus(record, "Approved")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Approve Payroll"
+                          >
+                            <BadgeCheck className="size-3 text-emerald-700" /> Approve
+                          </button>
+                        )}
+                        {canMarkPaid && (
+                          <button
+                            type="button"
+                            onClick={() => transitionPaymentStatus(record, "Paid")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-[11px] transition-all border border-blue-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Mark as Paid"
+                          >
+                            <CheckCircle2 className="size-3 text-blue-700" /> Paid
+                          </button>
+                        )}
+                        {record.payment_status !== "Paid" && period?.status !== "Cancelled" && (
+                          <button
+                            type="button"
+                            onClick={() => transitionPaymentStatus(record, "Cancelled")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Cancel Payroll"
+                          >
+                            <Ban className="size-3 text-rose-600" /> Cancel
+                          </button>
+                        )}
+                        {canPrint && (
+                          <button
+                            type="button"
+                            onClick={() => printPayslip(record)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Print Payslip"
+                          >
+                            <Printer className="size-3 text-zinc-700" /> Print
+                          </button>
+                        )}
+                      </div>
                     </Cell>
                   </tr>
                 })}

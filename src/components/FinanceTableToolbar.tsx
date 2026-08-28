@@ -245,21 +245,21 @@ export function FinanceTableToolbar({
 
   return (
     <div className={className}>
-      <div className={`flex items-center justify-between ${secondary ? "mb-4" : "mb-5"} flex-wrap gap-4`}>
+      <div className={`flex flex-col sm:flex-row sm:items-center justify-between ${secondary ? "mb-3 sm:mb-4" : "mb-4 sm:mb-5"} gap-3 sm:gap-4`}>
         <div>
-          <h3 className="font-semibold text-base text-black">{title}</h3>
-          {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+          <h3 className="font-bold text-sm sm:text-base text-black">{title}</h3>
+          {subtitle && <p className="text-[11px] sm:text-xs text-gray-400">{subtitle}</p>}
         </div>
 
         {showControls && (
-          <div className="flex items-center gap-3 flex-wrap justify-end">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full sm:w-auto justify-start sm:justify-end">
             {onSearchChange !== undefined && (
-              <div className="flex items-center gap-2 bg-black/[0.04] rounded-2xl px-3 h-[38px]">
+              <div className="flex items-center gap-2 bg-black/[0.04] rounded-2xl px-3 h-[38px] sm:h-[40px] flex-1 min-w-[140px] sm:w-48 sm:flex-none">
                 <Search className="size-4 text-gray-400 shrink-0" />
                 <input
                   value={searchValue ?? ""}
                   onChange={(e) => onSearchChange(e.target.value)}
-                  className="bg-transparent text-xs text-black placeholder:text-gray-400 outline-none w-36 md:w-44"
+                  className="bg-transparent text-xs font-semibold text-black placeholder:text-gray-400 outline-none w-full"
                   placeholder={searchPlaceholder}
                 />
               </div>
@@ -299,7 +299,7 @@ export function FinanceTableToolbar({
           </div>
         )}
       </div>
-      {secondary && <div className="mb-5">{secondary}</div>}
+      {secondary && <div className="mb-4 sm:mb-5">{secondary}</div>}
     </div>
   )
 }

@@ -349,12 +349,12 @@ export default function PartnersRegistry() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
         {/* Header */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">Partners Registry</h1>
-            <p className="text-sm text-gray-500 mt-1">Manage enterprise Customers, Suppliers, contact directories, and default Trade Licenses.</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">Partners Registry</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">Manage enterprise Customers, Suppliers, contact directories, and default Trade Licenses.</p>
           </div>
           <div className="shrink-0">
             <SubPageNav items={getSectionChildren("/admin")} />
@@ -362,36 +362,36 @@ export default function PartnersRegistry() {
         </div>
 
         {/* Tab Switcher & Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
           <GlassCard className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">Total Registered Customers</span>
-              <p className="text-2xl font-black font-mono text-emerald-700 mt-0.5">{customers.length}</p>
+              <p className="text-xl sm:text-2xl font-black font-mono text-emerald-700 mt-0.5">{customers.length}</p>
             </div>
-            <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-700">
-              <Users className="size-5" />
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-emerald-100 text-emerald-700">
+              <Users className="size-4 sm:size-5" />
             </div>
           </GlassCard>
 
           <GlassCard className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">Total Registered Suppliers</span>
-              <p className="text-2xl font-black font-mono text-blue-700 mt-0.5">{suppliers.length}</p>
+              <p className="text-xl sm:text-2xl font-black font-mono text-blue-700 mt-0.5">{suppliers.length}</p>
             </div>
-            <div className="p-3 rounded-2xl bg-blue-100 text-blue-700">
-              <Building2 className="size-5" />
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-blue-100 text-blue-700">
+              <Building2 className="size-4 sm:size-5" />
             </div>
           </GlassCard>
 
           <GlassCard className="flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">Active Trade Licenses Onboarded</span>
-              <p className="text-2xl font-black font-mono text-purple-700 mt-0.5">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">Active Trade Licenses</span>
+              <p className="text-xl sm:text-2xl font-black font-mono text-purple-700 mt-0.5">
                 {customers.filter((c) => c.tradePaperFileName).length + suppliers.filter((s) => s.tradePaperFileName).length}
               </p>
             </div>
-            <div className="p-3 rounded-2xl bg-purple-100 text-purple-700">
-              <ShieldCheck className="size-5" />
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-purple-100 text-purple-700">
+              <ShieldCheck className="size-4 sm:size-5" />
             </div>
           </GlassCard>
         </div>
@@ -399,12 +399,12 @@ export default function PartnersRegistry() {
         {/* Master Registry Table Card */}
         <GlassCard className="p-0 border border-white/65 shadow-md overflow-hidden">
           {/* Header Toolbar */}
-          <div className="p-4 border-b border-zinc-200/80 bg-white/40 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="p-3.5 sm:p-4 border-b border-zinc-200/80 bg-white/40 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 sm:gap-4">
             {/* Left Dual Tab Switcher */}
-            <div className="flex items-center gap-1.5 p-1 bg-zinc-200/70 rounded-2xl">
+            <div className="flex items-center gap-1 p-1 bg-zinc-200/70 rounded-2xl w-full sm:w-auto">
               <button
                 onClick={() => setActiveTab("customers")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                className={`flex-1 sm:flex-none justify-center flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
                   activeTab === "customers"
                     ? "bg-white text-zinc-950 shadow-sm"
                     : "text-zinc-600 hover:text-zinc-900"
@@ -414,7 +414,7 @@ export default function PartnersRegistry() {
               </button>
               <button
                 onClick={() => setActiveTab("suppliers")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                className={`flex-1 sm:flex-none justify-center flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
                   activeTab === "suppliers"
                     ? "bg-white text-zinc-950 shadow-sm"
                     : "text-zinc-600 hover:text-zinc-900"
@@ -425,8 +425,8 @@ export default function PartnersRegistry() {
             </div>
 
             {/* Right Search & Action Trigger */}
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <div className="relative flex-1 md:w-64">
+            <div className="flex items-center gap-2 sm:gap-3 w-full md:w-auto flex-wrap sm:flex-nowrap">
+              <div className="relative flex-1 min-w-[140px] md:w-64">
                 <Search className="size-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
@@ -440,14 +440,14 @@ export default function PartnersRegistry() {
               {activeTab === "customers" ? (
                 <button
                   onClick={openAddCustomer}
-                  className="px-4 py-2 rounded-xl bg-emerald-700 text-white font-bold text-xs hover:bg-emerald-800 shadow-sm flex items-center gap-1.5 shrink-0"
+                  className="px-3.5 sm:px-4 py-2 rounded-xl bg-emerald-700 text-white font-bold text-xs hover:bg-emerald-800 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-transform"
                 >
                   <Plus className="size-3.5" /> Add Customer
                 </button>
               ) : (
                 <button
                   onClick={openAddSupplier}
-                  className="px-4 py-2 rounded-xl bg-blue-700 text-white font-bold text-xs hover:bg-blue-800 shadow-sm flex items-center gap-1.5 shrink-0"
+                  className="px-3.5 sm:px-4 py-2 rounded-xl bg-blue-700 text-white font-bold text-xs hover:bg-blue-800 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-transform"
                 >
                   <Plus className="size-3.5" /> Add Supplier
                 </button>
@@ -469,9 +469,33 @@ export default function PartnersRegistry() {
                 </thead>
                 <tbody className="divide-y divide-zinc-200/60 font-semibold text-zinc-800">
                   {isLoading ? (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center"><Skeleton className="h-6 w-full bg-zinc-200/80" /></td>
-                    </tr>
+                    <>
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <tr key={index} className="border-b border-zinc-150/40">
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-3.5 w-24 bg-zinc-200/80 rounded-md" />
+                            <Skeleton className="h-4 w-40 bg-zinc-200/90 rounded-md mt-1.5" />
+                          </td>
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-5 w-28 bg-zinc-200/70 rounded-full" />
+                            <Skeleton className="h-3 w-32 bg-zinc-150/60 rounded-md mt-1.5" />
+                          </td>
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-4 w-32 bg-zinc-200/80 rounded-md" />
+                            <Skeleton className="h-3 w-40 bg-zinc-150/60 rounded-md mt-1.5" />
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <Skeleton className="h-6 w-32 bg-zinc-200/70 rounded-full mx-auto" />
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Skeleton className="h-7 w-16 bg-zinc-200/80 rounded-xl" />
+                              <Skeleton className="h-7 w-16 bg-zinc-200/80 rounded-xl" />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </>
                   ) : filteredCustomers.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="p-8 text-center text-zinc-400 font-medium">No customers found in registry.</td>
@@ -548,21 +572,23 @@ export default function PartnersRegistry() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3.5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap overflow-hidden">
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <button
+                              type="button"
                               onClick={() => openEditCustomer(c)}
-                              className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
                               title="Edit Customer"
                             >
-                              <Edit className="size-3.5" />
+                              <Edit className="size-3 text-zinc-700" /> Edit
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteCustomer(c)}
-                              className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
                               title="Delete Customer"
                             >
-                              <Trash2 className="size-3.5" />
+                              <Trash2 className="size-3 text-rose-600" /> Delete
                             </button>
                           </div>
                         </td>
@@ -584,9 +610,33 @@ export default function PartnersRegistry() {
                 </thead>
                 <tbody className="divide-y divide-zinc-200/60 font-semibold text-zinc-800">
                   {isLoading ? (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center"><Skeleton className="h-6 w-full bg-zinc-200/80" /></td>
-                    </tr>
+                    <>
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <tr key={index} className="border-b border-zinc-150/40">
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-3.5 w-24 bg-zinc-200/80 rounded-md" />
+                            <Skeleton className="h-4 w-40 bg-zinc-200/90 rounded-md mt-1.5" />
+                          </td>
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-5 w-28 bg-zinc-200/70 rounded-full" />
+                            <Skeleton className="h-3 w-32 bg-zinc-150/60 rounded-md mt-1.5" />
+                          </td>
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-4 w-32 bg-zinc-200/80 rounded-md" />
+                            <Skeleton className="h-3 w-40 bg-zinc-150/60 rounded-md mt-1.5" />
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <Skeleton className="h-6 w-32 bg-zinc-200/70 rounded-full mx-auto" />
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Skeleton className="h-7 w-16 bg-zinc-200/80 rounded-xl" />
+                              <Skeleton className="h-7 w-16 bg-zinc-200/80 rounded-xl" />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </>
                   ) : filteredSuppliers.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="p-8 text-center text-zinc-400 font-medium">No suppliers found in registry.</td>
@@ -624,21 +674,23 @@ export default function PartnersRegistry() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3.5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap overflow-hidden">
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <button
+                              type="button"
                               onClick={() => openEditSupplier(s)}
-                              className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
                               title="Edit Supplier"
                             >
-                              <Edit className="size-3.5" />
+                              <Edit className="size-3 text-zinc-700" /> Edit
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteSupplier(s)}
-                              className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
                               title="Delete Supplier"
                             >
-                              <Trash2 className="size-3.5" />
+                              <Trash2 className="size-3 text-rose-600" /> Delete
                             </button>
                           </div>
                         </td>
