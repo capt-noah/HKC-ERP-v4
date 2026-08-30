@@ -51,8 +51,6 @@ export const resources = {
   expense_claims: { table: "expense_claims", module: "hr", ...jsonb },
   appraisals: { table: "appraisals", module: "hr", ...jsonb },
   training_programs: { table: "training_programs", module: "hr", ...jsonb },
-
-  cost_center_budgets: { table: "cost_center_budgets", module: "finance", planned: true, ...jsonb },
 }
 
 export function getResource(name) {

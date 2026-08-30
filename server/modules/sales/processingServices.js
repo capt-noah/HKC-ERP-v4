@@ -5,8 +5,6 @@ import {
   VALID_PROCESSING_STAGES,
 } from "./processingServicesLogic.js"
 
-const memoryProcessingServices = new Map()
-
 function headers(prefer) {
   const apiKey = config.supabaseServiceRoleKey || config.supabasePublishableKey
   const result = {
@@ -28,59 +26,6 @@ async function parseResponse(response) {
   }
 }
 
-// ── Initial Seed Data for Memory Fallback Store ──────────────────────────────
-const INITIAL_PROCESSING_SERVICES = [
-  {
-    id: "PS-2026-001",
-    reference_number: "PS-2026-001",
-    client_company_name: "Limmu Coffee Growers Union",
-    customer_id: "CUST-LIMMU",
-    goods_description: "Raw Arabica Coffee Beans (Grade 4 Unwashed)",
-    quantity: 500,
-    uom: "Quintal",
-    entry_date: "2026-08-01",
-    agreed_price: 75000,
-    currency: "ETB",
-    status: "Processed",
-    status_history: [
-      { stage: "Received", timestamp: "2026-08-01T10:30:00.000Z" },
-      { stage: "Processed", timestamp: "2026-08-02T14:15:00.000Z" },
-    ],
-    assigned_to: "Abebe Bikila",
-    invoice_id: null,
-    notes: "Toll milling, washing, and moisture level testing to 11.5%.",
-    contract_url: null,
-    contract_file_name: null,
-    created_at: "2026-07-28T08:00:00.000Z",
-    updated_at: "2026-08-02T14:15:00.000Z",
-  },
-  {
-    id: "PS-2026-002",
-    reference_number: "PS-2026-002",
-    client_company_name: "Yirgacheffe Export Farmers Co.",
-    customer_id: "CUST-YIRGA",
-    goods_description: "Natural Processed Coffee Cherry",
-    quantity: 350,
-    uom: "Quintal",
-    entry_date: "2026-08-05",
-    agreed_price: 52500,
-    currency: "ETB",
-    status: "Received",
-    status_history: [
-      { stage: "Received", timestamp: "2026-08-05T11:00:00.000Z" },
-    ],
-    assigned_to: "Abebe Bikila",
-    invoice_id: null,
-    notes: "Awaiting sun-drying floor allocation.",
-    contract_url: null,
-    contract_file_name: null,
-    created_at: "2026-08-03T09:00:00.000Z",
-    updated_at: "2026-08-05T11:00:00.000Z",
-  },
-]
-
-INITIAL_PROCESSING_SERVICES.forEach((item) => memoryProcessingServices.set(item.id, item))
-
 export async function listProcessingServices(query = {}) {
   try {
     const url = new URL("processing_services", config.supabaseRestUrl)
@@ -91,25 +36,16 @@ export async function listProcessingServices(query = {}) {
     url.searchParams.set("order", "created_at.desc")
     const response = await fetch(url, { headers: headers() })
     const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows) && rows.length > 0) {
+    if (response.ok && Array.isArray(rows)) {
       return { status: 200, body: rows }
     }
+    return { status: response.status || 500, body: rows || [] }
   } catch (err) {
-    console.warn("listProcessingServices DB warning:", err.message)
+    return { status: 500, body: { error: "Failed to list processing services", message: err.message } }
   }
-
-  let list = Array.from(memoryProcessingServices.values())
-  if (query.status) {
-    list = list.filter((item) => item.status === query.status)
-  }
-  return { status: 200, body: list }
 }
 
 export async function getProcessingService(id) {
-  if (memoryProcessingServices.has(id)) {
-    return { status: 200, body: memoryProcessingServices.get(id) }
-  }
-
   try {
     const url = new URL("processing_services", config.supabaseRestUrl)
     url.searchParams.set("id", `eq.${id}`)
@@ -119,11 +55,10 @@ export async function getProcessingService(id) {
     if (response.ok && Array.isArray(rows) && rows.length > 0) {
       return { status: 200, body: rows[0] }
     }
+    return { status: 404, body: { error: `Processing service '${id}' not found.` } }
   } catch (err) {
-    console.warn("getProcessingService DB warning:", err.message)
+    return { status: 500, body: { error: `Failed to get processing service '${id}'`, message: err.message } }
   }
-
-  return { status: 404, body: { error: `Processing service '${id}' not found.` } }
 }
 
 export async function createProcessingService(input) {
@@ -139,9 +74,7 @@ export async function createProcessingService(input) {
   const doc = {
     id,
     reference_number,
-    referenceNumber: reference_number,
     client_company_name,
-    customer_name: client_company_name,
     customer_id: input?.customer_id || null,
     goods_description: input?.goods_description || "Raw Agricultural Commodity",
     quantity: Number(input?.quantity || 1),
@@ -153,16 +86,20 @@ export async function createProcessingService(input) {
     status_history: [
       { stage: "Received", timestamp: new Date().toISOString() },
     ],
-    assigned_to: input?.assigned_to || input?.assignedTo || "",
+    assigned_to: input?.assigned_to || input?.assignedTo || null,
     invoice_id: null,
     notes: input?.notes || "",
-    contract_url: null,
-    contract_file_name: null,
+    contract_url: input?.contract_url || null,
+    contract_file_name: input?.contract_file_name || null,
+    locked_processing_rate: input?.locked_processing_rate ?? null,
+    locked_processing_fee: input?.locked_processing_fee ?? null,
+    locked_storage_fee: input?.locked_storage_fee ?? null,
+    locked_total_fee: input?.locked_total_fee ?? null,
+    processed_at: input?.processed_at ?? null,
+    delivered_at: input?.delivered_at ?? null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-
-  memoryProcessingServices.set(id, doc)
 
   try {
     const url = new URL("processing_services", config.supabaseRestUrl)
@@ -175,11 +112,13 @@ export async function createProcessingService(input) {
     if (response.ok && Array.isArray(rows) && rows.length > 0) {
       return { status: 200, body: rows[0] }
     }
+    if (!response.ok) {
+      return { status: response.status, body: rows }
+    }
+    return { status: 200, body: doc }
   } catch (err) {
-    console.warn("createProcessingService DB warning:", err.message)
+    return { status: 500, body: { error: "Failed to create processing service", message: err.message } }
   }
-
-  return { status: 200, body: doc }
 }
 
 export async function updateProcessingService(input, id) {
@@ -196,21 +135,33 @@ export async function updateProcessingService(input, id) {
     updated_at: new Date().toISOString(),
   }
 
-  memoryProcessingServices.set(id, updated)
+  // Remove virtual / non-column fields if present
+  delete updated.referenceNumber
+  delete updated.customer_name
+  delete updated.clientName
+  delete updated.assignedTo
+  delete updated.entryDate
+  delete updated.agreedPrice
 
   try {
     const url = new URL("processing_services", config.supabaseRestUrl)
     url.searchParams.set("id", `eq.${id}`)
-    await fetch(url, {
+    const response = await fetch(url, {
       method: "PATCH",
       headers: headers("return=representation"),
       body: JSON.stringify(updated),
     })
+    const rows = await parseResponse(response)
+    if (response.ok && Array.isArray(rows) && rows.length > 0) {
+      return { status: 200, body: rows[0] }
+    }
+    if (!response.ok) {
+      return { status: response.status, body: rows }
+    }
+    return { status: 200, body: updated }
   } catch (err) {
-    console.warn("updateProcessingService DB warning:", err.message)
+    return { status: 500, body: { error: "Failed to update processing service", message: err.message } }
   }
-
-  return { status: 200, body: updated }
 }
 
 export async function transitionProcessingServiceStage(id, targetStage, extraData = {}) {
@@ -364,8 +315,7 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
     }
   }
 
-  const updatedDoc = {
-    ...existing,
+  const patchBody = {
     status: targetStage,
     status_history: history,
     invoice_id: invoiceId,
@@ -379,52 +329,41 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
     updated_at: new Date().toISOString(),
   }
 
-  memoryProcessingServices.set(id, updatedDoc)
-
   try {
     const url = new URL("processing_services", config.supabaseRestUrl)
     url.searchParams.set("id", `eq.${id}`)
-    await fetch(url, {
+    const response = await fetch(url, {
       method: "PATCH",
       headers: headers("return=representation"),
-      body: JSON.stringify({
-        status: targetStage,
-        status_history: history,
-        invoice_id: invoiceId,
-        locked_processing_rate: lockedProcessingRate,
-        locked_processing_fee: lockedProcessingFee,
-        locked_storage_fee: lockedStorageFee,
-        locked_total_fee: lockedTotalFee,
-        processed_at: processedAt,
-        delivered_at: deliveredAt,
-        agreed_price: agreedPrice,
-        updated_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify(patchBody),
     })
-  } catch (err) {
-    console.warn("transitionProcessingServiceStage DB warning:", err.message)
-  }
+    const rows = await parseResponse(response)
+    const resultDoc = Array.isArray(rows) && rows.length > 0 ? rows[0] : { ...existing, ...patchBody }
 
-  return {
-    status: 200,
-    body: {
-      ...updatedDoc,
-      ok: true,
-      journalEntry,
-    },
+    return {
+      status: response.ok ? 200 : response.status,
+      body: {
+        ...resultDoc,
+        ok: response.ok,
+        journalEntry,
+      },
+    }
+  } catch (err) {
+    return { status: 500, body: { error: "Failed to transition stage in DB", message: err.message } }
   }
 }
 
 export async function deleteProcessingService(id) {
-  memoryProcessingServices.delete(id)
-
   try {
     const url = new URL("processing_services", config.supabaseRestUrl)
     url.searchParams.set("id", `eq.${id}`)
-    await fetch(url, { method: "DELETE", headers: headers() })
+    const response = await fetch(url, { method: "DELETE", headers: headers() })
+    if (response.ok) {
+      return { status: 200, body: { ok: true, deletedId: id } }
+    }
+    const errBody = await parseResponse(response)
+    return { status: response.status, body: errBody }
   } catch (err) {
-    console.warn("deleteProcessingService DB warning:", err.message)
+    return { status: 500, body: { error: "Failed to delete processing service", message: err.message } }
   }
-
-  return { status: 200, body: { ok: true, deletedId: id } }
 }

@@ -81,10 +81,8 @@ select public.create_hkc_document_table(table_name)
 from (
   values
     ('warehouses'),
-    ('inventory'),
     ('inventory_products'),
-    ('inventory_batches'),
-    ('warehouse_stock'),
+    ('bin_cards'),
     ('stock_movements'),
     ('store_transfers'),
     ('sales_orders'),
@@ -93,14 +91,12 @@ from (
     ('purchase_orders'),
     ('customers'),
     ('suppliers'),
+    ('hkc_doc_records'),
     ('chart_of_accounts'),
     ('journal_entries'),
     ('journal_entry_lines'),
     ('invoices'),
     ('payments'),
-    ('cash_accounts'),
-    ('accounts_receivable'),
-    ('customer_balances'),
     ('expenses'),
     ('recurring_expense_schedules'),
     ('vehicles'),
@@ -125,8 +121,7 @@ from (
     ('leave_requests'),
     ('expense_claims'),
     ('appraisals'),
-    ('training_programs'),
-    ('cost_center_budgets')
+    ('training_programs')
 ) as tables(table_name);
 
 create unique index if not exists employees_employee_number_unique
