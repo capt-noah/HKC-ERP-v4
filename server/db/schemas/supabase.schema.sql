@@ -100,13 +100,8 @@ from (
     ('expenses'),
     ('recurring_expense_schedules'),
     ('vehicles'),
-    ('accounting_periods'),
     ('company_settings'),
-    ('payroll_runs'),
-    ('revaluations'),
-    ('fixed_assets'),
     ('tax_rules'),
-    ('tax_schedules'),
     ('employees'),
     ('attendance_records'),
     ('payroll_periods'),
@@ -118,10 +113,7 @@ from (
     ('onboardings'),
     ('separations'),
     ('leave_types'),
-    ('leave_requests'),
-    ('expense_claims'),
-    ('appraisals'),
-    ('training_programs')
+    ('leave_requests')
 ) as tables(table_name);
 
 create unique index if not exists employees_employee_number_unique

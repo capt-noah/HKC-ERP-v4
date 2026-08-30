@@ -28,13 +28,8 @@ export const resources = {
   expenses: { table: "expenses", module: "finance", ...jsonb },
   recurring_expense_schedules: { table: "recurring_expense_schedules", module: "finance", ...jsonb },
   vehicles: { table: "vehicles", module: "finance", ...jsonb },
-  accounting_periods: { table: "accounting_periods", module: "finance", ...jsonb },
   company_settings: { table: "company_settings", module: "finance", ...jsonb },
-  payroll_runs: { table: "payroll_runs", module: "finance", ...jsonb },
-  revaluations: { table: "revaluations", module: "finance", ...jsonb },
-  fixed_assets: { table: "fixed_assets", module: "finance", ...jsonb },
   tax_rules: { table: "tax_rules", module: "finance", ...jsonb },
-  tax_schedules: { table: "tax_schedules", module: "finance", ...jsonb },
 
   employees: { table: "employees", module: "hr", ...jsonb },
   attendance_records: { table: "attendance_records", module: "hr", ...jsonb },
@@ -48,9 +43,6 @@ export const resources = {
   separations: { table: "separations", module: "hr", ...jsonb },
   leave_types: { table: "leave_types", module: "hr", ...jsonb },
   leave_requests: { table: "leave_requests", module: "hr", ...jsonb },
-  expense_claims: { table: "expense_claims", module: "hr", ...jsonb },
-  appraisals: { table: "appraisals", module: "hr", ...jsonb },
-  training_programs: { table: "training_programs", module: "hr", ...jsonb },
 }
 
 export function getResource(name) {

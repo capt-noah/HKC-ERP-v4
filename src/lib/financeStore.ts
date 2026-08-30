@@ -415,13 +415,8 @@ class FinanceStore {
         recurringSchedules,
         expenses,
         vehicles,
-        periods,
         companySettingsRows,
-        payrollRuns,
-        revaluations,
-        fixedAssets,
         taxRules,
-        taxSchedules,
       ] = await Promise.all([
         loadResource<AccountItem>("chart_of_accounts"),
         loadResource<JournalEntry>("journal_entries"),
@@ -431,13 +426,8 @@ class FinanceStore {
         loadResource<RecurringExpenseSchedule>("recurring_expense_schedules"),
         loadResource<OneOffExpense>("expenses"),
         loadResource<Vehicle>("vehicles"),
-        loadResource<AccountingPeriod>("accounting_periods"),
         loadResource<CompanySettings & { id?: string }>("company_settings"),
-        loadResource<PayrollRun>("payroll_runs"),
-        loadResource<Revaluation>("revaluations"),
-        loadResource<FixedAsset>("fixed_assets"),
         loadResource<TaxRule>("tax_rules"),
-        loadResource<TaxSchedule>("tax_schedules").catch(() => []),
       ])
 
       if (!Array.isArray(accounts) || accounts.length === 0 || accounts.some((a) => a.id?.startsWith("ACC-1000") || a.code === "1010")) {
@@ -476,17 +466,8 @@ class FinanceStore {
         status: exp.status || "Approved",
       })))
       this.vehicles = sortNewestFirst(vehicles)
-      this.periods = sortNewestFirst(periods)
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
-      this.payrollRuns = sortNewestFirst(payrollRuns)
-      this.revaluations = sortNewestFirst(revaluations)
-      this.fixedAssets = sortNewestFirst(fixedAssets.map((fa: any) => ({
-        ...fa,
-        cost: Number(fa.cost ?? 0),
-        accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumulated_depreciation ?? 0),
-        netBookValue: Number(fa.netBookValue ?? fa.cost ?? 0),
-      })))
       if (Array.isArray(taxRules) && taxRules.length > 0 && !taxRules.some((t: any) => t.id === "TAX-01" || t.id === "TAX-001")) {
         this.taxRules = sortNewestFirst(taxRules.map((t: any) => ({
           ...t,
@@ -506,12 +487,7 @@ class FinanceStore {
         void persistResources([{ resource: "tax_rules", items: INITIAL_TAX_RULES }])
       }
 
-      if (Array.isArray(taxSchedules) && taxSchedules.length > 0) {
-        this.taxSchedules = sortNewestFirst(taxSchedules)
-      } else {
-        this.taxSchedules = INITIAL_TAX_SCHEDULES
-        void persistResources([{ resource: "tax_schedules", items: INITIAL_TAX_SCHEDULES }])
-      }
+      this.taxSchedules = INITIAL_TAX_SCHEDULES
 
       // Trigger cross-module live finance sync
       await this.syncCrossModule()
@@ -923,13 +899,8 @@ class FinanceStore {
       { resource: "recurring_expense_schedules", items: this.recurringSchedules },
       { resource: "expenses", items: this.expenses },
       { resource: "vehicles", items: this.vehicles },
-      { resource: "accounting_periods", items: this.periods },
       { resource: "company_settings", items: [{ id: "default", ...this.companySettings }] },
-      { resource: "payroll_runs", items: this.payrollRuns },
-      { resource: "revaluations", items: this.revaluations },
-      { resource: "fixed_assets", items: this.fixedAssets },
       { resource: "tax_rules", items: this.taxRules },
-      { resource: "tax_schedules", items: this.taxSchedules },
     ])
   }
 

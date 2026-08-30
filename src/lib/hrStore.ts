@@ -346,9 +346,6 @@ class HRStore {
         separations,
         leaveTypes,
         leaveRequests,
-        expenseClaims,
-        appraisals,
-        trainingPrograms,
       ] = await Promise.all([
         loadResource<Department>("departments"),
         loadResource<Designation>("designations"),
@@ -358,9 +355,6 @@ class HRStore {
         loadResource<SeparationProcess>("separations"),
         loadResource<LeaveType>("leave_types"),
         loadResource<LeaveRequest>("leave_requests"),
-        loadResource<HRExpenseClaim>("expense_claims"),
-        loadResource<PerformanceAppraisal>("appraisals"),
-        loadResource<TrainingProgram>("training_programs"),
       ])
 
       // employees are intentionally NOT loaded here — they are owned exclusively
@@ -373,9 +367,6 @@ class HRStore {
       this.separations = separations
       this.leaveTypes = leaveTypes
       this.leaveRequests = leaveRequests
-      this.expenseClaims = expenseClaims
-      this.appraisals = appraisals
-      this.trainingPrograms = trainingPrograms
       this._isLoaded = true
     } catch (error) {
       console.error("Failed to load HR data from Supabase.", error)
@@ -396,9 +387,6 @@ class HRStore {
       { resource: "separations", items: this.separations },
       { resource: "leave_types", items: this.leaveTypes },
       { resource: "leave_requests", items: this.leaveRequests },
-      { resource: "expense_claims", items: this.expenseClaims },
-      { resource: "appraisals", items: this.appraisals },
-      { resource: "training_programs", items: this.trainingPrograms },
     ])
   }
 

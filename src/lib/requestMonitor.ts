@@ -41,13 +41,8 @@ const RESOURCE_MODULE_MAP: Record<string, string> = {
   expenses: "finance",
   recurring_expense_schedules: "finance",
   vehicles: "finance",
-  accounting_periods: "finance",
   company_settings: "finance",
-  payroll_runs: "finance",
-  revaluations: "finance",
-  fixed_assets: "finance",
   tax_rules: "finance",
-  tax_schedules: "finance",
 
   employees: "hr",
   attendance_records: "hr",
@@ -61,9 +56,6 @@ const RESOURCE_MODULE_MAP: Record<string, string> = {
   separations: "hr",
   leave_types: "hr",
   leave_requests: "hr",
-  expense_claims: "hr",
-  appraisals: "hr",
-  training_programs: "hr",
 
   users: "admin",
   user_activity_logs: "admin",

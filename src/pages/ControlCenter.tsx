@@ -118,7 +118,6 @@ const resourceLabels: Record<string, string> = {
   invoices: "Accounts Receivable Invoices",
   payments: "Cash Accounts / Banking",
   expenses: "Audit Expenses Claims",
-  fixed_assets: "Fixed Assets Registry",
   tax_rules: "Tax Settings",
   company_settings: "System Configuration",
 }
