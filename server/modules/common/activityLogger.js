@@ -1,6 +1,6 @@
-import { createRow } from "../../db/supabaseClient.js"
-
-const LOGS_RESOURCE = { table: "user_activity_logs", storage: "relational" }
+import { db } from "../../db/client.js"
+import { userActivityLogs } from "../../db/schema/index.js"
+import crypto from "node:crypto"
 
 /**
  * Normalizes request paths to extract clean resource names and action types.
@@ -41,23 +41,24 @@ export function parseRequestAction(method, path) {
 }
 
 /**
- * Log activity helper.
+ * Log activity helper writing directly through Drizzle ORM.
  */
 export async function logActivity(userId, username, fullname, action, resource, details = {}) {
   try {
-    await createRow({
-      resource: LOGS_RESOURCE,
-      body: {
-        user_id: userId || null,
-        username: username || "system",
-        fullname: fullname || "",
-        action,
-        resource,
-        details,
-      },
+    const id = `LOG-${Date.now()}-${crypto.randomUUID().slice(0, 6)}`
+    await db.insert(userActivityLogs).values({
+      id,
+      userId: userId || null,
+      username: username || "system",
+      action,
+      module: resource || "system",
+      entityType: details.entityType || resource || null,
+      entityId: details.itemId || null,
+      details: { fullname, ...details },
+      createdAt: new Date(),
     })
   } catch (err) {
-    console.error("[ACTIVITY LOGGER ERROR] Failed to write log:", err.message)
+    console.error("[ACTIVITY LOGGER ERROR] Failed to write log via Drizzle:", err.message)
   }
 }
 
@@ -100,21 +101,16 @@ export function activityLoggerMiddleware(req, res, next) {
         details.itemId = idMatch[1]
       }
 
-      // Perform logging asynchronously in background
-      logActivity(
-        req.user.id,
-        req.user.username,
-        req.user.fullname,
-        action,
-        resource,
-        details
-      ).catch((err) => {
-        console.error("[ACTIVITY LOGGER ASYNC ERROR]:", err.message)
-      })
+      const fullname = req.user.fullname || req.user.username || ""
+
+      logActivity(req.user.id, req.user.username, fullname, action, resource, details).catch(err =>
+        console.error("[AUTO LOG ERROR]", err.message)
+      )
     }
   }
 
   res.on("finish", onFinish)
   res.on("close", onFinish)
+
   next()
 }

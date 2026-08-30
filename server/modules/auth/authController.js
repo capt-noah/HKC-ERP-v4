@@ -1,13 +1,12 @@
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
-import { listRows, createRow } from "../../db/supabaseClient.js"
+import { db } from "../../db/client.js"
+import { users } from "../../db/schema/index.js"
+import { eq } from "drizzle-orm"
 import { logActivity } from "../common/activityLogger.js"
+import crypto from "node:crypto"
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_dev_only"
-
-const USERS_RESOURCE = { table: "users", storage: "direct" }
-
-const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
 
 export async function login(req, res) {
   const { username, password } = req.body
@@ -17,37 +16,41 @@ export async function login(req, res) {
   }
 
   try {
-    // Find user
-    const response = await listRows({
-      resource: USERS_RESOURCE,
-      query: { username: `eq.${username}`, limit: 1 },
-    })
+    // Find user via Drizzle
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username))
+      .limit(1)
 
-    if (response.status !== 200 || !response.body || response.body.length === 0) {
+    if (rows.length === 0) {
       return res.status(401).json({ error: "Invalid credentials" })
     }
 
-    const user = response.body[0]
+    const user = rows[0]
 
-    // Check suspension status
-    if (user.status === "suspended") {
-      return res.status(403).json({ error: "Your account is suspended. Please contact the administrator." })
+    // Check active status
+    if (user.isActive === false) {
+      return res.status(403).json({ error: "Your account is deactivated. Please contact the administrator." })
     }
 
     // Verify password
-    const isMatch = await bcrypt.compare(password, user.password_hash)
+    const isMatch = await bcrypt.compare(password, user.passwordHash)
     if (!isMatch) {
       return res.status(401).json({ error: "Invalid credentials" })
     }
+
+    const fullname = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username
+    const roles = [user.role]
 
     // Generate JWT (30 days expiration)
     const token = jwt.sign(
       {
         id: user.id,
         username: user.username,
-        roles: user.roles || [],
-        fullname: user.fullname || "",
-        warehouse_ids: user.warehouse_ids || [],
+        roles,
+        fullname,
+        role: user.role,
       },
       JWT_SECRET,
       { expiresIn: "30d" }
@@ -57,7 +60,7 @@ export async function login(req, res) {
     logActivity(
       user.id,
       user.username,
-      user.fullname || "",
+      fullname,
       "Login",
       "auth",
       { ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "127.0.0.1").split(",")[0].trim() }
@@ -68,9 +71,11 @@ export async function login(req, res) {
       user: {
         id: user.id,
         username: user.username,
-        roles: user.roles || [],
-        fullname: user.fullname || "",
-        warehouse_ids: user.warehouse_ids || [],
+        roles,
+        role: user.role,
+        fullname,
+        first_name: user.firstName,
+        last_name: user.lastName,
       },
     })
   } catch (error) {
@@ -82,26 +87,30 @@ export async function login(req, res) {
 export async function getCurrentUser(req, res) {
   try {
     const userId = req.user.id
-    const response = await listRows({
-      resource: USERS_RESOURCE,
-      query: { id: `eq.${userId}`, limit: 1 },
-    })
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
 
-    if (response.status !== 200 || !response.body || response.body.length === 0) {
+    if (rows.length === 0) {
       return res.status(404).json({ error: "User not found" })
     }
 
-    const u = response.body[0]
+    const u = rows[0]
+    const fullname = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username
+
     res.status(200).json({
       id: u.id,
       username: u.username,
-      roles: u.roles || [],
-      fullname: u.fullname || "",
-      status: u.status || "active",
-      employee_id: u.employee_id || null,
-      warehouse_ids: u.warehouse_ids || (u.warehouse_id ? [u.warehouse_id] : []),
-      created_at: u.created_at,
-      updated_at: u.updated_at,
+      roles: [u.role],
+      role: u.role,
+      fullname,
+      first_name: u.firstName,
+      last_name: u.lastName,
+      status: u.isActive ? "active" : "inactive",
+      created_at: u.createdAt,
+      updated_at: u.updatedAt,
     })
   } catch (error) {
     console.error("getCurrentUser error:", error)
@@ -112,26 +121,34 @@ export async function getCurrentUser(req, res) {
 export async function updateCurrentUserProfile(req, res) {
   try {
     const userId = req.user.id
-    const { fullname, password } = req.body
+    const { fullname, firstName, lastName, password } = req.body
 
-    const updateBody = {}
-    if (fullname !== undefined) updateBody.fullname = fullname
+    const updateBody = {
+      updatedAt: new Date(),
+    }
+
+    if (firstName !== undefined) updateBody.firstName = firstName
+    if (lastName !== undefined) updateBody.lastName = lastName
+    if (fullname && !firstName && !lastName) {
+      const parts = fullname.split(" ")
+      updateBody.firstName = parts[0] || ""
+      updateBody.lastName = parts.slice(1).join(" ") || ""
+    }
     if (password) {
-      updateBody.password_hash = await bcrypt.hash(password, 10)
+      updateBody.passwordHash = await bcrypt.hash(password, 10)
     }
 
-    const { updateRow } = await import("../../db/supabaseClient.js")
-    const response = await updateRow({
-      resource: USERS_RESOURCE,
-      id: userId,
-      body: updateBody,
-    })
+    const updated = await db
+      .update(users)
+      .set(updateBody)
+      .where(eq(users.id, userId))
+      .returning()
 
-    if (response.status >= 400) {
-      return res.status(response.status).json(response.body)
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "User not found" })
     }
 
-    res.status(200).json({ message: "Profile updated successfully", user: response.body })
+    res.status(200).json({ message: "Profile updated successfully", user: updated[0] })
   } catch (error) {
     console.error("updateCurrentUserProfile error:", error)
     res.status(500).json({ error: "Internal server error", details: error.message })
@@ -139,40 +156,41 @@ export async function updateCurrentUserProfile(req, res) {
 }
 
 export async function register(req, res) {
-  const { username, password, roles, status, fullname, employee_id, warehouse_ids } = req.body
+  const { username, password, roles, role, status, fullname, firstName, lastName } = req.body
 
-  if (!username || !password || !roles || !Array.isArray(roles) || roles.length === 0) {
-    return res.status(400).json({ error: "Username, password, and at least one role are required" })
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required" })
   }
 
-  const validRoles = ["superadmin", "sales_manager", "hr_manager", "inventory_admin", "finance_manager", "hkc_docs_manager"]
-  const hasInvalidRole = roles.some(role => !validRoles.includes(role))
-  if (hasInvalidRole) {
-    return res.status(400).json({ error: "One or more invalid roles specified" })
-  }
+  const assignedRole = role || (Array.isArray(roles) && roles.length > 0 ? roles[0] : "viewer")
 
   try {
-    const password_hash = await bcrypt.hash(password, 10)
+    const passwordHash = await bcrypt.hash(password, 10)
+    const id = `USR-${crypto.randomUUID().slice(0, 8)}`
 
-    const response = await createRow({
-      resource: USERS_RESOURCE,
-      body: { 
-        username, 
-        password_hash, 
-        roles, 
-        status: status || "active", 
-        fullname: fullname || "", 
-        employee_id: employee_id || null, 
-        warehouse_ids: warehouse_ids || [] 
-      },
-    })
-
-    if (response.status >= 400) {
-      return res.status(response.status).json(response.body)
+    let fName = firstName || ""
+    let lName = lastName || ""
+    if (fullname && !fName && !lName) {
+      const parts = fullname.split(" ")
+      fName = parts[0] || ""
+      lName = parts.slice(1).join(" ") || ""
     }
 
-    res.status(201).json({ message: "User created successfully" })
+    await db.insert(users).values({
+      id,
+      username,
+      passwordHash,
+      role: assignedRole,
+      firstName: fName,
+      lastName: lName,
+      isActive: status !== "inactive" && status !== "suspended",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+
+    res.status(201).json({ message: "User created successfully", id })
   } catch (error) {
+    console.error("Register error:", error)
     res.status(500).json({ error: "Internal server error", details: error.message })
   }
 }

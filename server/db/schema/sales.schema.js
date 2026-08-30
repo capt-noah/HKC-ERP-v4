@@ -121,22 +121,3 @@ export const salesIssueItemsRelations = relations(salesIssueItems, ({ one }) => 
     references: [salesIssues.id],
   }),
 }))
-
-export type Customer = typeof customers.$inferSelect
-export type NewCustomer = typeof customers.$inferInsert
-export type Supplier = typeof suppliers.$inferSelect
-export type NewSupplier = typeof suppliers.$inferInsert
-export type SalesOrder = typeof salesOrders.$inferSelect
-export type NewSalesOrder = typeof salesOrders.$inferInsert
-export type PurchaseOrder = typeof purchaseOrders.$inferSelect
-export type NewPurchaseOrder = typeof purchaseOrders.$inferInsert
-export type SalesIssue = typeof salesIssues.$inferSelect
-export type NewSalesIssue = typeof salesIssues.$inferInsert
-export type SalesIssueItem = typeof salesIssueItems.$inferSelect
-export type NewSalesIssueItem = typeof salesIssueItems.$inferInsert
-export type ProcessingService = typeof processingServices.$inferSelect
-export type NewProcessingService = typeof processingServices.$inferInsert
-export type ShipmentDocument = typeof shipmentDocuments.$inferSelect
-export type NewShipmentDocument = typeof shipmentDocuments.$inferInsert
-export type HkcDocRecord = typeof hkcDocRecords.$inferSelect
-export type NewHkcDocRecord = typeof hkcDocRecords.$inferInsert

@@ -1,62 +1,51 @@
-import { config } from "../../config.js"
+import { db } from "../../db/client.js"
+import {
+  processingServices,
+  invoices,
+  journalEntries,
+  journalEntryLines,
+} from "../../db/schema/index.js"
+import { eq, desc } from "drizzle-orm"
 import {
   generateProcessingServiceRevenueJournalEntry,
   validateProcessingServiceOrder,
   VALID_PROCESSING_STAGES,
 } from "./processingServicesLogic.js"
 
-function headers(prefer) {
-  const apiKey = config.supabaseServiceRoleKey || config.supabasePublishableKey
-  const result = {
-    apikey: apiKey,
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-  }
-  if (prefer) result.Prefer = prefer
-  return result
-}
-
-async function parseResponse(response) {
-  const text = await response.text()
-  if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text
-  }
-}
-
 export async function listProcessingServices(query = {}) {
   try {
-    const url = new URL("processing_services", config.supabaseRestUrl)
-    url.searchParams.set("select", "*")
+    let q = db.select().from(processingServices).orderBy(desc(processingServices.createdAt))
+
     if (query.status) {
-      url.searchParams.set("status", `eq.${query.status}`)
+      q = db
+        .select()
+        .from(processingServices)
+        .where(eq(processingServices.status, query.status))
+        .orderBy(desc(processingServices.createdAt))
     }
-    url.searchParams.set("order", "created_at.desc")
-    const response = await fetch(url, { headers: headers() })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows)) {
-      return { status: 200, body: rows }
-    }
-    return { status: response.status || 500, body: rows || [] }
+
+    const rows = await q
+    return { status: 200, body: rows }
   } catch (err) {
+    console.error("[DRIZZLE PS LIST ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to list processing services", message: err.message } }
   }
 }
 
 export async function getProcessingService(id) {
   try {
-    const url = new URL("processing_services", config.supabaseRestUrl)
-    url.searchParams.set("id", `eq.${id}`)
-    url.searchParams.set("select", "*")
-    const response = await fetch(url, { headers: headers() })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows) && rows.length > 0) {
+    const rows = await db
+      .select()
+      .from(processingServices)
+      .where(eq(processingServices.id, id))
+      .limit(1)
+
+    if (rows.length > 0) {
       return { status: 200, body: rows[0] }
     }
     return { status: 404, body: { error: `Processing service '${id}' not found.` } }
   } catch (err) {
+    console.error(`[DRIZZLE PS GET ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: `Failed to get processing service '${id}'`, message: err.message } }
   }
 }
@@ -68,55 +57,45 @@ export async function createProcessingService(input) {
   }
 
   const id = input?.id || `PS-${Date.now().toString().slice(-5)}`
-  const reference_number = input?.reference_number || input?.referenceNumber || id
-  const client_company_name = input?.client_company_name || input?.customer_name || input?.clientName || "Client Company"
+  const referenceNumber = input?.reference_number || input?.referenceNumber || id
+  const clientCompanyName = input?.client_company_name || input?.customer_name || input?.clientName || "Client Company"
 
   const doc = {
     id,
-    reference_number,
-    client_company_name,
-    customer_id: input?.customer_id || null,
-    goods_description: input?.goods_description || "Raw Agricultural Commodity",
-    quantity: Number(input?.quantity || 1),
+    referenceNumber,
+    clientCompanyName,
+    customerId: input?.customer_id || null,
+    goodsDescription: input?.goods_description || "Raw Agricultural Commodity",
+    quantity: String(Number(input?.quantity || 1)),
     uom: input?.uom || "Quintal",
-    entry_date: input?.entry_date || input?.entryDate || new Date().toISOString().split("T")[0],
-    agreed_price: Number(input?.agreed_price || input?.agreedPrice || 0),
+    entryDate: input?.entry_date || input?.entryDate || new Date().toISOString().split("T")[0],
+    agreedPrice: String(Number(input?.agreed_price || input?.agreedPrice || 0)),
     currency: input?.currency || "ETB",
     status: "Received",
-    status_history: [
+    statusHistory: [
       { stage: "Received", timestamp: new Date().toISOString() },
     ],
-    assigned_to: input?.assigned_to || input?.assignedTo || null,
-    invoice_id: null,
+    assignedTo: input?.assigned_to || input?.assignedTo || null,
+    invoiceId: null,
     notes: input?.notes || "",
-    contract_url: input?.contract_url || null,
-    contract_file_name: input?.contract_file_name || null,
-    locked_processing_rate: input?.locked_processing_rate ?? null,
-    locked_processing_fee: input?.locked_processing_fee ?? null,
-    locked_storage_fee: input?.locked_storage_fee ?? null,
-    locked_total_fee: input?.locked_total_fee ?? null,
-    processed_at: input?.processed_at ?? null,
-    delivered_at: input?.delivered_at ?? null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    contractUrl: input?.contract_url || null,
+    contractFileName: input?.contract_file_name || null,
+    lockedProcessingRate: input?.locked_processing_rate ? String(input.locked_processing_rate) : null,
+    lockedProcessingFee: input?.locked_processing_fee ? String(input.locked_processing_fee) : null,
+    lockedStorageFee: input?.locked_storage_fee ? String(input.locked_storage_fee) : null,
+    lockedTotalFee: input?.locked_total_fee ? String(input.locked_total_fee) : null,
+    processedAt: input?.processed_at ? new Date(input.processed_at) : null,
+    deliveredAt: input?.delivered_at ? new Date(input.delivered_at) : null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   }
 
   try {
-    const url = new URL("processing_services", config.supabaseRestUrl)
-    const response = await fetch(url, {
-      method: "POST",
-      headers: headers("resolution=merge-duplicates,return=representation"),
-      body: JSON.stringify(doc),
-    })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows) && rows.length > 0) {
-      return { status: 200, body: rows[0] }
-    }
-    if (!response.ok) {
-      return { status: response.status, body: rows }
-    }
-    return { status: 200, body: doc }
+    const inserted = await db.insert(processingServices).values(doc).returning()
+    const resultDoc = inserted.length > 0 ? inserted[0] : doc
+    return { status: 200, body: resultDoc }
   } catch (err) {
+    console.error("[DRIZZLE PS CREATE ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to create processing service", message: err.message } }
   }
 }
@@ -127,39 +106,37 @@ export async function updateProcessingService(input, id) {
     return { status: 404, body: { error: `Processing service '${id}' not found.` } }
   }
 
-  const existing = getRes.body
-  const updated = {
-    ...existing,
-    ...input,
-    id,
-    updated_at: new Date().toISOString(),
+  const patchFields = {
+    updatedAt: new Date(),
   }
 
-  // Remove virtual / non-column fields if present
-  delete updated.referenceNumber
-  delete updated.customer_name
-  delete updated.clientName
-  delete updated.assignedTo
-  delete updated.entryDate
-  delete updated.agreedPrice
+  if (input.reference_number || input.referenceNumber) patchFields.referenceNumber = input.reference_number || input.referenceNumber
+  if (input.client_company_name || input.customer_name || input.clientName) patchFields.clientCompanyName = input.client_company_name || input.customer_name || input.clientName
+  if (input.customer_id) patchFields.customerId = input.customer_id
+  if (input.goods_description) patchFields.goodsDescription = input.goods_description
+  if (input.quantity !== undefined) patchFields.quantity = String(Number(input.quantity))
+  if (input.uom) patchFields.uom = input.uom
+  if (input.entry_date || input.entryDate) patchFields.entryDate = input.entry_date || input.entryDate
+  if (input.agreed_price !== undefined || input.agreedPrice !== undefined) patchFields.agreedPrice = String(Number(input.agreed_price ?? input.agreedPrice))
+  if (input.currency) patchFields.currency = input.currency
+  if (input.status) patchFields.status = input.status
+  if (input.status_history) patchFields.statusHistory = input.status_history
+  if (input.assigned_to || input.assignedTo) patchFields.assignedTo = input.assigned_to || input.assignedTo
+  if (input.notes !== undefined) patchFields.notes = input.notes
+  if (input.contract_url !== undefined) patchFields.contractUrl = input.contract_url
+  if (input.contract_file_name !== undefined) patchFields.contractFileName = input.contract_file_name
 
   try {
-    const url = new URL("processing_services", config.supabaseRestUrl)
-    url.searchParams.set("id", `eq.${id}`)
-    const response = await fetch(url, {
-      method: "PATCH",
-      headers: headers("return=representation"),
-      body: JSON.stringify(updated),
-    })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows) && rows.length > 0) {
-      return { status: 200, body: rows[0] }
-    }
-    if (!response.ok) {
-      return { status: response.status, body: rows }
-    }
-    return { status: 200, body: updated }
+    const updated = await db
+      .update(processingServices)
+      .set(patchFields)
+      .where(eq(processingServices.id, id))
+      .returning()
+
+    const resultDoc = updated.length > 0 ? updated[0] : { ...getRes.body, ...patchFields }
+    return { status: 200, body: resultDoc }
   } catch (err) {
+    console.error(`[DRIZZLE PS UPDATE ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: "Failed to update processing service", message: err.message } }
   }
 }
@@ -175,23 +152,25 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
   }
 
   const existing = getRes.body
-  const history = Array.isArray(existing.status_history) ? [...existing.status_history] : []
+  const history = Array.isArray(existing.statusHistory || existing.status_history)
+    ? [...(existing.statusHistory || existing.status_history)]
+    : []
   history.push({ stage: targetStage, timestamp: new Date().toISOString() })
 
-  let invoiceId = existing.invoice_id
+  let invoiceId = existing.invoiceId || existing.invoice_id
   let journalEntry = null
 
   // Rate locking parameters
-  let lockedProcessingRate = existing.locked_processing_rate ?? null
-  let lockedProcessingFee = existing.locked_processing_fee ?? null
-  let lockedStorageFee = existing.locked_storage_fee ?? null
-  let lockedTotalFee = existing.locked_total_fee ?? null
-  let processedAt = existing.processed_at ?? null
-  let deliveredAt = existing.delivered_at ?? null
-  let agreedPrice = Number(existing.agreed_price || 0)
+  let lockedProcessingRate = existing.lockedProcessingRate ?? existing.locked_processing_rate ?? null
+  let lockedProcessingFee = existing.lockedProcessingFee ?? existing.locked_processing_fee ?? null
+  let lockedStorageFee = existing.lockedStorageFee ?? existing.locked_storage_fee ?? null
+  let lockedTotalFee = existing.lockedTotalFee ?? existing.locked_total_fee ?? null
+  let processedAt = existing.processedAt ? new Date(existing.processedAt) : null
+  let deliveredAt = existing.deliveredAt ? new Date(existing.deliveredAt) : null
+  let agreedPrice = Number(existing.agreedPrice || existing.agreed_price || 0)
 
   if (targetStage === "Processed") {
-    if (!processedAt) processedAt = new Date().toISOString()
+    if (!processedAt) processedAt = new Date()
     if (extraData.processingRate !== undefined && extraData.processingRate !== null) {
       lockedProcessingRate = Number(extraData.processingRate)
     }
@@ -203,28 +182,28 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
   }
 
   if (targetStage === "Delivered") {
-    if (!deliveredAt) deliveredAt = extraData.deliveryDate || new Date().toISOString()
+    if (!deliveredAt) deliveredAt = extraData.deliveryDate ? new Date(extraData.deliveryDate) : new Date()
     if (extraData.storageFee !== undefined && extraData.storageFee !== null) {
       lockedStorageFee = Number(extraData.storageFee)
     }
     if (extraData.totalFee !== undefined && extraData.totalFee !== null) {
       lockedTotalFee = Number(extraData.totalFee)
     } else {
-      lockedTotalFee = (lockedProcessingFee || 0) + (lockedStorageFee || 0)
+      lockedTotalFee = (Number(lockedProcessingFee) || 0) + (Number(lockedStorageFee) || 0)
     }
     if (lockedTotalFee > 0) {
-      agreedPrice = lockedTotalFee
+      agreedPrice = Number(lockedTotalFee)
     }
   }
 
   // AUTOMATED REVENUE RECOGNITION WHEN STAGE REACHES 'Delivered'
-  if (targetStage === "Delivered" && !existing.invoice_id) {
+  if (targetStage === "Delivered" && !invoiceId) {
     invoiceId = `INV-PS-${id}`
     journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id, agreed_price: agreedPrice })
 
-    // Save invoice to Supabase invoices table
+    // Save invoice via Drizzle
     try {
-      const clientName = existing.client_company_name || existing.customer_name || "Client Company"
+      const clientName = existing.clientCompanyName || existing.client_company_name || "Client Company"
       const invoicePayload = {
         id: invoiceId,
         invoice_number: invoiceId,
@@ -233,7 +212,7 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
         line_items: [
           {
-            description: `Toll processing & storage fee for ${existing.goods_description} (${existing.quantity} ${existing.uom})`,
+            description: `Toll processing & storage fee for ${existing.goodsDescription || existing.goods_description} (${existing.quantity} ${existing.uom})`,
             qty: Number(existing.quantity || 1),
             unit_price: Number(agreedPrice || 0) / Number(existing.quantity || 1),
             total: Number(agreedPrice || 0),
@@ -249,121 +228,106 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
         currency: "ETB",
       }
 
-      const invUrl = new URL("invoices", config.supabaseRestUrl)
-      await fetch(invUrl, {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify({
-          id: invoiceId,
-          payload: invoicePayload,
-        })
-      })
+      await db.insert(invoices).values({
+        id: invoiceId,
+        payload: invoicePayload,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).onConflictDoNothing()
     } catch (err) {
-      console.warn("Failed to persist service invoice in DB:", err.message)
+      console.warn("Failed to persist service invoice via Drizzle:", err.message)
     }
 
-    // Save journal entry & lines to Supabase
+    // Save journal entry & lines via Drizzle
     try {
-      // 1. Journal Entry
-      const jeUrl = new URL("journal_entries", config.supabaseRestUrl)
-      await fetch(jeUrl, {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify({
+      await db.insert(journalEntries).values({
+        id: journalEntry.id,
+        payload: {
           id: journalEntry.id,
-          payload: {
-            id: journalEntry.id,
-            entry_number: journalEntry.id,
-            entry_date: journalEntry.date,
-            description: journalEntry.description,
-            source_type: journalEntry.sourceType,
-            source_id: journalEntry.sourceId,
-            created_by: journalEntry.createdBy,
-            currency: "ETB",
-            exchange_rate: 1.0,
-            posting_status: "POSTED",
-          }
-        })
-      })
+          entry_number: journalEntry.id,
+          entry_date: journalEntry.date,
+          description: journalEntry.description,
+          source_type: journalEntry.sourceType,
+          source_id: journalEntry.sourceId,
+          created_by: journalEntry.createdBy,
+          currency: "ETB",
+          exchange_rate: 1.0,
+          posting_status: "POSTED",
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).onConflictDoNothing()
 
-      // 2. Journal Entry Lines
-      const jeLinesUrl = new URL("journal_entry_lines", config.supabaseRestUrl)
-      await fetch(jeLinesUrl, {
-        method: "POST",
-        headers: headers(),
-        body: JSON.stringify(
-          journalEntry.lines.map((l, idx) => ({
-            id: `${journalEntry.id}-${idx + 1}`,
-            payload: {
-              id: `${journalEntry.id}-${idx + 1}`,
-              journal_entry_id: journalEntry.id,
-              account_id: l.accountId === "1200" ? "ACC-1200" : l.accountId === "4002" ? "ACC-4002" : l.accountId,
-              debit_amount: l.debitAmount,
-              credit_amount: l.creditAmount,
-              currency: "ETB",
-              exchange_rate_at_time: 1.0,
-              warehouse_id: "WH1",
-              party_type: l.accountId === "1200" ? "Customer" : null,
-              party_id: l.party_id || null,
-              party_name: l.party_name || null,
-            }
-          }))
-        )
-      })
+      for (let idx = 0; idx < journalEntry.lines.length; idx++) {
+        const l = journalEntry.lines[idx]
+        const lineId = `${journalEntry.id}-${idx + 1}`
+        await db.insert(journalEntryLines).values({
+          id: lineId,
+          payload: {
+            id: lineId,
+            journal_entry_id: journalEntry.id,
+            account_id: l.accountId === "1200" ? "ACC-1200" : l.accountId === "4002" ? "ACC-4002" : l.accountId,
+            debit_amount: l.debitAmount,
+            credit_amount: l.creditAmount,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: "WH1",
+            party_type: l.accountId === "1200" ? "Customer" : null,
+            party_id: l.party_id || null,
+            party_name: l.party_name || null,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }).onConflictDoNothing()
+      }
     } catch (err) {
-      console.warn("Failed to persist service journal entry in DB:", err.message)
+      console.warn("Failed to persist service journal entry via Drizzle:", err.message)
     }
   }
 
   const patchBody = {
     status: targetStage,
-    status_history: history,
-    invoice_id: invoiceId,
-    locked_processing_rate: lockedProcessingRate,
-    locked_processing_fee: lockedProcessingFee,
-    locked_storage_fee: lockedStorageFee,
-    locked_total_fee: lockedTotalFee,
-    processed_at: processedAt,
-    delivered_at: deliveredAt,
-    agreed_price: agreedPrice,
-    updated_at: new Date().toISOString(),
+    statusHistory: history,
+    invoiceId,
+    lockedProcessingRate: lockedProcessingRate ? String(lockedProcessingRate) : null,
+    lockedProcessingFee: lockedProcessingFee ? String(lockedProcessingFee) : null,
+    lockedStorageFee: lockedStorageFee ? String(lockedStorageFee) : null,
+    lockedTotalFee: lockedTotalFee ? String(lockedTotalFee) : null,
+    processedAt: processedAt ? new Date(processedAt) : null,
+    deliveredAt: deliveredAt ? new Date(deliveredAt) : null,
+    agreedPrice: String(agreedPrice),
+    updatedAt: new Date(),
   }
 
   try {
-    const url = new URL("processing_services", config.supabaseRestUrl)
-    url.searchParams.set("id", `eq.${id}`)
-    const response = await fetch(url, {
-      method: "PATCH",
-      headers: headers("return=representation"),
-      body: JSON.stringify(patchBody),
-    })
-    const rows = await parseResponse(response)
-    const resultDoc = Array.isArray(rows) && rows.length > 0 ? rows[0] : { ...existing, ...patchBody }
+    const updated = await db
+      .update(processingServices)
+      .set(patchBody)
+      .where(eq(processingServices.id, id))
+      .returning()
+
+    const resultDoc = updated.length > 0 ? updated[0] : { ...existing, ...patchBody }
 
     return {
-      status: response.ok ? 200 : response.status,
+      status: 200,
       body: {
         ...resultDoc,
-        ok: response.ok,
+        ok: true,
         journalEntry,
       },
     }
   } catch (err) {
-    return { status: 500, body: { error: "Failed to transition stage in DB", message: err.message } }
+    console.error(`[DRIZZLE PS TRANSITION ERROR] ${id}:`, err.message)
+    return { status: 500, body: { error: "Failed to transition stage via Drizzle", message: err.message } }
   }
 }
 
 export async function deleteProcessingService(id) {
   try {
-    const url = new URL("processing_services", config.supabaseRestUrl)
-    url.searchParams.set("id", `eq.${id}`)
-    const response = await fetch(url, { method: "DELETE", headers: headers() })
-    if (response.ok) {
-      return { status: 200, body: { ok: true, deletedId: id } }
-    }
-    const errBody = await parseResponse(response)
-    return { status: response.status, body: errBody }
+    await db.delete(processingServices).where(eq(processingServices.id, id))
+    return { status: 200, body: { ok: true, deletedId: id } }
   } catch (err) {
+    console.error(`[DRIZZLE PS DELETE ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: "Failed to delete processing service", message: err.message } }
   }
 }

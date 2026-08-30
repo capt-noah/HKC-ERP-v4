@@ -17,7 +17,7 @@ const databaseUrl =
     : "")
 
 export default defineConfig({
-  schema: "./server/db/schema/index.ts",
+  schema: "./server/db/schema/index.js",
   out: "./server/db/migrations",
   dialect: "postgresql",
   dbCredentials: {

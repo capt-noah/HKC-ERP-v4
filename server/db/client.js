@@ -5,7 +5,7 @@ import { config } from "../config.js"
 
 const { Pool } = pg
 
-function getConnectionString(): string {
+function getConnectionString() {
   if (process.env.DATABASE_URL) {
     return process.env.DATABASE_URL
   }

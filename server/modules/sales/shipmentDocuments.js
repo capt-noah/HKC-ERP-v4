@@ -1,43 +1,9 @@
-import { config } from "../../config.js"
+import { db } from "../../db/client.js"
+import { shipmentDocuments } from "../../db/schema/index.js"
+import { eq, and, desc } from "drizzle-orm"
 import { DEFAULT_SHIPMENT_DOC_RULES, evaluateShipmentDocs } from "./shipmentDocumentLogic.js"
 
-function headers(prefer) {
-  const apiKey = config.supabaseServiceRoleKey || config.supabasePublishableKey
-  const result = {
-    apikey: apiKey,
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-  }
-  if (prefer) result.Prefer = prefer
-  return result
-}
-
-async function parseResponse(response) {
-  const text = await response.text()
-  if (!text) return null
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text
-  }
-}
-
 export async function listShipmentDocRules(query = {}) {
-  try {
-    const url = new URL("shipment_document_rules", config.supabaseRestUrl)
-    url.searchParams.set("select", "*")
-    if (query.applies_to) {
-      url.searchParams.set("applies_to", `eq.${query.applies_to}`)
-    }
-    const response = await fetch(url, { headers: headers() })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows) && rows.length > 0) {
-      return { status: 200, body: rows }
-    }
-  } catch (err) {
-    console.warn("listShipmentDocRules DB warning:", err.message)
-  }
-
   let rules = DEFAULT_SHIPMENT_DOC_RULES
   if (query.applies_to) {
     rules = rules.filter((r) => r.applies_to === query.applies_to)
@@ -50,64 +16,55 @@ export async function listShipmentDocs(query = {}) {
   const recordType = query.record_type || query.recordType || null
 
   try {
-    const url = new URL("shipment_documents", config.supabaseRestUrl)
-    url.searchParams.set("select", "*")
-    if (recordId) {
-      url.searchParams.set("record_id", `eq.${recordId}`)
+    const conditions = []
+    if (recordId) conditions.push(eq(shipmentDocuments.recordId, recordId))
+    if (recordType) conditions.push(eq(shipmentDocuments.recordType, recordType))
+
+    let q = db.select().from(shipmentDocuments).orderBy(desc(shipmentDocuments.uploadedAt))
+    if (conditions.length === 1) {
+      q = db.select().from(shipmentDocuments).where(conditions[0]).orderBy(desc(shipmentDocuments.uploadedAt))
+    } else if (conditions.length > 1) {
+      q = db.select().from(shipmentDocuments).where(and(...conditions)).orderBy(desc(shipmentDocuments.uploadedAt))
     }
-    if (recordType) {
-      url.searchParams.set("record_type", `eq.${recordType}`)
-    }
-    url.searchParams.set("order", "uploaded_at.desc")
-    const response = await fetch(url, { headers: headers() })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows)) {
-      return { status: 200, body: rows }
-    }
-    return { status: response.status || 500, body: rows || [] }
+
+    const rows = await q
+    return { status: 200, body: rows }
   } catch (err) {
+    console.error("[DRIZZLE DOCS LIST ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to list shipment documents", message: err.message } }
   }
 }
 
 export async function saveShipmentDoc(input) {
   const id = input?.id || `DOC-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+  const recordId = input?.record_id || input?.recordId || ""
+  const documentType = input?.document_type || input?.documentType || "Other"
+
   const doc = {
     id,
-    record_id: input?.record_id || input?.recordId || "",
-    record_type: input?.record_type || input?.recordType || "purchase_order",
-    document_type: input?.document_type || input?.documentType || "Other",
-    file_name: input?.file_name || input?.fileName || "document.pdf",
-    file_size: Number(input?.file_size || input?.fileSize || 1024),
-    file_url: input?.file_url || input?.fileUrl || "",
-    uploaded_at: input?.uploaded_at || new Date().toISOString(),
-    uploaded_by: input?.uploaded_by || "Current User",
+    recordId,
+    recordType: input?.record_type || input?.recordType || "purchase_order",
+    documentType,
+    fileName: input?.file_name || input?.fileName || "document.pdf",
+    fileSize: String(Number(input?.file_size || input?.fileSize || 1024)),
+    fileUrl: input?.file_url || input?.fileUrl || "",
+    uploadedAt: input?.uploaded_at ? new Date(input.uploaded_at) : new Date(),
+    uploadedBy: input?.uploaded_by || "Current User",
+    createdAt: new Date(),
+    updatedAt: new Date(),
   }
 
   try {
-    const url = new URL("shipment_documents", config.supabaseRestUrl)
-    // Clean up previous doc of same type for record_id
-    try {
-      const delUrl = new URL("shipment_documents", config.supabaseRestUrl)
-      delUrl.searchParams.set("record_id", `eq.${doc.record_id}`)
-      delUrl.searchParams.set("document_type", `eq.${doc.document_type}`)
-      await fetch(delUrl, { method: "DELETE", headers: headers() })
-    } catch {}
+    // Delete duplicate document of same type for record_id
+    await db
+      .delete(shipmentDocuments)
+      .where(and(eq(shipmentDocuments.recordId, recordId), eq(shipmentDocuments.documentType, documentType)))
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: headers("return=representation"),
-      body: JSON.stringify(doc),
-    })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows) && rows.length > 0) {
-      return { status: 200, body: rows[0] }
-    }
-    if (!response.ok) {
-      return { status: response.status, body: rows }
-    }
-    return { status: 200, body: doc }
+    const inserted = await db.insert(shipmentDocuments).values(doc).returning()
+    const resultDoc = inserted.length > 0 ? inserted[0] : doc
+    return { status: 200, body: resultDoc }
   } catch (err) {
+    console.error("[DRIZZLE DOCS SAVE ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to save shipment document", message: err.message } }
   }
 }
@@ -135,15 +92,10 @@ export async function assignOfficer(input) {
 
 export async function deleteShipmentDoc(id) {
   try {
-    const url = new URL("shipment_documents", config.supabaseRestUrl)
-    url.searchParams.set("id", `eq.${id}`)
-    const response = await fetch(url, { method: "DELETE", headers: headers() })
-    if (response.ok) {
-      return { status: 200, body: { ok: true, deletedId: id } }
-    }
-    const errBody = await parseResponse(response)
-    return { status: response.status, body: errBody }
+    await db.delete(shipmentDocuments).where(eq(shipmentDocuments.id, id))
+    return { status: 200, body: { ok: true, deletedId: id } }
   } catch (err) {
+    console.error(`[DRIZZLE DOCS DELETE ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: "Failed to delete shipment doc", message: err.message } }
   }
 }

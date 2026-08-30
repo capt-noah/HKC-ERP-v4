@@ -36,8 +36,3 @@ export const userActivityLogsRelations = relations(userActivityLogs, ({ one }) =
     references: [users.id],
   }),
 }))
-
-export type User = typeof users.$inferSelect
-export type NewUser = typeof users.$inferInsert
-export type UserActivityLog = typeof userActivityLogs.$inferSelect
-export type NewUserActivityLog = typeof userActivityLogs.$inferInsert

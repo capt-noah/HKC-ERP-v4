@@ -57,16 +57,3 @@ export const payrollPeriodsRelations = relations(payrollPeriods, ({ many }) => (
 export const leaveTypesRelations = relations(leaveTypes, ({ many }) => ({
   requests: many(leaveRequests),
 }))
-
-export type Employee = typeof employees.$inferSelect
-export type NewEmployee = typeof employees.$inferInsert
-export type AttendanceRecord = typeof attendanceRecords.$inferSelect
-export type NewAttendanceRecord = typeof attendanceRecords.$inferInsert
-export type PayrollPeriod = typeof payrollPeriods.$inferSelect
-export type NewPayrollPeriod = typeof payrollPeriods.$inferInsert
-export type PayrollRecord = typeof payrollRecords.$inferSelect
-export type NewPayrollRecord = typeof payrollRecords.$inferInsert
-export type LeaveType = typeof leaveTypes.$inferSelect
-export type NewLeaveType = typeof leaveTypes.$inferInsert
-export type LeaveRequest = typeof leaveRequests.$inferSelect
-export type NewLeaveRequest = typeof leaveRequests.$inferInsert

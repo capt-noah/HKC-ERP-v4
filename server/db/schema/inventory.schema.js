@@ -50,12 +50,3 @@ export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
     references: [inventoryProducts.id],
   }),
 }))
-
-export type Warehouse = typeof warehouses.$inferSelect
-export type NewWarehouse = typeof warehouses.$inferInsert
-export type InventoryProduct = typeof inventoryProducts.$inferSelect
-export type NewInventoryProduct = typeof inventoryProducts.$inferInsert
-export type StockMovement = typeof stockMovements.$inferSelect
-export type NewStockMovement = typeof stockMovements.$inferInsert
-export type StoreTransfer = typeof storeTransfers.$inferSelect
-export type NewStoreTransfer = typeof storeTransfers.$inferInsert
