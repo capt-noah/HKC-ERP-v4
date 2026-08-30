@@ -27,6 +27,7 @@ import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { useAuthStore } from "@/lib/authStore"
+import { financeStore } from "@/lib/financeStore"
 import { calculateProcessingServiceFee } from "@/lib/processingFeeCalculator"
 import {
   type ProcessingServiceOrder,
@@ -135,7 +136,7 @@ export default function ProcessingServices() {
   const [createCustomerId, setCreateCustomerId] = useState("")
   const [showCreateCustDropdown, setShowCreateCustDropdown] = useState(false)
   const [createGoodsDesc, setCreateGoodsDesc] = useState("")
-  const [createQuantity, setCreateQuantity] = useState<number | "">(500)
+  const [createQuantity, setCreateQuantity] = useState<number | "">("")
   const [createUom, setCreateUom] = useState("Quintal")
   const [createEntryDate, setCreateEntryDate] = useState(new Date().toISOString().split("T")[0])
   const [createNotes, setCreateNotes] = useState("")
@@ -173,8 +174,11 @@ export default function ProcessingServices() {
   const loadServices = async () => {
     setIsLoading(true)
     try {
-      const data = await fetchProcessingServices()
-      setServices(data)
+      await Promise.all([
+        fetchProcessingServices().then(setServices),
+        financeStore.loadFromApi().catch(() => {}),
+        erp.loadFromApi().catch(() => {}),
+      ])
     } finally {
       setIsLoading(false)
     }
@@ -182,6 +186,11 @@ export default function ProcessingServices() {
 
   useEffect(() => {
     loadServices()
+    const unsub = financeStore.subscribe(() => {
+      // Re-trigger component render when company settings update
+      setServices((prev) => [...prev])
+    })
+    return () => unsub()
   }, [])
 
   const openEditModal = (order: ProcessingServiceOrder) => {
@@ -217,6 +226,7 @@ export default function ProcessingServices() {
         baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
         storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
         maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+        storageFreeDays: companySettings.storage_free_days ?? 0,
       }
 
       const feeCalc = calculateProcessingServiceFee(
@@ -280,6 +290,7 @@ export default function ProcessingServices() {
         baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
         storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
         maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+        storageFreeDays: companySettings.storage_free_days ?? 0,
       }
 
       const isProcessedChecked = getStageIndex(editStatus) >= 1
@@ -292,7 +303,14 @@ export default function ProcessingServices() {
         editEntryDate,
         targetEndDate,
         isProcessedChecked,
-        rates
+        rates,
+        {
+          lockedProcessingRate: editingOrder.locked_processing_rate,
+          lockedProcessingFee: editingOrder.locked_processing_fee,
+          lockedStorageFee: editingOrder.locked_storage_fee,
+          lockedTotalFee: editingOrder.locked_total_fee,
+          isDelivered: isDeliveredChecked,
+        }
       )
 
       let updated = await updateProcessingService(editingOrder.id, {
@@ -302,13 +320,20 @@ export default function ProcessingServices() {
         quantity: Number(editQuantity),
         uom: editUom,
         entry_date: editEntryDate,
-        agreed_price: feeCalc.totalFee,
+        agreed_price: isDeliveredChecked ? (editingOrder.locked_total_fee || feeCalc.totalFee) : feeCalc.totalFee,
         notes: editNotes,
       })
 
       // If status stage changed, trigger stage transition to recognize revenue / log history
       if (editStatus !== editingOrder.status) {
-        const transitionRes = await transitionProcessingServiceStage(editingOrder.id, editStatus)
+        const transitionSnapshot = {
+          processingRate: companySettings.processing_rate_per_quintal ?? 150,
+          processingFee: feeCalc.processingFee,
+          storageFee: feeCalc.storageFee,
+          totalFee: feeCalc.totalFee,
+          deliveryDate: targetEndDate,
+        }
+        const transitionRes = await transitionProcessingServiceStage(editingOrder.id, editStatus, transitionSnapshot)
         if (transitionRes.ok) {
           updated = transitionRes
           if (editStatus === "Delivered" && transitionRes.journalEntry) {
@@ -478,6 +503,7 @@ export default function ProcessingServices() {
                       baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
                       storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
                       maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+                      storageFreeDays: companySettings.storage_free_days ?? 0,
                     }
 
                     const isProcessed = getStageIndex(order.status) >= 1
@@ -486,12 +512,21 @@ export default function ProcessingServices() {
                     const feeCalc = calculateProcessingServiceFee(
                       order.quantity,
                       order.entry_date,
-                      isDelivered ? (order.updated_at || order.created_at) : null,
+                      isDelivered ? (order.delivered_at || order.updated_at || order.created_at) : null,
                       isProcessed,
-                      rates
+                      rates,
+                      {
+                        lockedProcessingRate: order.locked_processing_rate,
+                        lockedProcessingFee: order.locked_processing_fee,
+                        lockedStorageFee: isDelivered ? order.locked_storage_fee : null,
+                        lockedTotalFee: isDelivered ? order.locked_total_fee : null,
+                        isDelivered,
+                      }
                     )
 
-                    const displayFee = feeCalc.totalFee || order.agreed_price || 0
+                    const displayFee = isDelivered
+                      ? (order.locked_total_fee ?? order.agreed_price ?? feeCalc.totalFee)
+                      : feeCalc.totalFee
 
                     return (
                       <tr
@@ -749,9 +784,11 @@ export default function ProcessingServices() {
                       baseStorageRatePerQuintalDay: companySettings.base_storage_rate_per_quintal_day ?? 1.25,
                       storageIncrementPerMonth: companySettings.storage_increment_per_month ?? 0.25,
                       maxStorageMonthCap: companySettings.max_storage_month_cap ?? 4,
+                      storageFreeDays: companySettings.storage_free_days ?? 0,
                     }
 
                     const isProcessedChecked = getStageIndex(editStatus) >= 1
+                    const isOrderDelivered = editingOrder.status === "Delivered" || editStatus === "Delivered"
                     const calcTargetDate = previewCalcDate || new Date().toISOString().split("T")[0]
 
                     const feeCalc = calculateProcessingServiceFee(
@@ -759,18 +796,33 @@ export default function ProcessingServices() {
                       editEntryDate,
                       calcTargetDate,
                       isProcessedChecked,
-                      rates
+                      rates,
+                      {
+                        lockedProcessingRate: editingOrder.locked_processing_rate,
+                        lockedProcessingFee: editingOrder.locked_processing_fee,
+                        lockedStorageFee: isOrderDelivered ? editingOrder.locked_storage_fee : null,
+                        lockedTotalFee: isOrderDelivered ? editingOrder.locked_total_fee : null,
+                        isDelivered: isOrderDelivered,
+                      }
                     )
 
                     const qty = Number(editQuantity || 0)
+                    const activeProcRate = editingOrder.locked_processing_rate ?? rates.processingRatePerQuintal
 
                     return (
                       <div className="p-5 bg-stone-50/90 dark:bg-zinc-900 border border-stone-200/80 dark:border-zinc-800 rounded-2xl shadow-xs font-mono text-xs space-y-4">
                         {/* Receipt Header */}
                         <div className="border-b border-dashed border-stone-300 dark:border-zinc-700 pb-3 flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-black text-stone-900 dark:text-zinc-100 uppercase tracking-widest text-xs">
-                            SERVICE FEE
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-stone-900 dark:text-zinc-100 uppercase tracking-widest text-xs">
+                              SERVICE FEE BREAKDOWN
+                            </span>
+                            {isOrderDelivered && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                Locked & Settled
+                              </span>
+                            )}
+                          </div>
 
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-stone-500 dark:text-zinc-400 uppercase">Calculation Date:</span>
@@ -795,9 +847,16 @@ export default function ProcessingServices() {
                           {/* Processing Fee Row */}
                           <div className="flex items-start justify-between py-1">
                             <div>
-                              <span className="font-bold text-stone-800 dark:text-zinc-200 block">Processing Fee</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-stone-800 dark:text-zinc-200">Processing Fee</span>
+                                {editingOrder.locked_processing_rate !== null && editingOrder.locked_processing_rate !== undefined && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                    Rate Locked
+                                  </span>
+                                )}
+                              </div>
                               <span className="text-[10px] text-stone-500 dark:text-zinc-400">
-                                {rates.processingRatePerQuintal} ETB × {qty} Quintals
+                                {activeProcRate} ETB × {qty} Quintals
                               </span>
                             </div>
                             <span className={`font-bold text-right font-mono ${isProcessedChecked ? "text-stone-900 dark:text-zinc-100" : "text-stone-400"}`}>
@@ -810,7 +869,14 @@ export default function ProcessingServices() {
                           {/* Storage Fee Section */}
                           <div className="pt-2 border-t border-stone-200/60 dark:border-zinc-800">
                             <div className="flex items-center justify-between font-bold text-stone-800 dark:text-zinc-200 mb-1.5">
-                              <span>Storage Fee ({feeCalc.daysInStorage} Days Total)</span>
+                              <div className="flex items-center gap-1.5">
+                                <span>Storage Fee ({feeCalc.daysInStorage} Days Total)</span>
+                                {isOrderDelivered && editingOrder.locked_storage_fee !== null && editingOrder.locked_storage_fee !== undefined && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300">
+                                    Storage Settled
+                                  </span>
+                                )}
+                              </div>
                               <span>ETB {feeCalc.storageFee.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                             </div>
 
@@ -1105,6 +1171,7 @@ export default function ProcessingServices() {
                         min="1"
                         value={createQuantity}
                         onChange={(e) => setCreateQuantity(e.target.value === "" ? "" : Number(e.target.value))}
+                        placeholder="e.g. 500"
                         className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 font-bold outline-none font-mono"
                         required
                       />
@@ -1134,9 +1201,19 @@ export default function ProcessingServices() {
                     />
                   </div>
 
-                  <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-[11px] font-semibold text-emerald-900 dark:text-emerald-300 leading-relaxed">
-                    💡 <strong>Auto Fee Rule:</strong> Processing fee is calculated at ETB {erp.getCompanySettings().processing_rate_per_quintal ?? 150}/quintal when marked as <strong>Processed</strong>. Storage is FREE for the first 30 days, then 1.25 ETB/quintal/day with +0.25 ETB monthly increments.
-                  </div>
+                  {(() => {
+                    const companySettings = erp.getCompanySettings()
+                    const freeDays = companySettings.storage_free_days ?? 0
+                    const procRate = companySettings.processing_rate_per_quintal ?? 150
+                    const baseRate = companySettings.base_storage_rate_per_quintal_day ?? 1.25
+                    const incRate = companySettings.storage_increment_per_month ?? 0.25
+
+                    return (
+                      <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-[11px] font-semibold text-emerald-900 dark:text-emerald-300 leading-relaxed">
+                        💡 <strong>Live Pricing Rules:</strong> Processing fee is <strong>ETB {procRate}/quintal</strong> when processed. Storage is <strong>FREE for the first {freeDays} {freeDays === 1 ? "day" : "days"} (Grace Period)</strong>, then <strong>ETB {baseRate}/quintal/day</strong> with +ETB {incRate} monthly step increments.
+                      </div>
+                    )
+                  })()}
 
                   <div>
                     <label className="block font-bold text-zinc-700 dark:text-zinc-300 mb-1">Operational Notes / Special Processing Instructions</label>

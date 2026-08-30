@@ -283,6 +283,7 @@ export default function UserManagement() {
         fullname: editingUser.fullname,
         roles: editingUser.roles,
         status: editingUser.status,
+        employee_id: editingUser.employee_id || null,
         warehouse_ids: editingUser.roles.includes("inventory_admin") ? editingUser.warehouse_ids || [] : [],
       }
       if (editPassword) {

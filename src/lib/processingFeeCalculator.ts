@@ -3,6 +3,7 @@ export interface ProcessingFeeRates {
   baseStorageRatePerQuintalDay: number // default 1.25
   storageIncrementPerMonth: number // default 0.25
   maxStorageMonthCap: number // default 4
+  storageFreeDays?: number // default from admin settings (e.g. 7 or 15 days)
 }
 
 export interface ProcessingFeeCalculation {
@@ -19,22 +20,41 @@ export interface ProcessingFeeCalculation {
   totalFee: number
 }
 
+export interface ProcessingFeeCalculationOptions {
+  lockedProcessingRate?: number | null
+  lockedProcessingFee?: number | null
+  lockedStorageFee?: number | null
+  lockedTotalFee?: number | null
+  isDelivered?: boolean
+}
+
 export function calculateProcessingServiceFee(
   quantityQuintals: number,
   entryDateStr: string,
   endDateStr?: string | null,
   isProcessed: boolean = false,
-  rates: Partial<ProcessingFeeRates> = {}
+  rates: Partial<ProcessingFeeRates> = {},
+  options: ProcessingFeeCalculationOptions = {}
 ): ProcessingFeeCalculation {
   const procRate = rates.processingRatePerQuintal ?? 150
   const baseStorage = rates.baseStorageRatePerQuintalDay ?? 1.25
   const increment = rates.storageIncrementPerMonth ?? 0.25
   const maxMonth = rates.maxStorageMonthCap ?? 4
+  const freeDays = Math.max(0, rates.storageFreeDays ?? 0)
 
   const qty = Math.max(0, Number(quantityQuintals) || 0)
 
-  // 1. Processing Fee (locked / applied when processed is checked or completed)
-  const processingFee = isProcessed ? qty * procRate : 0
+  // 1. Processing Fee (uses locked fee/rate if order was already processed, otherwise uses dynamic live rate)
+  let processingFee = 0
+  if (isProcessed) {
+    if (options.lockedProcessingFee !== undefined && options.lockedProcessingFee !== null) {
+      processingFee = Number(options.lockedProcessingFee)
+    } else if (options.lockedProcessingRate !== undefined && options.lockedProcessingRate !== null) {
+      processingFee = qty * Number(options.lockedProcessingRate)
+    } else {
+      processingFee = qty * procRate
+    }
+  }
 
   // 2. Full Calendar Days in Storage
   let daysInStorage = 0
@@ -46,51 +66,61 @@ export function calculateProcessingServiceFee(
     daysInStorage = Math.max(0, Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24)))
   }
 
-  // 3. Month-by-month Tiered Storage Calculation
-  // Month 1 (Days 1–30): FREE
-  // Month 2 (Days 31–60): baseStorage (1.25)
-  // Month 3 (Days 61–90): baseStorage + increment (1.50)
-  // Month 4+ (Days 91+): Capped at maxMonth (e.g. Month 4 rate: 1.75)
-
-  let remainingDays = daysInStorage
-  let currentDay = 0
-  let storageFee = 0
+  // 3. Tiered Storage Fee Calculation with Free Grace Period
   const breakdown: ProcessingFeeCalculation["storageFeeBreakdown"] = []
+  let storageFee = 0
 
+  // Handle Free Grace Period
+  const daysInGrace = Math.min(daysInStorage, freeDays)
+  if (daysInGrace > 0) {
+    breakdown.push({
+      monthLabel: `Grace Period (Days 1–${daysInGrace})`,
+      daysInMonth: daysInGrace,
+      ratePerQuintalDay: 0,
+      monthTotal: 0,
+    })
+  }
+
+  // Chargeable days after grace period
+  let remainingChargeableDays = Math.max(0, daysInStorage - freeDays)
+  let currentChargeableDay = daysInGrace
   let monthIndex = 1
-  while (remainingDays > 0) {
-    const daysInThisMonth = Math.min(30, remainingDays)
-    let rateForThisMonth = 0
 
-    if (monthIndex === 1) {
-      rateForThisMonth = 0
-    } else {
-      const effectiveMonth = Math.min(monthIndex, maxMonth)
-      const tierIncrementCount = Math.max(0, effectiveMonth - 2)
-      rateForThisMonth = baseStorage + tierIncrementCount * increment
-    }
+  while (remainingChargeableDays > 0) {
+    const daysInThisMonth = Math.min(30, remainingChargeableDays)
+    const effectiveMonth = Math.min(monthIndex, maxMonth)
+    const tierIncrementCount = Math.max(0, effectiveMonth - 1)
+    const rateForThisMonth = baseStorage + tierIncrementCount * increment
 
     const monthTotal = qty * daysInThisMonth * rateForThisMonth
     storageFee += monthTotal
 
     breakdown.push({
-      monthLabel: `Month ${monthIndex} (Days ${currentDay + 1}–${currentDay + daysInThisMonth})`,
+      monthLabel: `Month ${monthIndex} (Days ${currentChargeableDay + 1}–${currentChargeableDay + daysInThisMonth})`,
       daysInMonth: daysInThisMonth,
       ratePerQuintalDay: rateForThisMonth,
       monthTotal,
     })
 
-    remainingDays -= daysInThisMonth
-    currentDay += daysInThisMonth
+    remainingChargeableDays -= daysInThisMonth
+    currentChargeableDay += daysInThisMonth
     monthIndex++
   }
+
+  const finalStorageFee = (options.isDelivered && options.lockedStorageFee !== undefined && options.lockedStorageFee !== null)
+    ? Number(options.lockedStorageFee)
+    : Math.round(storageFee * 100) / 100
+
+  const finalTotalFee = (options.isDelivered && options.lockedTotalFee !== undefined && options.lockedTotalFee !== null)
+    ? Number(options.lockedTotalFee)
+    : Math.round((processingFee + finalStorageFee) * 100) / 100
 
   return {
     quantityQuintals: qty,
     daysInStorage,
     processingFee,
-    storageFee,
+    storageFee: finalStorageFee,
     storageFeeBreakdown: breakdown,
-    totalFee: processingFee + storageFee,
+    totalFee: finalTotalFee,
   }
 }

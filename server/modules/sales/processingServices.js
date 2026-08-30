@@ -213,7 +213,7 @@ export async function updateProcessingService(input, id) {
   return { status: 200, body: updated }
 }
 
-export async function transitionProcessingServiceStage(id, targetStage) {
+export async function transitionProcessingServiceStage(id, targetStage, extraData = {}) {
   if (!VALID_PROCESSING_STAGES.includes(targetStage)) {
     return { status: 400, body: { error: `Invalid stage '${targetStage}'. Must be one of: ${VALID_PROCESSING_STAGES.join(", ")}` } }
   }
@@ -230,10 +230,46 @@ export async function transitionProcessingServiceStage(id, targetStage) {
   let invoiceId = existing.invoice_id
   let journalEntry = null
 
+  // Rate locking parameters
+  let lockedProcessingRate = existing.locked_processing_rate ?? null
+  let lockedProcessingFee = existing.locked_processing_fee ?? null
+  let lockedStorageFee = existing.locked_storage_fee ?? null
+  let lockedTotalFee = existing.locked_total_fee ?? null
+  let processedAt = existing.processed_at ?? null
+  let deliveredAt = existing.delivered_at ?? null
+  let agreedPrice = Number(existing.agreed_price || 0)
+
+  if (targetStage === "Processed") {
+    if (!processedAt) processedAt = new Date().toISOString()
+    if (extraData.processingRate !== undefined && extraData.processingRate !== null) {
+      lockedProcessingRate = Number(extraData.processingRate)
+    }
+    if (extraData.processingFee !== undefined && extraData.processingFee !== null) {
+      lockedProcessingFee = Number(extraData.processingFee)
+    } else if (lockedProcessingRate !== null) {
+      lockedProcessingFee = Number(existing.quantity || 0) * lockedProcessingRate
+    }
+  }
+
+  if (targetStage === "Delivered") {
+    if (!deliveredAt) deliveredAt = extraData.deliveryDate || new Date().toISOString()
+    if (extraData.storageFee !== undefined && extraData.storageFee !== null) {
+      lockedStorageFee = Number(extraData.storageFee)
+    }
+    if (extraData.totalFee !== undefined && extraData.totalFee !== null) {
+      lockedTotalFee = Number(extraData.totalFee)
+    } else {
+      lockedTotalFee = (lockedProcessingFee || 0) + (lockedStorageFee || 0)
+    }
+    if (lockedTotalFee > 0) {
+      agreedPrice = lockedTotalFee
+    }
+  }
+
   // AUTOMATED REVENUE RECOGNITION WHEN STAGE REACHES 'Delivered'
   if (targetStage === "Delivered" && !existing.invoice_id) {
     invoiceId = `INV-PS-${id}`
-    journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id })
+    journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id, agreed_price: agreedPrice })
 
     // Save invoice to Supabase invoices table
     try {
@@ -246,18 +282,18 @@ export async function transitionProcessingServiceStage(id, targetStage) {
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
         line_items: [
           {
-            description: `Toll processing fee for ${existing.goods_description} (${existing.quantity} ${existing.uom})`,
+            description: `Toll processing & storage fee for ${existing.goods_description} (${existing.quantity} ${existing.uom})`,
             qty: Number(existing.quantity || 1),
-            unit_price: Number(existing.agreed_price || 0) / Number(existing.quantity || 1),
-            total: Number(existing.agreed_price || 0),
+            unit_price: Number(agreedPrice || 0) / Number(existing.quantity || 1),
+            total: Number(agreedPrice || 0),
           }
         ],
-        subtotal: Number(existing.agreed_price || 0),
+        subtotal: Number(agreedPrice || 0),
         tax_amount: 0,
         discount_amount: 0,
-        total_amount: Number(existing.agreed_price || 0),
+        total_amount: Number(agreedPrice || 0),
         amount_paid: 0,
-        balance_due: Number(existing.agreed_price || 0),
+        balance_due: Number(agreedPrice || 0),
         status: "Unpaid",
         currency: "ETB",
       }
@@ -333,6 +369,13 @@ export async function transitionProcessingServiceStage(id, targetStage) {
     status: targetStage,
     status_history: history,
     invoice_id: invoiceId,
+    locked_processing_rate: lockedProcessingRate,
+    locked_processing_fee: lockedProcessingFee,
+    locked_storage_fee: lockedStorageFee,
+    locked_total_fee: lockedTotalFee,
+    processed_at: processedAt,
+    delivered_at: deliveredAt,
+    agreed_price: agreedPrice,
     updated_at: new Date().toISOString(),
   }
 
@@ -344,7 +387,19 @@ export async function transitionProcessingServiceStage(id, targetStage) {
     await fetch(url, {
       method: "PATCH",
       headers: headers("return=representation"),
-      body: JSON.stringify({ status: targetStage, status_history: history, invoice_id: invoiceId, updated_at: new Date().toISOString() }),
+      body: JSON.stringify({
+        status: targetStage,
+        status_history: history,
+        invoice_id: invoiceId,
+        locked_processing_rate: lockedProcessingRate,
+        locked_processing_fee: lockedProcessingFee,
+        locked_storage_fee: lockedStorageFee,
+        locked_total_fee: lockedTotalFee,
+        processed_at: processedAt,
+        delivered_at: deliveredAt,
+        agreed_price: agreedPrice,
+        updated_at: new Date().toISOString(),
+      }),
     })
   } catch (err) {
     console.warn("transitionProcessingServiceStage DB warning:", err.message)

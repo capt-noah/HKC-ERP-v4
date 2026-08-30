@@ -34,6 +34,7 @@ export const resources = {
   revaluations: { table: "revaluations", module: "finance", ...jsonb },
   fixed_assets: { table: "fixed_assets", module: "finance", ...jsonb },
   tax_rules: { table: "tax_rules", module: "finance", ...jsonb },
+  tax_schedules: { table: "tax_schedules", module: "finance", ...jsonb },
 
   employees: { table: "employees", module: "hr", ...jsonb },
   attendance_records: { table: "attendance_records", module: "hr", ...jsonb },

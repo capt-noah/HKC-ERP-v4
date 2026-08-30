@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Pencil, FileText, Plus, Send, Trash2, X, Check, Download, AlertTriangle, Lock, Upload, CheckCircle2 } from "lucide-react"
+import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -21,11 +21,9 @@ import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import SalesIssuePrintModal from "@/components/sales/SalesIssuePrintModal"
 
 import {
-  type ShipmentDocAttachment,
   saveTradeLicense,
   savePaymentAdvice,
   fetchTradeAndAdviceDocs,
-  fetchAllShipmentDocs,
 } from "@/lib/tradeDocumentService"
 
 import {
@@ -48,10 +46,10 @@ const salesIssueColumns: TableColumn[] = [
   { key: "sale_date", label: "Date", align: "left" },
   { key: "item", label: "Item", align: "left" },
   { key: "customer_name", label: "Customer", align: "left" },
-  { key: "batch_no", label: "Batch No", align: "left" },
+  { key: "payment_status", label: "Payment & Settlement", align: "left" },
   { key: "total_quantity", label: "Quantity", align: "right" },
   { key: "unit_price", label: "Unit Price", align: "right" },
-  { key: "total_amount", label: "Amount", align: "right" },
+  { key: "total_amount", label: "Total (ETB)", align: "right" },
   { key: "_actions", label: "Actions", align: "center", noSort: true },
 ]
 
@@ -73,7 +71,7 @@ function SalesIssuedSkeletonRows() {
           <td className="px-4 py-4"><Skeleton className="h-3 w-20 bg-zinc-200/80" /></td>
           <td className="px-4 py-4"><Skeleton className="h-3 w-40 bg-zinc-200/80" /></td>
           <td className="px-4 py-4"><Skeleton className="h-3 w-32 bg-zinc-200/80" /></td>
-          <td className="px-4 py-4"><Skeleton className="h-3 w-24 bg-zinc-200/80" /></td>
+          <td className="px-4 py-4"><Skeleton className="h-3 w-28 bg-zinc-200/80" /></td>
           <td className="px-4 py-4"><Skeleton className="ml-auto h-3 w-16 bg-zinc-200/80" /></td>
           <td className="px-4 py-4"><Skeleton className="ml-auto h-3 w-20 bg-zinc-200/80" /></td>
           <td className="px-4 py-4"><Skeleton className="ml-auto h-3 w-24 bg-zinc-200/80" /></td>
@@ -89,14 +87,15 @@ export default function SalesIssued() {
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
-  const customers = erp.getCustomers()
+  const bankAccounts = financeStore.getAccounts().filter((a) => !a.is_group && (a.code.startsWith("1000") || a.account_type === "Asset"))
+
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [batchFilter, setBatchFilter] = useState("ALL")
+  const [search, setSearch] = useState("")
 
   const [rows, setRows] = useState<SalesIssue[]>([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
-  const [search, setSearch] = useState("")
-  const [batchFilter, setBatchFilter] = useState("ALL")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [formOpen, setFormOpen] = useState(false)
@@ -105,8 +104,6 @@ export default function SalesIssued() {
   const [printingIssue, setPrintingIssue] = useState<SalesIssue | null>(null)
   const [batchOptions, setBatchOptions] = useState<Record<number, AvailableBatch[]>>({})
   const [selectedSoIds, setSelectedSoIds] = useState<string[]>([])
-
-  const [soAttachmentsMap, setSoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
   const [fsNo, setFsNo] = useState("")
   const [referenceNo, setReferenceNo] = useState("")
   const [saleDate, setSaleDate] = useState("")
@@ -124,29 +121,21 @@ export default function SalesIssued() {
   const [previewDocUrl, setPreviewDocUrl] = useState("")
   const [previewDocName, setPreviewDocName] = useState("")
 
-  const salesOrders = erp.getSalesOrders()
+  // Partial Payment Installment Modal State
+  const [payingIssue, setPayingIssue] = useState<SalesIssue | null>(null)
+  const [payAmount, setPayAmount] = useState("")
+  const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0])
+  const [payBank, setPayBank] = useState("1000-02-26")
+  const [payRef, setPayRef] = useState("")
+  const [payAdviceFile, setPayAdviceFile] = useState<File | null>(null)
+  const [payNotes, setPayNotes] = useState("")
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-    fetchAllShipmentDocs().then((docs) => {
-      if (!cancelled && Array.isArray(docs)) {
-        const map: Record<string, ShipmentDocAttachment[]> = {}
-        docs.forEach((d) => {
-          if (!map[d.record_id]) map[d.record_id] = []
-          map[d.record_id].push(d)
-        })
-        setSoAttachmentsMap(map)
-      }
-    }).catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const salesOrders = erp.getSalesOrders()
 
   const pendingSalesOrders = useMemo(() => {
     return salesOrders.filter((so) => {
       if (so.deliveryStatus === "Fully Delivered") return false
-      // Also filter out if reference_no or sales issue rows match so.id
       const alreadyIssued = rows.some((row) => (row.reference_no || "").includes(so.id))
       return !alreadyIssued
     })
@@ -189,7 +178,6 @@ export default function SalesIssued() {
     setReferenceNo("")
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
 
-    // Pull attached docs from referenced sales order & customer profile
     try {
       const resolved = await fetchTradeAndAdviceDocs({
         salesOrderId: firstSo.id,
@@ -219,43 +207,48 @@ export default function SalesIssued() {
       setStagedPaymentAdviceUrl("")
     }
 
-    const pulledItems: SalesIssueItem[] = []
+    const combinedItems: SalesIssueItem[] = []
     activeOrders.forEach((order) => {
-      order.items.forEach((line) => {
-        const prod = products.find((p) => p.id === line.productId || p.name === line.name)
-        const batchNo = prod?.batch || "BATCH-MAIN"
-        pulledItems.push({
-          item_id: prod?.id || line.productId,
-          item_name: line.name || prod?.name || "Product",
-          batch_id: batchNo,
-          batch_no: batchNo,
-          packaging_unit: line.unit || prod?.unit || "Box",
-          available_quantity: prod?.quantity || 1000,
-          quantity: line.qty,
-          unit_price: line.unitPrice,
-          amount: line.total || line.qty * line.unitPrice,
+      ;(order.items || []).forEach((item: any) => {
+        combinedItems.push({
+          item_id: item.productId || item.item_id || item.id,
+          item_name: item.name || item.item_name || "Contract Item",
+          batch_id: item.batch_id || "",
+          batch_no: item.batch_no || item.batch || "",
+          packaging_unit: item.unit || item.packaging_unit || "Box",
+          available_quantity: item.available_quantity || 1000,
+          quantity: item.qty || item.quantity || 1,
+          unit_price: item.unitPrice || item.unit_price || 0,
+          amount: (item.qty || item.quantity || 1) * (item.unitPrice || item.unit_price || 0),
         })
       })
     })
 
-    setItems(pulledItems.length > 0 ? pulledItems : [blankItem()])
+    setItems(combinedItems.length > 0 ? combinedItems : [blankItem()])
   }
+
+  const batchFilters = useMemo(() => {
+    const list = new Set<string>()
+    rows.forEach((r) => (r.items || []).forEach((i) => i.batch_no && list.add(i.batch_no)))
+    return Array.from(list)
+  }, [rows])
 
   const load = async () => {
     setLoading(true)
     setError("")
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), sort: "sale_date.desc" })
-      if (search) params.set("search", search)
-      if (batchFilter !== "ALL") params.set("batch_no", batchFilter)
+      const params = new URLSearchParams()
+      params.set("page", String(page))
+      params.set("pageSize", String(pageSize))
+      if (batchFilter !== "ALL") params.set("batch", batchFilter)
+      if (search.trim()) params.set("search", search.trim())
+
       const result = await listSalesIssues(params)
-      const safeRows = Array.isArray(result?.rows) ? result.rows : Array.isArray(result) ? result : []
-      const sorted = sortNewestFirst(safeRows)
-      const safeTotal = typeof result?.total === "number" ? result.total : sorted.length
+      const sorted = sortNewestFirst(result.rows)
       setRows(sorted)
-      setTotal(safeTotal)
+      setTotal(result.total)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load sales issued records.")
+      setError(err instanceof Error ? err.message : "Failed to load sales issues")
       setRows([])
       setTotal(0)
     } finally {
@@ -265,318 +258,332 @@ export default function SalesIssued() {
 
   useEffect(() => {
     void load()
-  }, [page, pageSize, search, batchFilter])
-
-  const batchFilters = useMemo(() => Array.from(new Set(products.flatMap((product) => product.batches.map((batch) => batch.batchNo)))), [products])
-  const selectableProducts = useMemo(() => {
-    if (!warehouseId) return []
-    const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === warehouseId || warehouse.code === warehouseId)
-    const warehouseKeys = new Set([warehouseId, selectedWarehouse?.id, selectedWarehouse?.code].filter(Boolean))
-    return products.filter((product) => {
-      return product.stockBreakdown.some((entry) => warehouseKeys.has(entry.warehouse) && Number(entry.qty || 0) > 0)
-    })
-  }, [products, warehouseId, warehouses])
-  const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
-  const grandTotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+  }, [page, pageSize, batchFilter, search])
 
   const openCreate = (preselectedSo?: any) => {
     setEditing(null)
-    setFsNo("")
-    setStagedPaymentAdviceName("")
-    setStagedPaymentAdviceUrl("")
+    const nextFs = `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+    setFsNo(nextFs)
+    setSaleDate(new Date().toISOString().split("T")[0])
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
+    setStagedPaymentAdviceName("")
+    setStagedPaymentAdviceUrl("")
 
-    const isRealSo = Boolean(preselectedSo && typeof preselectedSo === "object" && Array.isArray(preselectedSo.items))
-    setReferenceNo("")
-    setSaleDate(new Date().toISOString().split("T")[0])
-    setCustomerName(isRealSo ? preselectedSo.customer : "")
-    
-    if (isRealSo) {
+    if (preselectedSo && preselectedSo.id) {
+      setSelectedSoIds([preselectedSo.id])
+      setCustomerName(preselectedSo.customer)
       const matchedWh = warehouses.find((w) => w.code === preselectedSo.warehouse || w.id === preselectedSo.warehouse || w.name === preselectedSo.warehouse)
       setWarehouseId(matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse))
-      setSelectedSoIds([preselectedSo.id])
       setPaymentType(preselectedSo.paymentType === "Credit" ? "Credit" : "Cash")
-
-      // Pull attached docs from sales order
-      const soDocs = soAttachmentsMap[preselectedSo.id] || []
-      const tradeDoc = soDocs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-      const adviceDoc = soDocs.find((d) => d.document_type === "Payment Advice")
-      if (tradeDoc) {
-        setStagedTradePaperName(tradeDoc.file_name)
-        setStagedTradePaperUrl(tradeDoc.file_url)
+      setReferenceNo("")
+      if (Array.isArray(preselectedSo.items) && preselectedSo.items.length > 0) {
+        setItems(
+          preselectedSo.items.map((i: any) => ({
+            item_id: i.productId || i.item_id || i.id,
+            item_name: i.name || i.item_name || "Contract Item",
+            batch_id: i.batch_id || "",
+            batch_no: i.batch_no || i.batch || "",
+            packaging_unit: i.unit || i.packaging_unit || "Box",
+            available_quantity: i.available_quantity || 1000,
+            quantity: i.qty || i.quantity || 1,
+            unit_price: i.unitPrice || i.unit_price || 0,
+            amount: (i.qty || i.quantity || 1) * (i.unitPrice || i.unit_price || 0),
+          }))
+        )
+      } else {
+        setItems([blankItem()])
       }
-      if (adviceDoc) {
-        setStagedPaymentAdviceName(adviceDoc.file_name)
-        setStagedPaymentAdviceUrl(adviceDoc.file_url)
-      }
 
-      const pulledItems: SalesIssueItem[] = (preselectedSo.items || []).map((line: any) => {
-        const prod = products.find((p) => p.id === line.productId || p.name === line.name)
-        const batchNo = prod?.batch || "BATCH-MAIN"
-        return {
-          item_id: prod?.id || line.productId,
-          item_name: line.name || prod?.name || "Product",
-          batch_id: batchNo,
-          batch_no: batchNo,
-          packaging_unit: line.unit || prod?.unit || "Box",
-          available_quantity: prod?.quantity || 1000,
-          quantity: line.qty,
-          unit_price: line.unitPrice,
-          amount: line.total || line.qty * line.unitPrice,
-        }
+      setIsDocsLoading(true)
+      fetchTradeAndAdviceDocs({
+        salesOrderId: preselectedSo.id,
+        customerId: preselectedSo.customerId,
+        customerName: preselectedSo.customer,
       })
-      setItems(pulledItems.length > 0 ? pulledItems : [blankItem()])
+        .then((res) => {
+          if (res.tradeLicense) {
+            setStagedTradePaperName(res.tradeLicense.name)
+            setStagedTradePaperUrl(res.tradeLicense.url)
+          }
+          if (res.paymentAdvice) {
+            setStagedPaymentAdviceName(res.paymentAdvice.name)
+            setStagedPaymentAdviceUrl(res.paymentAdvice.url)
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsDocsLoading(false))
     } else {
-      setWarehouseId("")
       setSelectedSoIds([])
+      setReferenceNo("")
+      setCustomerName("")
+      setWarehouseId("")
       setPaymentType("Cash")
       setItems([blankItem()])
     }
-
-    setBatchOptions({})
     setFormOpen(true)
   }
 
-  // Handle URL pre-selected Sales Order query parameter ?soId=SO-xxxx
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const urlSoId = urlParams.get("soId")
-    if (urlSoId) {
-      const targetSo = salesOrders.find((s) => s.id === urlSoId)
-      if (targetSo) {
-        openCreate(targetSo)
-      }
-    }
-  }, [salesOrders])
+  const openEdit = async (issue: SalesIssue) => {
+    try {
+      const full = await getSalesIssue(issue.id)
+      setEditing(full)
+      setFsNo(full.fs_no || "")
+      setReferenceNo(full.reference_no || "")
+      setSaleDate(full.sale_date || "")
+      setCustomerName(full.customer_name || "")
+      setWarehouseId(canonicalWarehouseId(full.warehouse_id || ""))
+      setPaymentType(((full.payment_type || (full as any).paymentType || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
+      setItems(full.items && full.items.length > 0 ? full.items : [blankItem()])
 
-  const openEdit = (issue: SalesIssue) => {
-    const statusLower = (issue.status || "").toLowerCase()
-    if (statusLower === "cancelled") {
-      showToast("Cancelled record locked", "warning", "Cancelled sales issues cannot be edited.")
+      setIsDocsLoading(true)
+      fetchTradeAndAdviceDocs({
+        salesIssueId: full.id,
+        salesOrderId: full.reference_no || undefined,
+        fsNo: full.fs_no || undefined,
+        customerName: full.customer_name || undefined,
+      })
+        .then((res) => {
+          if (res.tradeLicense) {
+            setStagedTradePaperName(res.tradeLicense.name)
+            setStagedTradePaperUrl(res.tradeLicense.url)
+          } else {
+            setStagedTradePaperName("")
+            setStagedTradePaperUrl("")
+          }
+          if (res.paymentAdvice) {
+            setStagedPaymentAdviceName(res.paymentAdvice.name)
+            setStagedPaymentAdviceUrl(res.paymentAdvice.url)
+          } else {
+            setStagedPaymentAdviceName("")
+            setStagedPaymentAdviceUrl("")
+          }
+        })
+        .catch(() => {
+          setStagedTradePaperName("")
+          setStagedTradePaperUrl("")
+          setStagedPaymentAdviceName("")
+          setStagedPaymentAdviceUrl("")
+        })
+        .finally(() => setIsDocsLoading(false))
+
+      setFormOpen(true)
+    } catch (err) {
+      showToast("Load failed", "warning", err instanceof Error ? err.message : "Could not open edit form.")
+    }
+  }
+
+  // Open Record Installment Modal for Credit issue
+  const openRecordPayment = (issue: SalesIssue) => {
+    const paymentsForIssue = financeStore.getPaymentsForSalesIssue(issue.id)
+    const paidVal = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(issue.amount_paid || 0)
+    const totalVal = Number(issue.total_amount || 0)
+    const dueVal = Number(Math.max(0, totalVal - paidVal).toFixed(2))
+
+    setPayingIssue(issue)
+    setPayAmount(dueVal > 0 ? String(dueVal) : "")
+    setPayDate(new Date().toISOString().split("T")[0])
+    setPayBank("1000-02-26")
+    setPayRef(`DEP-${Date.now().toString().slice(-4)}`)
+    setPayAdviceFile(null)
+    setPayNotes("")
+  }
+
+  const handleRecordInstallmentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!payingIssue) return
+    const numAmount = parseFloat(payAmount)
+    if (isNaN(numAmount) || numAmount <= 0) {
+      showToast("Invalid Amount", "warning", "Please enter a valid installment payment amount.")
       return
     }
 
-    const targetWh = issue.warehouse_id || (issue as any).warehouse || ""
-    const normalizedWarehouseId = canonicalWarehouseId(targetWh)
+    const paymentsForIssue = financeStore.getPaymentsForSalesIssue(payingIssue.id)
+    const alreadyPaid = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(payingIssue.amount_paid || 0)
+    const totalVal = Number(payingIssue.total_amount || 0)
+    const currentDue = Number(Math.max(0, totalVal - alreadyPaid).toFixed(2))
 
-    setEditing(issue)
-    setFsNo(issue.fs_no || (issue as any).fsNo || "")
-    setReferenceNo(issue.reference_no || (issue as any).referenceNo || "")
-    setSaleDate(issue.sale_date || (issue as any).issueDate || issue.sale_date || new Date().toISOString().split("T")[0])
-    const cName = issue.customer_name || (issue as any).customer || issue.customer_id || ""
-    setCustomerName(cName)
-    setWarehouseId(normalizedWarehouseId)
-    setPaymentType(((issue.payment_type || (issue as any).paymentType || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
-
-    // Synchronously pre-populate from customer registry and sales order attachment cache for 0ms instant display
-    const matchedCust = customers.find((c) => c.name === cName || c.id === cName)
-    if (matchedCust?.tradePaperUrl) {
-      setStagedTradePaperName(matchedCust.tradePaperFileName || "Trade License.pdf")
-      setStagedTradePaperUrl(matchedCust.tradePaperUrl)
-    } else {
-      setStagedTradePaperName("")
-      setStagedTradePaperUrl("")
+    if (numAmount > currentDue + 0.01) {
+      showToast("Overpayment Notice", "warning", `Payment amount (ETB ${numAmount.toLocaleString()}) cannot exceed remaining balance due (ETB ${currentDue.toLocaleString()}).`)
+      return
     }
 
-    const refSoId = issue.reference_no || ""
-    const cachedDocs = soAttachmentsMap[issue.id] || soAttachmentsMap[refSoId] || []
-    const cachedAdvice = cachedDocs.find((d) => d.document_type === "Payment Advice")
-    if (cachedAdvice) {
-      setStagedPaymentAdviceName(cachedAdvice.file_name || "")
-      setStagedPaymentAdviceUrl(cachedAdvice.file_url || "")
-    } else {
-      setStagedPaymentAdviceName("")
-      setStagedPaymentAdviceUrl("")
+    setIsSubmittingPayment(true)
+    try {
+      let stagedSlipUrl = ""
+      let stagedSlipName = ""
+      if (payAdviceFile) {
+        stagedSlipName = payAdviceFile.name
+        stagedSlipUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(payAdviceFile)
+        })
+
+        try {
+          await savePaymentAdvice({
+            salesIssueId: payingIssue.id,
+            salesOrderId: payingIssue.reference_no.trim() || undefined,
+            fsNo: payingIssue.fs_no.trim(),
+            invoiceId: `INV-SI-${payingIssue.id}`,
+            fileName: stagedSlipName,
+            fileUrl: stagedSlipUrl,
+            uploadedBy: "Cashier",
+          })
+        } catch (err) {
+          console.warn("Advice upload note:", err)
+        }
+      }
+
+      // Record payment with auto balanced double entry
+      financeStore.recordPayment({
+        linked_invoice_id: `INV-SI-${payingIssue.id}`,
+        sales_issue_id: payingIssue.id,
+        sales_order_id: payingIssue.reference_no,
+        customer_name: payingIssue.customer_name,
+        amount: numAmount,
+        currency: "ETB",
+        date: payDate,
+        method: "Bank Deposit",
+        bank_account_code: payBank,
+        reference: payRef || `DEP-${Date.now().toString().slice(-4)}`,
+        payment_advice_url: stagedSlipUrl || undefined,
+        payment_advice_filename: stagedSlipName || undefined,
+        notes: payNotes,
+        direction: "Received",
+      })
+
+      const newPaid = Number((alreadyPaid + numAmount).toFixed(2))
+      const newDue = Number(Math.max(0, totalVal - newPaid).toFixed(2))
+      const newSettlement = newDue <= 0 ? "Fully Settled" : "Ongoing"
+
+      // Update Sales Issue in DB
+      await updateSalesIssue(payingIssue.id, {
+        items: payingIssue.items || [],
+        amount_paid: newPaid,
+        balance_due: newDue,
+        settlement_status: newSettlement,
+      } as any)
+
+      // Update linked sales order in ERP store if present
+      const refStr = payingIssue.reference_no || ""
+      const linkedOrders = salesOrders.filter((so) => refStr.includes(so.id) || so.id === payingIssue.reference_no)
+      linkedOrders.forEach((so) => {
+        const soTotal = Number(so.amount || 0)
+        const soPaid = Number(((so.paidAmount || 0) + numAmount).toFixed(2))
+        const soDue = Number(Math.max(0, soTotal - soPaid).toFixed(2))
+        erp.updateSalesOrder({
+          ...so,
+          paidAmount: soPaid,
+          remainingBalance: soDue,
+          settlementStatus: soDue <= 0 ? "Fully Settled" : (soPaid > 0 ? "Ongoing" : "Unpaid"),
+        })
+      })
+
+      showToast(
+        "Payment Recorded",
+        "success",
+        `Installment of ETB ${numAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} recorded for ${payingIssue.fs_no}. Remaining balance: ETB ${newDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
+      )
+      setPayingIssue(null)
+      await load()
+    } catch (err) {
+      showToast("Payment Failed", "warning", err instanceof Error ? err.message : "Failed to record payment.")
+    } finally {
+      setIsSubmittingPayment(false)
     }
-
-    setIsDocsLoading(true)
-
-    const rawItems = (issue.items && issue.items.length > 0) ? issue.items : [blankItem()]
-    const populatedItems = rawItems.map((item) => {
-      const product = products.find((entry) => entry.id === item.item_id || entry.name === item.item_name)
-      return {
-        ...item,
-        item_id: item.item_id || product?.id || "",
-        item_name: item.item_name || product?.name || "",
-        batch_no: item.batch_no || product?.batch || "BATCH-MAIN",
-        batch_id: item.batch_id || item.batch_no || product?.batch || "BATCH-MAIN",
-        packaging_unit: item.packaging_unit || product?.unit || "Box",
-        quantity: Number(item.quantity || (item as any).qty || 1),
-        unit_price: Number(item.unit_price ?? (item as any).price ?? product?.sellingPrice ?? 0),
-        amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
-      }
-    })
-
-    setItems(populatedItems)
-    setBatchOptions({})
-
-    // Open modal immediately without waiting on network calls
-    setFormOpen(true)
-
-    // Concurrently fetch detailed issue data, attachments, and available batches in parallel
-    void (async () => {
-      try {
-        const [fetchRes, resolvedDocs] = await Promise.all([
-          getSalesIssue(issue.id).catch(() => null),
-          fetchTradeAndAdviceDocs({
-            salesIssueId: issue.id,
-            salesOrderId: issue.reference_no,
-            fsNo: issue.fs_no,
-            customerName: issue.customer_name || (issue as any).customer,
-          }).catch(() => null),
-        ])
-
-        if (fetchRes && typeof fetchRes === "object" && fetchRes.id) {
-          setEditing(fetchRes)
-          if (fetchRes.items && fetchRes.items.length > 0) {
-            const updatedItems = fetchRes.items.map((item) => {
-              const product = products.find((entry) => entry.id === item.item_id || entry.name === item.item_name)
-              return {
-                ...item,
-                item_id: item.item_id || product?.id || "",
-                item_name: item.item_name || product?.name || "",
-                batch_no: item.batch_no || product?.batch || "BATCH-MAIN",
-                batch_id: item.batch_id || item.batch_no || product?.batch || "BATCH-MAIN",
-                packaging_unit: item.packaging_unit || product?.unit || "Box",
-                quantity: Number(item.quantity || (item as any).qty || 1),
-                unit_price: Number(item.unit_price ?? (item as any).price ?? product?.sellingPrice ?? 0),
-                amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
-              }
-            })
-            setItems(updatedItems)
-          }
-        }
-
-        if (resolvedDocs?.tradeLicense) {
-          setStagedTradePaperName(resolvedDocs.tradeLicense.name || "")
-          setStagedTradePaperUrl(resolvedDocs.tradeLicense.url || "")
-        }
-        if (resolvedDocs?.paymentAdvice) {
-          setStagedPaymentAdviceName(resolvedDocs.paymentAdvice.name || "")
-          setStagedPaymentAdviceUrl(resolvedDocs.paymentAdvice.url || "")
-        }
-
-        if (normalizedWarehouseId) {
-          const options = await Promise.all(
-            populatedItems.map((row) =>
-              row.item_id ? getAvailableBatches(row.item_id, normalizedWarehouseId).catch(() => []) : Promise.resolve([])
-            )
-          )
-          setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
-        }
-      } catch (err) {
-        console.warn("Non-blocking background load error for sales issue:", err)
-      } finally {
-        setIsDocsLoading(false)
-      }
-    })()
   }
 
   const updateItem = async (index: number, patch: Partial<SalesIssueItem>) => {
-    const next = items.map((item, itemIndex) => {
-      if (itemIndex !== index) return item
-      const merged = { ...item, ...patch }
-      merged.amount = Number(merged.quantity || 0) * Number(merged.unit_price || 0)
-      return merged
-    })
-    setItems(next)
-
-    if (patch.item_id && warehouseId) {
-      const batches = await getAvailableBatches(patch.item_id, canonicalWarehouseId(warehouseId)).catch(() => [])
-      setBatchOptions((current) => ({ ...current, [index]: batches }))
+    const next = [...items]
+    const current = next[index]
+    const updated = { ...current, ...patch }
+    if (patch.item_id && patch.item_id !== current.item_id && warehouseId) {
+      try {
+        const batches = await getAvailableBatches(patch.item_id, canonicalWarehouseId(warehouseId))
+        setBatchOptions((prev) => ({ ...prev, [index]: batches }))
+      } catch {
+        setBatchOptions((prev) => ({ ...prev, [index]: [] }))
+      }
     }
+    const qty = Number(updated.quantity || 0)
+    const unitPrice = Number(updated.unit_price || 0)
+    updated.amount = qty * unitPrice
+    next[index] = updated
+    setItems(next)
   }
 
-  const handleWarehouseChange = async (nextWarehouseId: string) => {
-    setWarehouseId(nextWarehouseId)
-    const options = await Promise.all(
-      items.map((item) =>
-        item.item_id ? getAvailableBatches(item.item_id, canonicalWarehouseId(nextWarehouseId)).catch(() => []) : Promise.resolve([])
-      )
-    )
-    setBatchOptions(Object.fromEntries(options.map((batches, index) => [index, batches])))
-  }
+  const totalQuantity = useMemo(() => items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [items])
+  const grandTotal = useMemo(() => items.reduce((sum, item) => sum + Number(item.amount || 0), 0), [items])
+
+  const selectableProducts = useMemo(() => {
+    return products.filter((p) => {
+      if (!warehouseId) return true
+      const targetWh = canonicalWarehouseId(warehouseId)
+      const targetWhBase = targetWh.split("-")[0]
+      const totalWhQty = (p.stockBreakdown || [])
+        .filter((sb) => sb.warehouse === targetWh || (sb.warehouse || "").split("-")[0] === targetWhBase)
+        .reduce((sum, sb) => sum + Number(sb.qty || 0), 0)
+      return totalWhQty > 0 || (p.quantity || 0) > 0
+    })
+  }, [products, warehouseId])
 
   const handleSave = async () => {
-    if (!fsNo.trim()) {
-      showToast("FS No required", "warning", "Provide an FS number.")
-      return
-    }
-    if (!saleDate) {
-      showToast("Date required", "warning", "Select a sale date.")
-      return
-    }
-    if (!customerName.trim()) {
-      showToast("Customer required", "warning", "Customer name cannot be empty.")
-      return
-    }
-    if (!warehouseId) {
-      showToast("Warehouse required", "warning", "Pick an active warehouse.")
+    if (!fsNo.trim() || !saleDate || !customerName.trim() || !warehouseId) {
+      showToast("Missing fields", "warning", "Please fill in all header fields.")
       return
     }
 
-    const isPostedEdit = editing && (editing.status || "").toLowerCase() === "posted"
-
-    if (!isPostedEdit) {
-      const invalidItem = items.some((item) => {
-        return !item.item_id || !item.batch_no || Number(item.quantity) <= 0 || Number(item.unit_price) < 0
-      })
-      if (invalidItem) {
-        showToast("Check item rows", "warning", "Each row needs an item, batch number, valid quantity (> 0), and price.")
-        return
-      }
+    const validItems = items.filter((item) => item.item_id && item.quantity > 0)
+    if (validItems.length === 0) {
+      showToast("No items", "warning", "At least one item with quantity > 0 is required.")
+      return
     }
 
-    const enteredCustomer = customerName.trim()
-    const payload = {
-      id: editing?.id,
-      fs_no: fsNo.trim(),
-      reference_no: referenceNo.trim() || `REF-${fsNo.trim()}`,
-      sale_date: saleDate,
-      customer_id: enteredCustomer,
-      customer_name: enteredCustomer,
-      warehouse_id: canonicalWarehouseId(warehouseId),
-      payment_type: paymentType,
-      items: items.map((item, index) => ({
-        ...item,
-        id: item.id || `${editing?.id || fsNo}-ITEM-${index + 1}`,
-        batch_no: item.batch_no || "BATCH-MAIN",
-        batch_id: item.batch_id || item.batch_no || "BATCH-MAIN",
-      })),
-    }
-
+    setIsSaving(true)
     try {
-      setIsSaving(true)
-      let savedIssueId = editing?.id || ""
+      const isPostedEdit = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
+      let issueId = editing?.id
+
       if (editing) {
-        await updateSalesIssue(editing.id, payload)
-        savedIssueId = editing.id
+        await updateSalesIssue(editing.id, {
+          fs_no: fsNo.trim(),
+          reference_no: referenceNo.trim() || (selectedSoIds.length > 0 ? selectedSoIds.join(", ") : undefined),
+          sale_date: saleDate,
+          customer_name: customerName.trim(),
+          warehouse_id: canonicalWarehouseId(warehouseId),
+          payment_type: paymentType,
+          items: validItems,
+        })
       } else {
-        const createdRes = await createSalesIssue(payload)
-        savedIssueId = (createdRes as any)?.id || payload.id || `SI-${Date.now().toString().slice(-6)}`
+        const created = await createSalesIssue({
+          fs_no: fsNo.trim(),
+          reference_no: referenceNo.trim() || (selectedSoIds.length > 0 ? selectedSoIds.join(", ") : undefined),
+          sale_date: saleDate,
+          customer_name: customerName.trim(),
+          warehouse_id: canonicalWarehouseId(warehouseId),
+          payment_type: paymentType,
+          items: validItems,
+        })
+        issueId = created.id
       }
 
-      const issueId = savedIssueId || editing?.id || fsNo.trim()
-
-      // 1. Persist Trade License
-      if (stagedTradePaperUrl && stagedTradePaperName) {
+      if (issueId && stagedTradePaperName && stagedTradePaperUrl) {
         try {
           await saveTradeLicense({
-            customerName: enteredCustomer,
             salesIssueId: issueId,
             salesOrderId: referenceNo.trim() || undefined,
+            customerName: customerName.trim() || undefined,
             fileName: stagedTradePaperName,
             fileUrl: stagedTradePaperUrl,
             uploadedBy: "Sales Officer",
           })
-        } catch (err) {
-          console.warn("Failed saving Trade License on sales issue:", err)
+        } catch (docErr) {
+          console.warn("Trade license upload notice:", docErr)
         }
       }
 
-      // 2. Persist Payment Advice
-      if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
+      if (issueId && stagedPaymentAdviceName && stagedPaymentAdviceUrl) {
         try {
           await savePaymentAdvice({
             salesIssueId: issueId,
@@ -592,26 +599,6 @@ export default function SalesIssued() {
         }
       }
 
-      // If converted from Credit to Cash, also update referenced Sales Orders in ERP store and linked Invoice in Finance
-      if (editing && paymentType === "Cash") {
-        const refStr = editing.reference_no || ""
-        const linkedOrders = salesOrders.filter((so) => refStr.includes(so.id) || so.id === editing.reference_no)
-        linkedOrders.forEach((so) => {
-          if (so.paymentType !== "Cash") {
-            erp.updateSalesOrder({ ...so, paymentType: "Cash" })
-          }
-        })
-
-        const totalAmt = Number(editing.total_amount || 0)
-        financeStore.updateInvoice(`INV-SI-${editing.id}`, {
-          status: "Paid",
-          amount_paid: totalAmt,
-          balance_due: 0,
-          payment_terms: "Cash",
-        })
-      }
-
-      // Mark linked Sales Orders as Fully Delivered / Shipped to prevent duplicate issue creation
       if (selectedSoIds.length > 0) {
         selectedSoIds.forEach((soId) => {
           erp.updateSalesOrderStage(soId, "Shipped")
@@ -622,7 +609,7 @@ export default function SalesIssued() {
         "Sales Issue Saved",
         "success",
         isPostedEdit
-          ? `Sales issue ${fsNo} payment terms updated to ${paymentType}${stagedPaymentAdviceName ? " with Payment Advice attached." : "."}`
+          ? `Sales issue ${fsNo} terms updated to ${paymentType}.`
           : `Sales issue ${fsNo} saved successfully.`
       )
       setFormOpen(false)
@@ -634,56 +621,14 @@ export default function SalesIssued() {
     }
   }
 
-  useEffect(() => {
-    if (!formOpen || !warehouseId) return
-    let cancelled = false
-    const refresh = async () => {
-      const options = await Promise.all(
-        items.map((item) =>
-          item.item_id
-            ? getAvailableBatches(item.item_id, canonicalWarehouseId(warehouseId)).catch(() => [])
-            : Promise.resolve([])
-        )
-      )
-      if (!cancelled) {
-        const batchMap = Object.fromEntries(options.map((batches, index) => [index, batches]))
-        setBatchOptions(batchMap)
-
-        // Auto-select the first available batch if item has no batch selected yet
-        setItems((currentItems) =>
-          currentItems.map((row, idx) => {
-            const availableForIdx = options[idx] || []
-            if (!row.batch_no && availableForIdx.length > 0) {
-              const firstBatch = availableForIdx[0]
-              return {
-                ...row,
-                batch_no: firstBatch.batch_no,
-                batch_id: firstBatch.batch_no,
-                available_quantity: firstBatch.available_quantity,
-                unit_price: firstBatch.unit_price ?? row.unit_price,
-              }
-            }
-            return row
-          })
-        )
-      }
-    }
-    void refresh()
-    return () => {
-      cancelled = true
-    }
-  }, [warehouseId, formOpen, items.map((i) => i.item_id).join(",")])
-
   const doPost = (issue: SalesIssue) => {
     confirm({
-      title: "Post Sales Issue?",
+      title: `Post Sales Issue ${issue.fs_no}?`,
       message: "Posting reduces batch stock and creates balanced journal entries. This can happen only once.",
       confirmLabel: "Post",
       onConfirm: async () => {
         try {
           await postSalesIssue(issue.id)
-          
-          // Mark any linked Sales Orders in reference_no as Fully Delivered
           const refStr = issue.reference_no || ""
           const matchingOrders = salesOrders.filter((so) => refStr.includes(so.id))
           matchingOrders.forEach((so) => {
@@ -716,16 +661,16 @@ export default function SalesIssued() {
   }
 
   const salesTable = useResizableTable<SalesIssue>(salesIssueColumns, rows, {
-    fs_no: 120,
-    reference_no: 130,
-    sale_date: 110,
-    item: 180,
-    customer_name: 180,
-    batch_no: 120,
-    total_quantity: 110,
-    unit_price: 110,
-    total_amount: 120,
-    _actions: 210,
+    fs_no: 110,
+    reference_no: 120,
+    sale_date: 100,
+    item: 160,
+    customer_name: 160,
+    payment_status: 170,
+    total_quantity: 90,
+    unit_price: 100,
+    total_amount: 110,
+    _actions: 190,
   })
 
   const isPostedEditing = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
@@ -737,7 +682,7 @@ export default function SalesIssued() {
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Sales Issued</h1>
-            <p className="text-xs font-semibold text-zinc-500 mt-1">Record and manage issued sales transactions.</p>
+            <p className="text-xs font-semibold text-zinc-500 mt-1">Record, track partial credit installments, and manage issued sales transactions.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <SubPageNav items={getSectionChildren("/sales")} />
@@ -794,53 +739,104 @@ export default function SalesIssued() {
                   <SalesIssuedSkeletonRows />
                 ) : salesTable.sorted().length === 0 ? (
                   <tr><td colSpan={salesIssueColumns.length} className="py-16 text-center text-xs font-bold text-zinc-400">No sales issued records match your filters.</td></tr>
-                ) : salesTable.sorted().map((row) => (
-                  <tr key={row.id} className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs">
-                    <td style={{ width: `${salesTable.colWidths.fs_no}px` }} className="px-3 py-3 font-mono text-xs font-black text-zinc-950 truncate">{row.fs_no}</td>
-                    <td style={{ width: `${salesTable.colWidths.reference_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.reference_no}</td>
-                    <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.sale_date}</td>
-                    <td style={{ width: `${salesTable.colWidths.item}px` }} className="px-3 py-3 text-xs font-black text-zinc-900 truncate">{row.items?.[0]?.item_name || "Multiple items"}</td>
-                    <td style={{ width: `${salesTable.colWidths.customer_name}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.customer_name}</td>
-                    <td style={{ width: `${salesTable.colWidths.batch_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.items?.[0]?.batch_no || "-"}</td>
-                    <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{Number(row.total_quantity).toLocaleString()}</td>
-                    <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
-                    <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
-                    <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
-                      <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          disabled={row.status === "Cancelled"}
-                          onClick={() => void openEdit(row)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer"
-                          title="Edit Sales Issue"
-                        >
-                          <Pencil className="size-3 text-zinc-700" /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPrintingIssue(row)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                          title="Export Sales Issue Voucher"
-                        >
-                          <Download className="size-3 text-zinc-700" /> Export
-                        </button>
-                        {row.status === "Draft" && (
+                ) : salesTable.sorted().map((row) => {
+                  const isCash = (row.payment_type || "Cash") === "Cash"
+                  const paymentsForIssue = financeStore.getPaymentsForSalesIssue(row.id)
+                  const totalAmt = Number(row.total_amount || 0)
+                  const paidAmt = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(row.amount_paid || 0)
+                  const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
+                  const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
+
+                  return (
+                    <tr key={row.id} className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs">
+                      <td style={{ width: `${salesTable.colWidths.fs_no}px` }} className="px-3 py-3 font-mono text-xs font-black text-zinc-950 truncate">{row.fs_no}</td>
+                      <td style={{ width: `${salesTable.colWidths.reference_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.reference_no}</td>
+                      <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.sale_date}</td>
+                      <td style={{ width: `${salesTable.colWidths.item}px` }} className="px-3 py-3 text-xs font-black text-zinc-900 truncate">{row.items?.[0]?.item_name || "Multiple items"}</td>
+                      <td style={{ width: `${salesTable.colWidths.customer_name}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.customer_name}</td>
+                      
+                      {/* Payment & Settlement Status */}
+                      <td style={{ width: `${salesTable.colWidths.payment_status}px` }} className="px-3 py-3">
+                        {isCash ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Cash (Immediate)
+                          </span>
+                        ) : dueAmt <= 0 && paidAmt > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="size-3 text-emerald-600" /> Credit • Fully Settled
+                          </span>
+                        ) : paidAmt > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 self-start">
+                              Credit • Ongoing ({pct}%)
+                            </span>
+                            <span className="text-[10px] font-mono text-zinc-500">
+                              Paid: {money(paidAmt)} • Due: {money(dueAmt)}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 self-start">
+                              Credit • Unpaid (0%)
+                            </span>
+                            <span className="text-[10px] font-mono text-rose-600 font-bold">
+                              Due: {money(dueAmt)}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{Number(row.total_quantity).toLocaleString()}</td>
+                      <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
+                      <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
+                      <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
+                        <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          {!isCash && dueAmt > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openRecordPayment(row)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-[11px] transition-all border border-blue-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                              title="Record Payment Installment"
+                            >
+                              <Receipt className="size-3 text-blue-700" /> Pay
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => doPost(row)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                            title="Post and deduct stock"
+                            disabled={row.status === "Cancelled"}
+                            onClick={() => void openEdit(row)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer"
+                            title="Edit Sales Issue"
                           >
-                            <Send className="size-3 text-emerald-700" /> Post
+                            <Pencil className="size-3 text-zinc-700" /> Edit
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            type="button"
+                            onClick={() => setPrintingIssue(row)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            title="Export Sales Issue Voucher"
+                          >
+                            <Download className="size-3 text-zinc-700" /> Export
+                          </button>
+                          {row.status === "Draft" && (
+                            <button
+                              type="button"
+                              onClick={() => doPost(row)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                              title="Post and deduct stock"
+                            >
+                              <Send className="size-3 text-emerald-700" /> Post
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </TableScrollWrapper>
+
           <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 px-6 py-4 bg-white/40 gap-3">
             <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
               <span>
@@ -886,6 +882,7 @@ export default function SalesIssued() {
         </GlassCard>
       </main>
 
+      {/* MODAL 1: ADD / EDIT SALES ISSUE */}
       <AnimatePresence>
         {formOpen && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
@@ -895,7 +892,7 @@ export default function SalesIssued() {
               {editing ? (
                 <EditModalHeader
                   title={isPostedEditing ? `Edit Posted Sales Issue (${editing.fs_no})` : `Edit Sales Issue (${editing.fs_no})`}
-                  subtitle={isPostedEditing ? "Update payment settlement terms from Credit to Cash and attach Payment Advice." : "Amount is calculated automatically per row."}
+                  subtitle={isPostedEditing ? "Stock balances are locked. Update reference documentation and notes." : "Amount is calculated automatically per row."}
                   onClose={() => setFormOpen(false)}
                   onRequestDelete={editing.status === "Draft" ? () => doDelete(editing) : undefined}
                   deleteLabel="Delete Sales Issue"
@@ -912,77 +909,135 @@ export default function SalesIssued() {
                 </div>
               )}
 
-              {/* POSTED SETTLEMENT NOTICE BANNER */}
-              {isPostedEditing && (
-                <div className="mb-5 p-3.5 bg-blue-50 border border-blue-200 rounded-2xl text-blue-900 text-xs font-semibold flex items-center gap-2.5">
-                  <AlertTriangle className="size-4 text-blue-700 shrink-0" />
-                  <div>
-                    <span className="font-black uppercase tracking-wider block">Posted Record: Stock Deductions Locked</span>
-                    <span className="text-[11px] text-blue-800 block mt-0.5">
-                      Batch stock quantities and accounting journal vouchers are already posted. You can update payment terms (e.g. convert from <strong>Credit</strong> to <strong>Cash</strong>) and attach <strong>Payment Advice</strong>.
-                    </span>
-                  </div>
-                </div>
+              {/* FINANCIAL SUMMARY & SETTLEMENT KPI CARD FOR EDITING */}
+              {editing && (
+                (() => {
+                  const issuePayments = financeStore.getPaymentsForSalesIssue(editing.id)
+                  const totalAmt = Number(editing.total_amount || 0)
+                  const paidAmt = issuePayments.reduce((s, p) => s + p.amount, 0) || Number(editing.amount_paid || 0)
+                  const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
+                  const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
+                  const isCredit = (editing.payment_type || "Cash") === "Credit"
+
+                  return (
+                    <div className="mb-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Financial Settlement Progress</span>
+                          <h4 className="text-sm font-black text-zinc-900 flex items-center gap-2">
+                            Terms: <span className={isCredit ? "text-blue-700" : "text-emerald-700"}>{editing.payment_type}</span>
+                            {isCredit && (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                dueAmt <= 0 ? "bg-emerald-100 text-emerald-800" : paidAmt > 0 ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800"
+                              }`}>
+                                {dueAmt <= 0 ? "Fully Settled (100%)" : paidAmt > 0 ? `Ongoing (${pct}%)` : "Unpaid (0%)"}
+                              </span>
+                            )}
+                          </h4>
+                        </div>
+                        {isCredit && dueAmt > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormOpen(false)
+                              openRecordPayment(editing)
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer self-start sm:self-auto"
+                          >
+                            <Receipt className="size-3.5" /> Record Installment
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${dueAmt <= 0 ? "bg-emerald-600" : "bg-blue-600"}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                        <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase block">Total Invoiced</span>
+                          <span className="font-mono text-xs font-black text-zinc-900">ETB {money(totalAmt)}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase block">Total Paid ({pct}%)</span>
+                          <span className="font-mono text-xs font-black text-emerald-700">ETB {money(paidAmt)}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
+                          <span className="text-[10px] font-bold text-rose-600 uppercase block">Remaining Due</span>
+                          <span className="font-mono text-xs font-black text-rose-700">ETB {money(dueAmt)}</span>
+                        </div>
+                      </div>
+
+                      {/* Payment Installments Timeline */}
+                      {issuePayments.length > 0 && (
+                        <div className="pt-2 border-t border-zinc-200/80">
+                          <span className="text-[10px] font-black uppercase text-zinc-400 block mb-2">Recorded Installment History ({issuePayments.length}):</span>
+                          <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                            {issuePayments.map((p, idx) => (
+                              <div key={p.id || idx} className="flex items-center justify-between text-xs p-2 rounded-xl bg-white border border-zinc-200">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-[10px] font-black bg-zinc-100 text-zinc-700 px-1.5 py-0.5 rounded">
+                                    #{p.installment_no || idx + 1}
+                                  </span>
+                                  <span className="font-bold text-zinc-800">{p.date}</span>
+                                  <span className="text-zinc-500 font-mono text-[11px]">({p.reference})</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="font-mono font-black text-emerald-700">ETB {money(p.amount)}</span>
+                                  {p.payment_advice_url && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPreviewDocUrl(p.payment_advice_url!)
+                                        setPreviewDocName(p.payment_advice_filename || "Payment Slip")
+                                      }}
+                                      className="text-blue-600 font-bold hover:underline text-[11px]"
+                                    >
+                                      View Slip ↗
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()
               )}
 
-              {/* PULL PENDING SALES ORDERS PICKER BAR */}
+              {/* SALES ORDER PULL SELECTOR (Only in create mode) */}
               {!editing && pendingSalesOrders.length > 0 && (
-                <div className="mb-6 p-4 bg-emerald-50/90 border border-emerald-200/80 rounded-2xl">
-                  <div className="flex items-center justify-between mb-2.5">
-                    <div className="flex items-center gap-2">
-                      <Download className="size-4 text-emerald-700" />
-                      <span className="text-xs font-black uppercase text-emerald-950 tracking-wide">
-                        Pull From Pending Sales Orders ({pendingSalesOrders.length} Available)
+                <div className="mb-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-black uppercase tracking-wider text-zinc-800 block">
+                        Pull from Pending Sales Orders ({pendingSalesOrders.length} available)
+                      </span>
+                      <span className="text-[11px] font-semibold text-zinc-500 block mt-0.5">
+                        Selecting order(s) auto-populates Customer, Warehouse, Items, and Payment Terms.
                       </span>
                     </div>
-                    <span className="text-[10px] font-bold text-emerald-700">
-                      Select 1 or multiple orders to auto-fill contract items & documents
+                    <span className="text-xs font-bold text-zinc-400">
+                      {selectedSoIds.length} selected
                     </span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
                     {pendingSalesOrders.map((so) => {
                       const isSelected = selectedSoIds.includes(so.id)
-                      const docs = soAttachmentsMap[so.id] || []
-                      const hasTrade = docs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-                      const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
                       const isCredit = so.paymentType === "Credit"
-
-                      // Dual-gate rule: Must be Approved AND have required docs
-                      const isApproved = so.approvalStatus === "Approved"
-                      const isPendingApproval = (so.approvalStatus || "Pending") === "Pending"
-                      const isDeclined = so.approvalStatus === "Declined"
-
-                      // Cash requires both; Credit requires only Trade License
-                      const isTradeMissing = !hasTrade
-                      const isAdviceMissing = !isCredit && !hasAdvice
-                      const isLocked = isTradeMissing || isAdviceMissing || !isApproved
-
                       return (
                         <button
                           key={so.id}
                           type="button"
-                          disabled={isLocked}
-                          onClick={() => {
-                            if (isLocked) {
-                              if (isDeclined) {
-                                showToast("Order Declined", "warning", `Sales Order ${so.id} was declined by Super Admin: ${so.declineReason || "Approval rejected."}`)
-                              } else if (isPendingApproval) {
-                                showToast("Pending Approval", "warning", `Sales Order ${so.id} requires Super Admin approval before it can be fulfilled.`)
-                              } else if (isTradeMissing) {
-                                showToast("Missing Document", "warning", "Trade License is required before issuing stock.")
-                              } else if (isAdviceMissing) {
-                                showToast("Payment Advice Required", "warning", "Payment Advice is mandatory before issuing stock for Cash sales.")
-                              }
-                              return
-                            }
-                            handleTogglePullSalesOrder(so)
-                          }}
+                          onClick={() => handleTogglePullSalesOrder(so)}
                           className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold text-left transition-all ${
-                            isLocked
-                              ? isDeclined 
-                                ? "bg-rose-50/80 border-rose-200/90 text-rose-900 cursor-not-allowed opacity-80"
-                                : "bg-amber-50/80 border-amber-200/90 text-amber-900 cursor-not-allowed opacity-80"
-                              : isSelected 
+                            isSelected 
                               ? "bg-emerald-700 text-white border-emerald-700 shadow-sm" 
                               : "bg-white text-zinc-800 border-zinc-200 hover:bg-zinc-100"
                           }`}
@@ -993,39 +1048,10 @@ export default function SalesIssued() {
                               <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold ${isCredit ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`}>
                                 {isCredit ? "Credit" : "Cash"}
                               </span>
-                              {isLocked && (
-                                <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full ${
-                                  isDeclined 
-                                    ? "bg-rose-200/90 text-rose-950" 
-                                    : "bg-amber-200/80 text-amber-950"
-                                }`}>
-                                  <AlertTriangle className="size-2.5" />
-                                  {isDeclined
-                                    ? "Declined by Admin"
-                                    : isPendingApproval
-                                    ? "Pending Admin Approval"
-                                    : isTradeMissing && isAdviceMissing
-                                    ? "Trade & Advice Missing"
-                                    : isAdviceMissing
-                                    ? "Payment Advice Missing"
-                                    : "Trade License Missing"}
-                                </span>
-                              )}
                             </div>
-                            <div className={`text-[10px] mt-0.5 ${isLocked ? (isDeclined ? "text-rose-800 font-semibold" : "text-amber-800 font-semibold") : isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
-                              {so.warehouse} • ETB {so.amount.toLocaleString()} ({so.items.length} contract items)
+                            <div className={`text-[10px] mt-0.5 ${isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
+                              {so.warehouse} • ETB {Number(so.amount || 0).toLocaleString()} ({so.items.length} contract items)
                             </div>
-                          </div>
-                          <div className={`size-5 rounded-full border flex items-center justify-center shrink-0 ${
-                            isLocked 
-                              ? isDeclined
-                                ? "bg-rose-100 border-rose-300 text-rose-800"
-                                : "bg-amber-100 border-amber-300 text-amber-800" 
-                              : isSelected 
-                              ? "bg-white text-emerald-700 border-white" 
-                              : "border-zinc-300"
-                          }`}>
-                            {isLocked ? <Lock className="size-3" /> : isSelected ? <Check className="size-3 stroke-[3]" /> : null}
                           </div>
                         </button>
                       )
@@ -1034,71 +1060,45 @@ export default function SalesIssued() {
                 </div>
               )}
 
-              {/* PRIMARY HEADER INPUTS */}
+              {/* HEADER FIELDS */}
               <div className="grid gap-4 md:grid-cols-3">
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">FS Number</span>
-                  <input
-                    disabled={isPostedEditing}
-                    value={fsNo}
-                    onChange={(e) => setFsNo(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
-                  />
+                <label>
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">FS No</span>
+                  <input value={fsNo} onChange={(e) => setFsNo(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 font-mono text-xs font-black" placeholder="FS-2026-XXXX" />
                 </label>
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Ref Number</span>
-                  <input
-                    disabled={isPostedEditing}
-                    value={referenceNo}
-                    onChange={(e) => setReferenceNo(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
-                  />
+                <label>
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Reference / SO No</span>
+                  <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 font-mono text-xs font-bold" placeholder="REF-XXXX or SO-XXXX" />
                 </label>
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Date</span>
-                  <input
-                    type="date"
-                    disabled={isPostedEditing}
-                    value={saleDate}
-                    onChange={(e) => setSaleDate(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
-                  />
+                <label>
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Date</span>
+                  <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold" />
                 </label>
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Customer</span>
-                  <input
-                    disabled={isPostedEditing}
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
-                  />
+                <label>
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Customer Name</span>
+                  <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold" placeholder="Customer name" />
                 </label>
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Warehouse</span>
-                  <select
-                    disabled={isPostedEditing}
-                    value={warehouseId}
-                    onChange={(e) => handleWarehouseChange(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-semibold disabled:bg-zinc-100 disabled:text-zinc-500"
-                  >
+                <label>
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Warehouse</span>
+                  <select disabled={isPostedEditing} value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setItems([blankItem()]) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100">
                     <option value="">Select warehouse</option>
-                    {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name || w.code || w.id}</option>)}
+                    {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
                 </label>
-                <label className="space-y-1">
-                  <span className="block text-xs font-black uppercase tracking-wide text-zinc-500">Payment Terms</span>
+                <label>
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Payment Terms</span>
                   <select
                     value={paymentType}
                     onChange={(e) => setPaymentType(e.target.value as PaymentType)}
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-sm font-bold bg-white text-zinc-900 cursor-pointer outline-none focus:border-emerald-500"
+                    className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold cursor-pointer"
                   >
-                    <option value="Cash">Cash (Immediate Settlement)</option>
-                    <option value="Credit">Credit (Receivable)</option>
+                    <option value="Cash">Cash (Immediate Receipt)</option>
+                    <option value="Credit">Credit (Installment & Ongoing Settlement)</option>
                   </select>
                 </label>
               </div>
 
-              {/* DOCUMENTATION & PAYMENT ADVICE ATTACHMENTS SECTION */}
+              {/* DOCUMENTATION & PAYMENT ADVICE ATTACHMENTS */}
               <div className="mt-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1108,13 +1108,12 @@ export default function SalesIssued() {
                     <span className="text-[11px] font-semibold text-zinc-500 block mt-0.5">
                       {paymentType === "Cash"
                         ? "Payment Advice is mandatory / recommended for Cash sales proof"
-                        : "Payment Advice is optional for Credit sales (can be attached upon settlement)"}
+                        : "Payment Advice can be attached anytime when recording partial installments"}
                     </span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Trade License (read-only preview or inherit) */}
                   <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
@@ -1160,7 +1159,6 @@ export default function SalesIssued() {
                     </div>
                   </div>
 
-                  {/* Payment Advice Dropzone */}
                   <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
@@ -1174,7 +1172,7 @@ export default function SalesIssued() {
                         <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
                       ) : (
                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paymentType === "Cash" ? "text-amber-700 bg-amber-50" : "text-zinc-500 bg-zinc-100"}`}>
-                          {paymentType === "Cash" ? "Required for Cash" : "Optional"}
+                          {paymentType === "Cash" ? "Required for Cash" : "Optional (Credit)"}
                         </span>
                       )}
                     </div>
@@ -1233,7 +1231,7 @@ export default function SalesIssued() {
                     {isPostedEditing ? "Item Rows (Locked)" : "Item Rows"}
                   </h3>
                   {!isPostedEditing && (
-                    <button onClick={() => setItems((current) => [...current, blankItem()])} className="inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 px-3 text-xs font-black"><Plus className="size-4" /> Add Item Row</button>
+                    <button onClick={() => setItems((current) => [...current, blankItem()])} className="inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 px-3 text-xs font-black cursor-pointer"><Plus className="size-4" /> Add Item Row</button>
                   )}
                 </div>
                 {items.map((item, index) => (
@@ -1241,7 +1239,7 @@ export default function SalesIssued() {
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-xs font-black text-zinc-500">Row {index + 1}</span>
                       {!isPostedEditing && (
-                        <button disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35" title="Remove row"><Trash2 className="size-3.5" /></button>
+                        <button disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer" title="Remove row"><Trash2 className="size-3.5" /></button>
                       )}
                     </div>
                     <div className="grid gap-3 md:grid-cols-12">
@@ -1329,7 +1327,7 @@ export default function SalesIssued() {
                   type="button"
                   disabled={isSaving}
                   onClick={() => setFormOpen(false)}
-                  className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black disabled:opacity-50 transition-colors"
+                  className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1337,11 +1335,196 @@ export default function SalesIssued() {
                   type="button"
                   disabled={isSaving}
                   onClick={() => void handleSave()}
-                  className="h-10 min-w-[90px] inline-flex items-center justify-center rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 text-xs font-black text-white transition-colors"
+                  className="h-10 min-w-[90px] inline-flex items-center justify-center rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 text-xs font-black text-white transition-colors cursor-pointer"
                 >
                   {isSaving ? <LoadingDots color="bg-white" size="sm" /> : "Save"}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL 2: RECORD PAYMENT INSTALLMENT */}
+      <AnimatePresence>
+        {payingIssue && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <BodyScrollLock />
+            <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPayingIssue(null)} />
+            <motion.div
+              className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl border border-zinc-200"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="size-9 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
+                    <Receipt className="size-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-zinc-900">Record Payment Installment</h3>
+                    <p className="text-xs text-zinc-500">{payingIssue.fs_no} • {payingIssue.customer_name}</p>
+                  </div>
+                </div>
+                <button onClick={() => setPayingIssue(null)} className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer">
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              {/* Financial State KPI Header */}
+              {(() => {
+                const paymentsForIssue = financeStore.getPaymentsForSalesIssue(payingIssue.id)
+                const totalAmt = Number(payingIssue.total_amount || 0)
+                const paidAmt = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(payingIssue.amount_paid || 0)
+                const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
+                const currentInputAmt = parseFloat(payAmount) || 0
+                const newRemaining = Number(Math.max(0, dueAmt - currentInputAmt).toFixed(2))
+                const newPct = totalAmt > 0 ? Math.min(100, Math.round(((paidAmt + currentInputAmt) / totalAmt) * 100)) : 0
+
+                return (
+                  <form onSubmit={handleRecordInstallmentSubmit} className="space-y-4 text-xs">
+                    <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2.5">
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase block">Total Amount</span>
+                          <span className="font-mono text-xs font-black text-zinc-900">ETB {money(totalAmt)}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase block">Already Paid</span>
+                          <span className="font-mono text-xs font-black text-emerald-700">ETB {money(paidAmt)}</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
+                          <span className="text-[10px] font-bold text-rose-600 uppercase block">Current Due</span>
+                          <span className="font-mono text-xs font-black text-rose-700">ETB {money(dueAmt)}</span>
+                        </div>
+                      </div>
+
+                      {/* Live Balance Readout */}
+                      <div className="pt-2 border-t border-zinc-200 flex items-center justify-between text-xs font-bold">
+                        <span className="text-zinc-600">Remaining after this payment:</span>
+                        <span className={`font-mono text-sm font-black ${newRemaining <= 0 ? "text-emerald-700" : "text-zinc-900"}`}>
+                          ETB {money(newRemaining)} ({newPct}%)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="font-bold text-zinc-700">Installment Amount (ETB) *</label>
+                        <button
+                          type="button"
+                          onClick={() => setPayAmount(String(dueAmt))}
+                          className="text-[11px] font-black text-blue-700 hover:underline cursor-pointer"
+                        >
+                          Pay Full Remaining (ETB {money(dueAmt)})
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="1"
+                        max={dueAmt}
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        required
+                        className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono text-sm font-black text-zinc-900 outline-none"
+                        placeholder="e.g. 50000"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-bold text-zinc-700 mb-1 block">Payment Date</label>
+                        <input
+                          type="date"
+                          value={payDate}
+                          onChange={(e) => setPayDate(e.target.value)}
+                          required
+                          className="w-full p-2 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-bold text-zinc-700 mb-1 block">Deposit Bank Account</label>
+                        <select
+                          value={payBank}
+                          onChange={(e) => setPayBank(e.target.value)}
+                          className="w-full p-2 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold cursor-pointer"
+                        >
+                          {bankAccounts.map((a) => (
+                            <option key={a.id} value={a.code}>
+                              {a.code} - {a.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-zinc-700 mb-1 block">Bank Transaction / Slip Reference No</label>
+                      <input
+                        type="text"
+                        value={payRef}
+                        onChange={(e) => setPayRef(e.target.value)}
+                        required
+                        placeholder="e.g. CBE-TXN-9842187"
+                        className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold"
+                      />
+                    </div>
+
+                    {/* Payment Advice Receipt Attachment */}
+                    <div>
+                      <label className="font-bold text-zinc-700 mb-1 block">Attach Payment Advice / Deposit Slip</label>
+                      <label className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-zinc-300 hover:border-zinc-400 rounded-xl cursor-pointer bg-zinc-50/60 hover:bg-zinc-50 transition-colors">
+                        <Upload className="size-4 text-zinc-400 mb-1" />
+                        <span className="text-xs font-bold text-zinc-700">
+                          {payAdviceFile ? payAdviceFile.name : "Choose bank slip (PDF, PNG, JPG)"}
+                        </span>
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              setPayAdviceFile(e.target.files[0])
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-zinc-700 mb-1 block">Notes / Remarks (optional)</label>
+                      <textarea
+                        value={payNotes}
+                        onChange={(e) => setPayNotes(e.target.value)}
+                        rows={2}
+                        placeholder="e.g. 1st installment paid via CBE mobile banking transfer."
+                        className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-medium resize-none"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
+                      <button
+                        type="button"
+                        disabled={isSubmittingPayment}
+                        onClick={() => setPayingIssue(null)}
+                        className="px-4 py-2 rounded-xl border border-zinc-200 text-zinc-600 font-bold hover:bg-zinc-50 cursor-pointer disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmittingPayment}
+                        className="px-5 py-2 rounded-xl bg-blue-700 text-white font-black hover:bg-blue-800 shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        {isSubmittingPayment ? <LoadingDots color="bg-white" size="sm" /> : <>Record Payment <ArrowRight className="size-3.5" /></>}
+                      </button>
+                    </div>
+                  </form>
+                )
+              })()}
             </motion.div>
           </div>
         )}

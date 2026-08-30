@@ -412,15 +412,6 @@ export default function Ledger() {
   const totalJePages = Math.max(1, Math.ceil(sortedEntries.length / jePageSize))
   const displayedEntries = sortedEntries.slice((jePage - 1) * jePageSize, jePage * jePageSize)
 
-  // Group accounts
-  const accountsByType = {
-    Asset: accounts.filter((a) => a.account_type === "Asset"),
-    Liability: accounts.filter((a) => a.account_type === "Liability"),
-    Equity: accounts.filter((a) => a.account_type === "Equity"),
-    Revenue: accounts.filter((a) => a.account_type === "Revenue"),
-    Expense: accounts.filter((a) => a.account_type === "Expense"),
-  }
-
   // COA Tree Helpers
   const isRootCategoryDummy = (a: any) => {
     return (
@@ -478,22 +469,32 @@ export default function Ledger() {
     return sum
   }
 
-  const getTopLevelAccountsForType = (type: string) => {
+  // Root category definitions mapping cleanly to company COA
+  const coaRootCategories = [
+    { key: "Asset", title: "Assets (1000s)", code: "1", color: "emerald", filter: (a: any) => a.account_type === "Asset" },
+    { key: "Liability", title: "Liabilities (2000s)", code: "2", color: "amber", filter: (a: any) => a.account_type === "Liability" },
+    { key: "Equity", title: "Equity & Capital (3000s)", code: "3", color: "purple", filter: (a: any) => a.account_type === "Equity" },
+    { key: "Revenue", title: "Income & Revenue (4000s)", code: "4", color: "teal", filter: (a: any) => a.account_type === "Revenue" },
+    { key: "COGS", title: "Cost of Sales / Selling & Distribution (6000s)", code: "6", color: "orange", filter: (a: any) => a.account_type === "Expense" && (a.code.startsWith("6") || a.id.startsWith("6") || a.peachtree_type === "Cost of Sales") },
+    { key: "AdminExpense", title: "Administrative & General Expenses (8000s)", code: "8", color: "rose", filter: (a: any) => a.account_type === "Expense" && !(a.code.startsWith("6") || a.id.startsWith("6") || a.peachtree_type === "Cost of Sales") },
+  ]
+
+  const getTopLevelAccountsForCategory = (catKey: string) => {
+    const cat = coaRootCategories.find((c) => c.key === catKey)
+    if (!cat) return []
     return accounts.filter((a) => {
-      if (a.account_type !== type) return false
+      if (!cat.filter(a)) return false
       if (isRootCategoryDummy(a)) return false
 
       if (!a.parent_account_id) return true
 
-      // Check if parent is a dummy category wrapper or non-existent in accounts
       const parentAcc = accounts.find(
         (p) => p.id === a.parent_account_id || p.code === a.parent_account_id || `ACC-${p.code}` === a.parent_account_id
       )
       if (!parentAcc) return true
       if (isRootCategoryDummy(parentAcc)) return true
-      if (parentAcc.account_type !== type) return true
+      if (!cat.filter(parentAcc)) return true
 
-      // It has a valid parent in the same category, so it will be rendered as a child of that parent
       return false
     })
   }
@@ -508,18 +509,22 @@ export default function Ledger() {
     // AR / AP Filter Mode Check
     if (coaFilterMode === "AR") {
       const isArMatch =
+        acc.code.startsWith("11") ||
         acc.code.startsWith("12") ||
+        acc.code.startsWith("13") ||
         acc.code.startsWith("4") ||
+        acc.peachtree_type === "Accounts Receivable" ||
+        acc.peachtree_type === "Income" ||
         acc.name.toLowerCase().includes("receivable") ||
-        acc.name.toLowerCase().includes("debtor") ||
-        acc.name.toLowerCase().includes("customer") ||
         acc.name.toLowerCase().includes("sales")
-      const childHasAr = children.some((c) =>
+      const childHasAr = children.some((c: any) =>
+        c.code.startsWith("11") ||
         c.code.startsWith("12") ||
+        c.code.startsWith("13") ||
         c.code.startsWith("4") ||
+        c.peachtree_type === "Accounts Receivable" ||
+        c.peachtree_type === "Income" ||
         c.name.toLowerCase().includes("receivable") ||
-        c.name.toLowerCase().includes("debtor") ||
-        c.name.toLowerCase().includes("customer") ||
         c.name.toLowerCase().includes("sales")
       )
       if (!isArMatch && !childHasAr) return null
@@ -527,23 +532,29 @@ export default function Ledger() {
 
     if (coaFilterMode === "AP") {
       const isApMatch =
+        acc.code.startsWith("20") ||
         acc.code.startsWith("21") ||
-        acc.code.startsWith("5") ||
+        acc.code.startsWith("60") ||
+        acc.code.startsWith("80") ||
+        acc.peachtree_type === "Other Current Liabilities" ||
+        acc.peachtree_type === "Cost of Sales" ||
+        acc.peachtree_type === "Expenses" ||
         acc.name.toLowerCase().includes("payable") ||
-        acc.name.toLowerCase().includes("creditor") ||
-        acc.name.toLowerCase().includes("supplier") ||
-        acc.name.toLowerCase().includes("vendor") ||
+        acc.name.toLowerCase().includes("accrual") ||
         acc.name.toLowerCase().includes("expense") ||
-        acc.name.toLowerCase().includes("purchase")
-      const childHasAp = children.some((c) =>
+        acc.name.toLowerCase().includes("cost")
+      const childHasAp = children.some((c: any) =>
+        c.code.startsWith("20") ||
         c.code.startsWith("21") ||
-        c.code.startsWith("5") ||
+        c.code.startsWith("60") ||
+        c.code.startsWith("80") ||
+        c.peachtree_type === "Other Current Liabilities" ||
+        c.peachtree_type === "Cost of Sales" ||
+        c.peachtree_type === "Expenses" ||
         c.name.toLowerCase().includes("payable") ||
-        c.name.toLowerCase().includes("creditor") ||
-        c.name.toLowerCase().includes("supplier") ||
-        c.name.toLowerCase().includes("vendor") ||
+        c.name.toLowerCase().includes("accrual") ||
         c.name.toLowerCase().includes("expense") ||
-        c.name.toLowerCase().includes("purchase")
+        c.name.toLowerCase().includes("cost")
       )
       if (!isApMatch && !childHasAp) return null
     }
@@ -1209,38 +1220,30 @@ export default function Ledger() {
                 </div>
               </GlassCard>
 
-              {/* 5 Root Types Hierarchy Tree Cards */}
+              {/* 6 Clean Company COA Hierarchy Tree Cards */}
               <div className="flex flex-col gap-4">
-                {(
-                  [
-                    { type: "Asset", title: "Asset Accounts", code: "1", color: "emerald" },
-                    { type: "Liability", title: "Liability Accounts", code: "2", color: "amber" },
-                    { type: "Equity", title: "Equity & Capital Accounts", code: "3", color: "purple" },
-                    { type: "Revenue", title: "Income & Revenue Accounts", code: "4", color: "teal" },
-                    { type: "Expense", title: "Expense Accounts", code: "5", color: "rose" },
-                  ] as const
-                )
+                {coaRootCategories
                   .filter((rootCat) => {
-                    if (coaFilterMode === "AR") return rootCat.type === "Asset" || rootCat.type === "Revenue"
-                    if (coaFilterMode === "AP") return rootCat.type === "Liability" || rootCat.type === "Expense"
+                    if (coaFilterMode === "AR") return rootCat.key === "Asset" || rootCat.key === "Revenue"
+                    if (coaFilterMode === "AP") return rootCat.key === "Liability" || rootCat.key === "COGS" || rootCat.key === "AdminExpense"
                     return true
                   })
                   .map((rootCat) => {
-                  const typeAccounts = accountsByType[rootCat.type as keyof typeof accountsByType] || []
-                  const rootAccounts = getTopLevelAccountsForType(rootCat.type)
-                  const isRootExpanded = expandedNodes[rootCat.type] !== false
+                  const typeAccounts = accounts.filter((a) => rootCat.filter(a))
+                  const rootAccounts = getTopLevelAccountsForCategory(rootCat.key)
+                  const isRootExpanded = expandedNodes[rootCat.key] !== false
                   const rootTotalNet = typeAccounts
                     .filter((a) => !isGroupAccount(a))
                     .reduce((sum, a) => sum + getAccountNetBalance(a), 0)
 
                   return (
-                    <GlassCard key={rootCat.type} className="p-4 flex flex-col gap-3 overflow-hidden">
+                    <GlassCard key={rootCat.key} className="p-4 flex flex-col gap-3 overflow-hidden">
                       {/* Root Category Header */}
                       <div
                         onClick={() =>
                           setExpandedNodes((prev) => ({
                             ...prev,
-                            [rootCat.type]: !isRootExpanded,
+                            [rootCat.key]: !isRootExpanded,
                           }))
                         }
                         className="flex items-center justify-between cursor-pointer border-b border-zinc-200/80 pb-3"
@@ -1584,17 +1587,18 @@ export default function Ledger() {
                       value={newAccType}
                       onChange={(e) => {
                         const selectedType = e.target.value as any
-                        setNewAccType(selectedType)
+                        setNewAccType(selectedType === "COGS" || selectedType === "AdminExpense" ? "Expense" : selectedType)
                         setNewAccParent("")
                         setNewAccCode(store.getNextSuggestedAccountCode(null, selectedType))
                       }}
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold outline-none"
+                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold outline-none cursor-pointer"
                     >
                       <option value="Asset">Asset Accounts (1000s)</option>
                       <option value="Liability">Liability Accounts (2000s)</option>
                       <option value="Equity">Equity Accounts (3000s)</option>
                       <option value="Revenue">Income & Revenue Accounts (4000s)</option>
-                      <option value="Expense">Expense Accounts (5000s)</option>
+                      <option value="COGS">Cost of Sales / Selling & Distribution (6000s)</option>
+                      <option value="AdminExpense">Administrative & General Expenses (8000s)</option>
                     </select>
                   </div>
 

@@ -28,6 +28,7 @@ import {
   Phone,
   Building2,
   FileText,
+  Download,
 } from "lucide-react"
 import {
   ResponsiveContainer,
@@ -644,6 +645,36 @@ export default function ControlCenter() {
     })
   }
 
+  const handleExportAuditLogs = () => {
+    if (filteredLogs.length === 0) {
+      showToast("No Logs to Export", "warning", "Current filter yielded 0 audit records.")
+      return
+    }
+
+    const headers = ["Timestamp", "Operator Name", "Username", "Role", "Action", "Module / Resource", "IP Address", "Item ID", "Path"]
+    const rows = filteredLogs.map((l) => [
+      `"${l.created_at || ""}"`,
+      `"${(l.resolvedName || "").replace(/"/g, '""')}"`,
+      `"${(l.username || "").replace(/"/g, '""')}"`,
+      `"${(l.roleDisplay || "").replace(/"/g, '""')}"`,
+      `"${(l.action || "").replace(/"/g, '""')}"`,
+      `"${(resourceLabels[l.resource] || l.resource || "").replace(/"/g, '""')}"`,
+      `"${(l.details?.ip || "").replace(/"/g, '""')}"`,
+      `"${(l.details?.itemId || "").replace(/"/g, '""')}"`,
+      `"${(l.details?.path || "").replace(/"/g, '""')}"`,
+    ])
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `hkc_audit_trail_${new Date().toISOString().split("T")[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    showToast("Audit Trail Exported", "success", `Exported ${filteredLogs.length} audit records to CSV.`)
+  }
+
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
@@ -1001,15 +1032,27 @@ export default function ControlCenter() {
                 </div>
               </div>
 
-              {/* Refresh Button */}
-              <button
-                onClick={fetchAuditLogsData}
-                disabled={logsLoading}
-                className="flex items-center justify-center size-[38px] rounded-full border border-black/5 hover:bg-zinc-100 transition-all shrink-0 disabled:opacity-50"
-                title="Refresh log registry"
-              >
-                <RefreshCw className={cn("size-4 text-gray-500", logsLoading && "animate-spin")} />
-              </button>
+              {/* Export & Refresh Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportAuditLogs}
+                  disabled={logsLoading || filteredLogs.length === 0}
+                  className="flex items-center gap-1.5 h-[38px] px-4 rounded-full border border-black/5 hover:bg-zinc-100 transition-all text-xs font-bold text-zinc-800 disabled:opacity-50 cursor-pointer"
+                  title="Export filtered audit logs as CSV"
+                >
+                  <Download className="size-3.5 text-zinc-600" />
+                  <span>Export CSV</span>
+                </button>
+
+                <button
+                  onClick={fetchAuditLogsData}
+                  disabled={logsLoading}
+                  className="flex items-center justify-center size-[38px] rounded-full border border-black/5 hover:bg-zinc-100 transition-all shrink-0 disabled:opacity-50 cursor-pointer"
+                  title="Refresh log registry"
+                >
+                  <RefreshCw className={cn("size-4 text-gray-500", logsLoading && "animate-spin")} />
+                </button>
+              </div>
             </GlassCard>
 
             {/* Audit Logs Table with Skeleton Loader */}
@@ -1623,12 +1666,30 @@ export default function ControlCenter() {
                   </p>
                   <div className="flex items-center justify-between text-xs font-semibold">
                     <span className="text-zinc-500">Payment Method:</span>
-                    <span className={cn(
-                      "px-2.5 py-0.5 rounded-full text-xs font-black",
-                      viewModalOrder.paymentType === "Credit" ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"
-                    )}>
-                      {viewModalOrder.paymentType || "Cash"}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn(
+                        "px-2.5 py-0.5 rounded-full text-xs font-black",
+                        viewModalOrder.paymentType === "Credit" ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"
+                      )}>
+                        {viewModalOrder.paymentType || "Cash"}
+                      </span>
+                      {viewModalOrder.paymentType === "Credit" && (
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full text-[10px] font-bold border",
+                          (viewModalOrder.remainingBalance ?? 0) <= 0 && (viewModalOrder.paidAmount ?? 0) > 0
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                            : (viewModalOrder.paidAmount ?? 0) > 0
+                            ? "bg-amber-50 text-amber-900 border-amber-200"
+                            : "bg-rose-50 text-rose-800 border-rose-200"
+                        )}>
+                          {(viewModalOrder.remainingBalance ?? 0) <= 0 && (viewModalOrder.paidAmount ?? 0) > 0
+                            ? "Fully Settled"
+                            : (viewModalOrder.paidAmount ?? 0) > 0
+                            ? `Ongoing (${Math.round(((viewModalOrder.paidAmount || 0) / (viewModalOrder.amount || 1)) * 100)}% Paid)`
+                            : "Unpaid"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between text-xs font-semibold">
                     <span className="text-zinc-500">Sales Officer:</span>

@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Download, Printer, RefreshCw } from "lucide-react"
 import { GlassCard } from "@/components/GlassCard"
 import { useErpStore } from "@/lib/erpStore"
+import { financeStore } from "@/lib/financeStore"
 import { getSalesIssue, type SalesIssue, type SalesIssueItem } from "@/lib/salesIssuesApi"
 import { API_BASE } from "@/lib/apiPersistence"
 import {
@@ -367,6 +368,19 @@ export default function CreditSalesAttachment() {
                 <div><span>VAT</span><strong>{money(vat)}</strong></div>
                 {discount > 0 && <div><span>Discount</span><strong>{money(discount)}</strong></div>}
                 <div className="grand"><span>Grand Total</span><strong>{money(grandTotal)}</strong></div>
+                {issue.payment_type === "Credit" && (
+                  (() => {
+                    const payments = financeStore.getPaymentsForSalesIssue(issue.id)
+                    const paidAmount = payments.reduce((s, p) => s + p.amount, 0) || Number(issue.amount_paid || 0)
+                    const balanceDue = Number(Math.max(0, grandTotal - paidAmount).toFixed(2))
+                    return (
+                      <>
+                        <div className="text-emerald-800"><span>Paid to Date</span><strong>{money(paidAmount)}</strong></div>
+                        <div className="text-rose-800 font-black border-t border-zinc-300 pt-1"><span>Remaining Due</span><strong>{money(balanceDue)}</strong></div>
+                      </>
+                    )
+                  })()
+                )}
               </div>
             </section>
           </section>

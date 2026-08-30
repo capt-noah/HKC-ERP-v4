@@ -389,35 +389,56 @@ export function exportPeachtreeSalesInvoices(
 
 export function exportPeachtreeChartOfAccounts(
   accounts: AccountItem[],
-  options?: { format?: ExportFormat; filenameSuffix?: string }
+  options?: { format?: ExportFormat; filenameSuffix?: string; balances?: Record<string, number> }
 ) {
   const format = options?.format ?? "PEACHTREE_CSV"
 
   const peachtreeTypeMap: Record<string, string> = {
     Asset: "Cash",
-    Liability: "Accounts Payable",
-    Equity: "Equity-Retained Earnings",
+    Liability: "Other Current Liabilities",
+    Equity: "Equity",
     Revenue: "Income",
-    Expense: "Expense",
+    Expense: "Expenses",
   }
 
   const headers = [
     "Account ID",
     "Account Description",
+    "Debit Amt",
+    "Credit Amt",
     "Account Type",
-    "ERP Root Type",
-    "Is Group Account",
-    "Active Status",
+    "Active?",
+    "Current Bal",
+    "Last FYE Bal",
+    "Debit Adj",
+    "Credit Adj",
+    "End Bal",
+    "Reference",
   ]
 
-  const rows: (string | number)[][] = accounts.map((acc) => [
-    acc.code,
-    acc.name,
-    peachtreeTypeMap[acc.account_type] || acc.account_type,
-    acc.account_type,
-    acc.is_group ? "TRUE" : "FALSE",
-    acc.is_active ? "TRUE" : "FALSE",
-  ])
+  const balances = options?.balances || {}
+
+  const rows: (string | number)[][] = accounts.map((acc) => {
+    const netBal = balances[acc.id] || balances[acc.code] || 0
+    const debitAmt = netBal > 0 ? netBal.toFixed(2) : ""
+    const creditAmt = netBal < 0 ? Math.abs(netBal).toFixed(2) : ""
+    const pType = acc.peachtree_type || peachtreeTypeMap[acc.account_type] || acc.account_type
+
+    return [
+      acc.code,
+      acc.name,
+      debitAmt,
+      creditAmt,
+      pType,
+      acc.is_active !== false ? "Yes" : "No",
+      netBal !== 0 ? netBal.toFixed(2) : "",
+      "",
+      "",
+      "",
+      netBal !== 0 ? netBal.toFixed(2) : "",
+      "",
+    ]
+  })
 
   const baseName = `HKC_ChartOfAccounts_${options?.filenameSuffix || new Date().toISOString().split("T")[0]}`
 

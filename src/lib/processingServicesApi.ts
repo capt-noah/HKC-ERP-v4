@@ -23,6 +23,12 @@ export interface ProcessingServiceOrder {
   notes?: string
   contract_url?: string | null
   contract_file_name?: string | null
+  locked_processing_rate?: number | null
+  locked_processing_fee?: number | null
+  locked_storage_fee?: number | null
+  locked_total_fee?: number | null
+  processed_at?: string | null
+  delivered_at?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -75,12 +81,19 @@ export async function updateProcessingService(id: string, payload: Partial<Proce
 
 export async function transitionProcessingServiceStage(
   id: string,
-  stage: ProcessingServiceStage
+  stage: ProcessingServiceStage,
+  snapshotData?: {
+    processingRate?: number
+    processingFee?: number
+    storageFee?: number
+    totalFee?: number
+    deliveryDate?: string
+  }
 ): Promise<{ ok: boolean; journalEntry?: unknown } & ProcessingServiceOrder> {
   const res = await fetch(`${API_BASE}/api/processing-services/${id}/transition`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ stage }),
+    body: JSON.stringify({ stage, ...(snapshotData || {}) }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

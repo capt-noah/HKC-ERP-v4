@@ -26,13 +26,13 @@ import {
   Coins,
   ShieldCheck,
   Scale,
+  BookOpen,
 } from "lucide-react"
 import { useErpStore, type Warehouse } from "@/lib/erpStore"
 import { useFinanceStore, type TaxRule } from "@/lib/financeStore"
 import { DEFAULT_ETHIOPIAN_TAX_BRACKETS, DEFAULT_ETHIOPIAN_PENSION_CONFIG, type TaxBracket } from "@/core/hr/payrollEngine"
 import { cn } from "@/lib/utils"
 import { LoadingDots } from "@/components/ui/LoadingDots"
-import { Skeleton } from "@/components/ui/skeleton"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const listContainer = {
@@ -45,27 +45,44 @@ const listContainer = {
   },
 }
 
-function SettingsSectionSkeleton() {
+function AdminSettingsSkeleton() {
   return (
-    <div className="flex flex-col gap-5 animate-pulse">
-      <GlassCard className="p-6 border border-white/65 shadow-md">
-        <div className="flex items-center justify-between pb-4 mb-6 border-b border-black/5">
-          <div className="flex items-center gap-3.5">
-            <Skeleton className="size-10 rounded-2xl bg-zinc-200/80" />
-            <div>
-              <Skeleton className="h-5 w-44 bg-zinc-200/80 rounded-lg" />
-              <Skeleton className="h-3 w-64 bg-zinc-150/70 rounded-full mt-2" />
+    <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 animate-pulse">
+      {/* Sidebar Tabs Skeleton */}
+      <div className="flex flex-col gap-2">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="w-full p-3.5 rounded-2xl bg-black/[0.03] border border-black/5 flex items-start gap-3.5">
+            <div className="size-9 rounded-xl bg-black/10 shrink-0" />
+            <div className="space-y-1.5 flex-1 min-w-0">
+              <div className="h-4 w-32 bg-black/10 rounded-full" />
+              <div className="h-2.5 w-44 bg-black/5 rounded-full" />
             </div>
           </div>
-          <Skeleton className="h-9 w-32 bg-zinc-200/60 rounded-2xl" />
+        ))}
+      </div>
+
+      {/* Main Content Card Skeleton */}
+      <GlassCard className="p-6 md:p-8 space-y-6">
+        <div className="flex items-center gap-3.5 pb-4 border-b border-black/5">
+          <div className="size-10 rounded-2xl bg-black/10 shrink-0" />
+          <div className="space-y-2 flex-1">
+            <div className="h-5 w-48 bg-black/10 rounded-lg" />
+            <div className="h-3 w-72 bg-black/5 rounded-full" />
+          </div>
         </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 space-y-2">
-              <Skeleton className="h-3.5 w-28 bg-zinc-200/80 rounded-full" />
-              <Skeleton className="h-10 w-full bg-zinc-200/60 rounded-xl" />
+          {[...Array(6)].map((_, idx) => (
+            <div key={idx} className="space-y-2">
+              <div className="h-3 w-36 bg-black/10 rounded-full" />
+              <div className="h-11 w-full bg-black/[0.04] rounded-2xl" />
             </div>
           ))}
+        </div>
+
+        <div className="flex justify-end gap-3 pt-4 border-t border-black/5">
+          <div className="h-10 w-28 bg-black/5 rounded-full" />
+          <div className="h-10 w-36 bg-black/10 rounded-full" />
         </div>
       </GlassCard>
     </div>
@@ -82,7 +99,8 @@ export default function AdminSettings() {
   const taxRules = finance.getTaxRules()
   const warehouses = erp.getWarehouses()
 
-  const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates">("general")
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates" | "accounts">("general")
   const [isSaved, setIsSaved] = useState(false)
 
   // 1. General & Entity Profile State
@@ -148,9 +166,7 @@ export default function AdminSettings() {
   const [whStatus, setWhStatus] = useState("Active")
   const [activeWhMenuId, setActiveWhMenuId] = useState<string | null>(null)
 
-  // Sync state whenever store data changes from Supabase
-  useEffect(() => {
-    const s = finance.getCompanySettings()
+  const syncFormFromSettings = (s: any) => {
     setCompanyName(s.company_name || "")
     setTinNumber(s.tin_number || "")
     setAddress(s.address || "")
@@ -176,7 +192,43 @@ export default function AdminSettings() {
         ? s.tax_brackets_config
         : DEFAULT_ETHIOPIAN_TAX_BRACKETS
     )
-  }, [finance])
+  }
+
+  // Fetch verified data from DB / stores on initial mount
+  useEffect(() => {
+    let active = true
+
+    async function loadData() {
+      setLoading(true)
+      try {
+        await Promise.all([erp.loadFromApi(), finance.loadFromApi()])
+        if (active) {
+          const fresh = finance.getCompanySettings()
+          syncFormFromSettings(fresh)
+        }
+      } catch (err) {
+        console.warn("Failed to load settings data:", err)
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void loadData()
+
+    const unsubFinance = finance.subscribe(() => {
+      if (active) {
+        const fresh = finance.getCompanySettings()
+        syncFormFromSettings(fresh)
+      }
+    })
+
+    return () => {
+      active = false
+      unsubFinance()
+    }
+  }, [])
 
   // Save Company, Pension & Rates Configurations to Supabase
   const handleSave = () => {
@@ -525,6 +577,7 @@ export default function AdminSettings() {
     { id: "tax" as const, label: "Tax Rates & Rules", icon: Receipt, description: "Configure VAT, withholding & customs rates" },
     { id: "warehouses" as const, label: "Warehouse Facilities", icon: WarehouseIcon, description: "Change warehouse names, codes & details" },
     { id: "rates" as const, label: "Processing & Storage", icon: SlidersHorizontal, description: "Toll fee rates & tiered monthly storage" },
+    { id: "accounts" as const, label: "GL Account Mappings", icon: BookOpen, description: "Default inventory, revenue, and COGS accounts" },
   ]
 
   return (
@@ -563,10 +616,13 @@ export default function AdminSettings() {
           )}
         </AnimatePresence>
 
-        {/* Layout Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4 sm:gap-6">
-          {/* Sidebar Tabs (Horizontal swipe on mobile/tablet, vertical stack on desktop) */}
-          <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible no-scrollbar overscroll-x-contain pb-2 lg:pb-0 py-1 -my-1">
+        {/* Layout Main Grid or Skeleton */}
+        {loading ? (
+          <AdminSettingsSkeleton />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4 sm:gap-6">
+            {/* Sidebar Tabs (Horizontal swipe on mobile/tablet, vertical stack on desktop) */}
+            <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible no-scrollbar overscroll-x-contain pb-2 lg:pb-0 py-1 -my-1">
             {settingsTabs.map((tab) => {
               const TabIcon = tab.icon
               const isSelected = activeTab === tab.id
@@ -606,10 +662,7 @@ export default function AdminSettings() {
 
           {/* Settings Tab Content */}
           <div className="flex flex-col gap-6">
-            {erp.isLoading() || finance.isLoading() ? (
-              <SettingsSectionSkeleton />
-            ) : (
-              <AnimatePresence mode="wait">
+            <AnimatePresence mode="wait">
                 {/* Tab 1: Company Profile */}
                 {activeTab === "general" && (
                   <motion.div key="general" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
@@ -1191,11 +1244,99 @@ export default function AdminSettings() {
                     </GlassCard>
                   </motion.div>
                 )}
+
+                {/* Tab 6: GL Account Mappings */}
+                {activeTab === "accounts" && (
+                  <motion.div key="accounts" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                    <GlassCard>
+                      <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
+                        <div className="p-2.5 rounded-2xl bg-indigo-100 text-indigo-700">
+                          <BookOpen className="size-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-black">Chart of Accounts GL Mappings</h3>
+                          <p className="text-xs text-gray-400">Map automated ERP transactions directly to corresponding General Ledger accounts.</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Inventory Asset Account</label>
+                          <select
+                            value={defaultInventoryAcc}
+                            onChange={(e) => setDefaultInventoryAcc(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
+                          >
+                            <option value="">Select Inventory Account...</option>
+                            {accounts.filter((a) => a.account_type === "Asset" && !a.is_group).map((a) => (
+                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Sales Revenue Account</label>
+                          <select
+                            value={defaultRevenueAcc}
+                            onChange={(e) => setDefaultRevenueAcc(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
+                          >
+                            <option value="">Select Revenue Account...</option>
+                            {accounts.filter((a) => a.account_type === "Revenue" && !a.is_group).map((a) => (
+                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Cost of Goods Sold (COGS) Account</label>
+                          <select
+                            value={defaultCogsAcc}
+                            onChange={(e) => setDefaultCogsAcc(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
+                          >
+                            <option value="">Select COGS Account...</option>
+                            {accounts.filter((a) => a.account_type === "Expense" && !a.is_group).map((a) => (
+                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Damage / Adjustment Loss Account</label>
+                          <select
+                            value={defaultDamageAcc}
+                            onChange={(e) => setDefaultDamageAcc(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
+                          >
+                            <option value="">Select Adjustment Account...</option>
+                            {accounts.filter((a) => a.account_type === "Expense" && !a.is_group).map((a) => (
+                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Primary Settlement Bank / Cash Account</label>
+                          <select
+                            value={defaultCashAcc}
+                            onChange={(e) => setDefaultCashAcc(e.target.value)}
+                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
+                          >
+                            <option value="">Select Cash/Bank Account...</option>
+                            {accounts.filter((a) => a.account_type === "Asset" && !a.is_group).map((a) => (
+                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </GlassCard>
+                  </motion.div>
+                )}
               </AnimatePresence>
-            )}
 
             {/* Bottom Action Buttons (for tabs with general form inputs) */}
-            {!erp.isLoading() && !finance.isLoading() && ["general", "pension", "tax", "rates"].includes(activeTab) && (
+            {["general", "pension", "tax", "rates", "accounts"].includes(activeTab) && (
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   onClick={handleDiscardChanges}
@@ -1215,6 +1356,7 @@ export default function AdminSettings() {
             )}
           </div>
         </div>
+        )}
       </motion.div>
 
       {/* Modal: Add/Edit Tax Rule */}

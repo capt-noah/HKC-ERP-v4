@@ -41,7 +41,7 @@ salesRouter.patch(["/processing-services/:id", "/processing_services/:id"], asyn
 
 salesRouter.post(["/processing-services/:id/transition", "/processing_services/:id/transition"], async (req, res, next) => {
   try {
-    const result = await salesService.transitionProcessingServiceStage(req.params.id, req.body.stage)
+    const result = await salesService.transitionProcessingServiceStage(req.params.id, req.body.stage, req.body)
     res.status(result.status).json(result.body)
   } catch (err) {
     next(err)

@@ -110,6 +110,7 @@ from (
     ('revaluations'),
     ('fixed_assets'),
     ('tax_rules'),
+    ('tax_schedules'),
     ('employees'),
     ('attendance_records'),
     ('payroll_periods'),

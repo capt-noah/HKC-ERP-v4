@@ -46,9 +46,9 @@ export default function Expenses() {
 
   // Log One-off expense form state
   const [merchant, setMerchant] = useState("")
-  const [category, setCategory] = useState("Software & SaaS")
+  const [category, setCategory] = useState("Miscellaneous")
   const [costCenter, setCostCenter] = useState("CC-100 Corporate HQ")
-  const [glAccount, setGlAccount] = useState("5200")
+  const [glAccount, setGlAccount] = useState("8000-30")
   const [employee, setEmployee] = useState("")
   const [amount, setAmount] = useState("")
   const [taxAmount, setTaxAmount] = useState("0")
@@ -506,11 +506,29 @@ export default function Expenses() {
                           onChange={(e) => setGlAccount(e.target.value)}
                           className="w-full bg-white/70 border border-black/10 rounded-xl px-3 py-2 text-xs font-mono font-bold text-black focus:outline-none focus:border-black cursor-pointer"
                         >
-                          <option value="5100">ACC-5100 (Rent & Occupancy)</option>
-                          <option value="5200">ACC-5200 (Utilities & SaaS)</option>
-                          <option value="5300">ACC-5300 (R&D & Services)</option>
-                          <option value="5400">ACC-5400 (Vehicle Fleet Repairs)</option>
-                          <option value="5010">ACC-5010 (Payroll & Operations)</option>
+                          {store.getAccounts().filter((a) => a.account_type === "Expense" && !a.is_group).length > 0
+                            ? store.getAccounts().filter((a) => a.account_type === "Expense" && !a.is_group).map((acc) => (
+                                <option key={acc.id} value={acc.code}>
+                                  {acc.code} - {acc.name}
+                                </option>
+                              ))
+                            : [
+                                { code: "8000-08", name: "OFFICE RENT" },
+                                { code: "8000-09", name: "TELEPHONE AND INTERNET" },
+                                { code: "8000-07", name: "STATIONERY, PRINTING & OFF SUP" },
+                                { code: "8000-16", name: "INSURANCE" },
+                                { code: "8000-18", name: "AUDIT FEE & PROFFESSIONAL FEE" },
+                                { code: "8000-25", name: "BANK SERVICE CHARGE" },
+                                { code: "8000-28", name: "PENALITY" },
+                                { code: "8000-30", name: "MICELLANOUS" },
+                                { code: "6000-04", name: "PACKING AND BAGING" },
+                                { code: "6000-08", name: "TRANSPORT COST" },
+                                { code: "6000-10", name: "LOADING UNLOADING" },
+                              ].map((acc) => (
+                                <option key={acc.code} value={acc.code}>
+                                  {acc.code} - {acc.name}
+                                </option>
+                              ))}
                         </select>
                       </div>
 

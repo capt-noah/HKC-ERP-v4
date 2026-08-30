@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { createResource, deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
 import { useAuthStore } from "./authStore"
-import { financeStore } from "./financeStore"
+import { financeStore, calculateMultiTax } from "./financeStore"
 import { evaluateStockStatus } from "../core/inventory/stockEngine"
 import { validateTransferNote } from "../core/inventory/transferEngine"
 import { processSalesOrderPipeline } from "../core/sales/orderPipeline"
@@ -78,6 +78,7 @@ export interface Product {
   unit: string
   unitCost: number
   totalStockValue?: number
+  defaultTaxScheduleId?: string
   sellingPrice: number
   batch: string
   manufacturingDate?: string
@@ -243,6 +244,9 @@ export interface SalesOrder {
   // ERPNext Sales alignment fields
   deliveredAmount?: number
   billedAmount?: number
+  paidAmount?: number
+  remainingBalance?: number
+  settlementStatus?: "Unpaid" | "Ongoing" | "Fully Settled"
   deliveryStatus?: "Not Delivered" | "Partially Delivered" | "Fully Delivered"
   billingStatus?: "Not Billed" | "Partially Billed" | "Fully Billed"
   paymentTerms?: string
@@ -346,6 +350,8 @@ export interface Customer {
   tradePaperUrl?: string
   tradePaperFileName?: string
   tradePaperUploadedAt?: string
+  defaultTaxScheduleId?: string
+  isGovAgent?: boolean
   status?: string
 }
 
@@ -386,6 +392,8 @@ export interface Supplier {
   rating?: string
   tradePaperUrl?: string
   tradePaperFileName?: string
+  defaultTaxScheduleId?: string
+  isGovAgent?: boolean
   status?: string
 }
 
@@ -795,7 +803,7 @@ class ErpStore {
     })
 
     // Post Double-Entry Journal Voucher in Finance Store for inter-warehouse inventory asset transfer
-    const stockAcc = financeStore.getAccounts().find((a) => a.code === "1010" || a.code === "1410" || a.name.includes("Stock")) || financeStore.getAccounts()[0]
+    const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
     let jeId: string | undefined = undefined
 
     if (stockAcc && transferVal > 0) {
@@ -884,9 +892,9 @@ class ErpStore {
     })
 
     // Post GL Journal Entry for Stock Gain/Loss
-    // Accounts: 1410 Stock In Hand, 5000/5010 Cost of Goods Sold / Inventory Adjustment Loss/Gain
-    const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410" || a.code === "1010" || a.name.includes("Stock")) || financeStore.getAccounts()[0]
-    const adjAcc = financeStore.getAccounts().find((a) => a.code === "5000" || a.code === "5100" || a.account_type === "Expense") || financeStore.getAccounts()[1]
+    // Accounts: 1410-01 Stock In Hand, 6000 / 6000-22 Cost of Sales / Inventory Adjustment
+    const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
+    const adjAcc = financeStore.getAccounts().find((a) => a.code === "6000-22" || a.code === "6000" || a.code === "8000-30" || a.account_type === "Expense") || financeStore.getAccounts()[1]
 
     let jeId: string | undefined = undefined
     if (stockAcc && adjAcc && adjustmentVal > 0) {
@@ -1512,8 +1520,8 @@ class ErpStore {
     let jeId: string | undefined = undefined
     try {
       // Resolve accounts by code — fall back gracefully if not in COA yet
-      const cogsAcc = financeStore.getAccounts().find((a) => a.code === "5001" || a.code === "5000" || a.id === "ACC-5001" || a.account_type === "Expense")
-      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410" || a.code === "1010" || a.id === "ACC-1410" || a.account_type === "Asset")
+      const cogsAcc = financeStore.getAccounts().find((a) => a.code === "6000-04" || a.code === "6000" || a.code === "5001" || a.account_type === "Expense")
+      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset")
 
       if (cogsAcc && stockAcc && totalCogs > 0) {
         const postRes = financeStore.postJournalEntry(
@@ -1595,7 +1603,7 @@ class ErpStore {
   // Create Sales Invoice in Finance Store from Sales Order
   public createSalesInvoiceForSalesOrder(
     soId: string,
-    taxPercent?: number,
+    taxOption?: number | string,
     paymentTerms = "Net 30"
   ): { success: boolean; error?: string; invoiceId?: string } {
     const so = this.salesOrders.find((s) => s.id === soId)
@@ -1605,10 +1613,26 @@ class ErpStore {
       return { success: false, error: "An invoice has already been generated for this Sales Order." }
     }
 
-    const appliedTaxPercent = taxPercent !== undefined ? taxPercent : financeStore.getDefaultVatRate()
     const subtotal = so.amount
-    const taxAmount = Math.round((subtotal * (appliedTaxPercent / 100)) * 100) / 100
-    const total = subtotal + taxAmount
+    let appliedTaxPercent = 15
+    let taxAmount = 0
+    let total = subtotal
+
+    const allRules = financeStore.getTaxRules()
+    if (typeof taxOption === "string" && taxOption.startsWith("SCH-")) {
+      const calc = calculateMultiTax(subtotal, allRules, taxOption)
+      taxAmount = calc.totalTaxAdded
+      total = calc.netTotal
+      appliedTaxPercent = calc.totalTaxAdded > 0 && subtotal > 0 ? Math.round((calc.totalTaxAdded / subtotal) * 100) : 0
+    } else if (typeof taxOption === "number") {
+      appliedTaxPercent = taxOption
+      taxAmount = Math.round((subtotal * (appliedTaxPercent / 100)) * 100) / 100
+      total = subtotal + taxAmount
+    } else {
+      appliedTaxPercent = financeStore.getDefaultVatRate()
+      taxAmount = Math.round((subtotal * (appliedTaxPercent / 100)) * 100) / 100
+      total = subtotal + taxAmount
+    }
 
     const lineItems = so.items.map((i) => ({
       description: `${i.name} (${i.qty} ${i.unit})`,
@@ -1946,14 +1970,13 @@ class ErpStore {
     })
 
     // 2. Post Goods Received Double-Entry Journal Entry in Finance Store
-    // Debit 1410 Inventory / Stock In Hand
-    // Credit 2120 Stock Received But Not Billed (clearing account) or 2100 Accounts Payable
+    // Debit 1410-01 Inventory / Stock In Hand
+    // Credit 2100-06 Other Accruals / AP
     const invAcc =
-      financeStore.getAccounts().find((a) => a.code === "1410" || a.code === "1300" || a.name?.toLowerCase().includes("inventory") || a.name?.toLowerCase().includes("stock in hand")) ||
+      financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.name?.toLowerCase().includes("inventory") || a.name?.toLowerCase().includes("stock")) ||
       financeStore.getAccounts().find((a) => a.account_type === "Asset")
     const clearingAcc =
-      financeStore.getAccounts().find((a) => a.code === "2120") ||
-      financeStore.getAccounts().find((a) => a.code === "2100" || a.name?.toLowerCase().includes("payable")) ||
+      financeStore.getAccounts().find((a) => a.code === "2100-06" || a.code === "2100" || a.name?.toLowerCase().includes("accrual") || a.name?.toLowerCase().includes("payable")) ||
       financeStore.getAccounts().find((a) => a.account_type === "Liability")
 
     let jeId: string | undefined
@@ -2018,14 +2041,13 @@ class ErpStore {
     const totalAmount = po.amount + taxAmount
 
     // Post AP Journal Entry:
-    // Debit 2120 Stock Received Not Billed (clearing) → clears the goods receipt entry
-    // Credit 2100 Accounts Payable (with supplier party reference for AP aging)
+    // Debit 2100-06 / 1410-01 Stock
+    // Credit 2100-06 Other Accruals / 1000-02-26 Bank
     const clearingAcc =
-      financeStore.getAccounts().find((a) => a.code === "2120") ||
-      financeStore.getAccounts().find((a) => a.code === "5100" || a.account_type === "Expense") ||
+      financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410") ||
       financeStore.getAccounts().find((a) => a.account_type === "Asset")
     const apAcc =
-      financeStore.getAccounts().find((a) => a.code === "2100") ||
+      financeStore.getAccounts().find((a) => a.code === "2100-06" || a.code === "2100" || a.code === "1000-02-26") ||
       financeStore.getAccounts().find((a) => a.account_type === "Liability")
 
     let jeId: string | undefined

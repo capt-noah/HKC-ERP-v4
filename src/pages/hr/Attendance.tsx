@@ -135,13 +135,53 @@ export default function Attendance() {
     }
   }
 
+  const [isSavingAll, setIsSavingAll] = useState(false)
+
+  const saveAllAttendance = async () => {
+    if (employeeRows.length === 0) return
+    setIsSavingAll(true)
+    try {
+      await Promise.all(
+        employeeRows.map(async (employee) => {
+          const draft = getDraft(employee)
+          const existing = recordsByEmployee.get(employee.id)
+          const hours = draft.status === "Present" ? 8 : 0
+          const payload = {
+            employee_id: employee.id,
+            attendance_date: date,
+            check_in_time: "",
+            check_out_time: "",
+            status: draft.status,
+            hours_worked: hours,
+            overtime_hours: 0,
+            warehouse_id: employee.warehouse_id,
+            notes: draft.notes || "",
+            locked_by_payroll: existing?.locked_by_payroll || false,
+          }
+          if (existing) {
+            await hrApi.updateAttendance(existing.id, payload)
+          } else {
+            await hrApi.createAttendance({ id: makeId("ATT"), ...payload })
+          }
+        })
+      )
+      setDrafts({})
+      showToast("Attendance Saved", "success", `Attendance for ${employeeRows.length} employee(s) saved for ${date}.`)
+      await refresh()
+    } catch (err) {
+      showToast("Attendance Save Failed", "warning", err instanceof Error ? err.message : "Failed to batch save attendance.")
+    } finally {
+      setIsSavingAll(false)
+    }
+  }
+
   const markAllPresent = () => {
     const next: Record<string, AttendanceDraft> = { ...drafts }
     for (const employee of employeeRows) {
       next[employee.id] = { ...(next[employee.id] || blankDraft()), status: "Present" }
     }
     setDrafts(next)
-    showToast("Batch Action", "info", "All filtered employees set to Present. Click Save on records to commit.")
+    showToast("Batch Action", "info", "All filtered employees set to Present. Click 'Save All to DB' to commit.")
   }
 
   const markAllAbsent = () => {
@@ -150,7 +190,7 @@ export default function Attendance() {
       next[employee.id] = { ...(next[employee.id] || blankDraft()), status: "Absent" }
     }
     setDrafts(next)
-    showToast("Batch Action", "info", "All filtered employees set to Absent. Click Save on records to commit.")
+    showToast("Batch Action", "info", "All filtered employees set to Absent. Click 'Save All to DB' to commit.")
   }
 
   return (
@@ -192,6 +232,7 @@ export default function Attendance() {
                 },
               ]}
               actions={[
+                { label: isSavingAll ? "Saving..." : "Save All to DB", onClick: saveAllAttendance, variant: "primary" },
                 { label: "Mark All Present", onClick: markAllPresent, variant: "secondary" },
                 { label: "Mark All Absent", onClick: markAllAbsent, variant: "secondary" },
               ]}

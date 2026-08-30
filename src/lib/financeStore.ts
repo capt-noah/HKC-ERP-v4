@@ -3,12 +3,27 @@ import { deleteResource, loadResource, persistResources } from "./apiPersistence
 import { useAuthStore } from "./authStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 import { sortNewestFirst } from "./utils"
+import { COMPANY_CHART_OF_ACCOUNTS, DEFAULT_COMPANY_SETTINGS_COA } from "./companyCOA"
+import {
+  type TaxRule,
+  type TaxSchedule,
+  type TaxLineDetail,
+  type TaxCalculationResult,
+  INITIAL_TAX_RULES,
+  INITIAL_TAX_SCHEDULES,
+  calculateMultiTax,
+  resolveAutoTaxScheduleId,
+} from "./taxEngine"
+
+export type { TaxRule, TaxSchedule, TaxLineDetail, TaxCalculationResult }
+export { calculateMultiTax, resolveAutoTaxScheduleId }
 
 export interface AccountItem {
   id: string
   code: string
   name: string
   account_type: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense"
+  peachtree_type?: string
   parent_account_id: string | null
   is_active: boolean
   is_group?: boolean
@@ -81,6 +96,7 @@ export interface Invoice {
   total: number
   amount_paid: number
   balance_due: number
+  settlement_status?: "Unpaid" | "Ongoing" | "Fully Settled"
   status: "Draft" | "Sent" | "Paid" | "Partially Paid" | "Overdue" | "Void" | "Cancelled"
 }
 
@@ -88,11 +104,20 @@ export interface Payment {
   id: string
   direction: "Received" | "Made"
   linked_invoice_id: string | null
+  sales_issue_id?: string | null
+  sales_order_id?: string | null
+  customer_id?: string | null
+  customer_name?: string | null
   amount: number
   currency: string
   date: string
   method: string
+  bank_account_code?: string
   reference: string
+  payment_advice_url?: string
+  payment_advice_filename?: string
+  installment_no?: number
+  notes?: string
 }
 
 export interface RecurringExpenseSchedule {
@@ -182,13 +207,13 @@ export interface CompanySettings {
 }
 
 const emptyCompanySettings: CompanySettings = {
-  company_name: "HKC Trading Enterprise",
+  company_name: "HKC Trading PLC",
   base_currency: "ETB",
-  exchange_rates: {},
+  exchange_rates: { USD: 58.50, EUR: 63.20 },
   unrealized_exchange_gain_loss_account_id: "",
-  payroll_expense_account_id: "",
-  payroll_payable_account_id: "",
-  tax_payable_account_id: "",
+  payroll_expense_account_id: DEFAULT_COMPANY_SETTINGS_COA.payroll_expense_account_id,
+  payroll_payable_account_id: DEFAULT_COMPANY_SETTINGS_COA.income_tax_payable_account_id,
+  tax_payable_account_id: DEFAULT_COMPANY_SETTINGS_COA.tax_payable_account_id,
   processing_rate_per_quintal: 150,
   base_storage_rate_per_quintal_day: 1.25,
   storage_increment_per_month: 0.25,
@@ -203,11 +228,11 @@ const emptyCompanySettings: CompanySettings = {
   prevent_negative_stock: true,
   auto_delivery_notes: true,
   default_payment_terms: "Net 30 Days",
-  default_inventory_account_id: "",
-  default_revenue_account_id: "",
-  default_cogs_account_id: "",
-  default_damage_account_id: "",
-  default_cash_account_id: "",
+  default_inventory_account_id: DEFAULT_COMPANY_SETTINGS_COA.inventory_account_id,
+  default_revenue_account_id: DEFAULT_COMPANY_SETTINGS_COA.sales_account_id,
+  default_cogs_account_id: DEFAULT_COMPANY_SETTINGS_COA.cogs_account_id,
+  default_damage_account_id: "6000-22",
+  default_cash_account_id: DEFAULT_COMPANY_SETTINGS_COA.cash_account_id,
   pension_employee_rate: 7,
   pension_employer_rate: 11,
   pension_expat_exempt: true,
@@ -253,15 +278,6 @@ export interface Revaluation {
   status: "Draft" | "Posted" | "Cancelled"
 }
 
-export interface TaxRule {
-  id: string
-  name: string
-  ratePercent: number
-  type: "VAT/GST" | "Withholding Tax (TDS)" | "Import Duty"
-  accountCode: string
-  isInclusive: boolean
-  description?: string
-}
 
 export interface DepreciationScheduleItem {
   id: string
@@ -338,6 +354,7 @@ class FinanceStore {
   private revaluations: Revaluation[] = []
   private fixedAssets: FixedAsset[] = []
   private taxRules: TaxRule[] = []
+  private taxSchedules: TaxSchedule[] = []
 
   private listeners = new Set<() => void>()
   private _isLoading = false
@@ -368,6 +385,7 @@ class FinanceStore {
     this.revaluations = []
     this.fixedAssets = []
     this.taxRules = []
+    this.taxSchedules = []
   }
 
   public async loadFromApi(force = false) {
@@ -403,6 +421,7 @@ class FinanceStore {
         revaluations,
         fixedAssets,
         taxRules,
+        taxSchedules,
       ] = await Promise.all([
         loadResource<AccountItem>("chart_of_accounts"),
         loadResource<JournalEntry>("journal_entries"),
@@ -418,9 +437,16 @@ class FinanceStore {
         loadResource<Revaluation>("revaluations"),
         loadResource<FixedAsset>("fixed_assets"),
         loadResource<TaxRule>("tax_rules"),
+        loadResource<TaxSchedule>("tax_schedules").catch(() => []),
       ])
 
-      this.accounts = accounts
+      if (!Array.isArray(accounts) || accounts.length === 0 || accounts.some((a) => a.id?.startsWith("ACC-1000") || a.code === "1010")) {
+        this.accounts = COMPANY_CHART_OF_ACCOUNTS
+        void persistResources([{ resource: "chart_of_accounts", items: COMPANY_CHART_OF_ACCOUNTS }])
+      } else {
+        this.accounts = accounts
+      }
+
       this.entries = sortNewestFirst(entries.map((e: any) => ({
         ...e,
         entry_number: e.entry_number || e.id,
@@ -461,25 +487,30 @@ class FinanceStore {
         accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumulated_depreciation ?? 0),
         netBookValue: Number(fa.netBookValue ?? fa.cost ?? 0),
       })))
-      const initialTaxRules: TaxRule[] = [
-        { id: "TAX-01", name: "Standard VAT", ratePercent: 15, type: "VAT/GST", accountCode: "2210", isInclusive: false, description: "Standard Value Added Tax (15%)" },
-        { id: "TAX-02", name: "Withholding Tax (TDS)", ratePercent: 3, type: "Withholding Tax (TDS)", accountCode: "2200", isInclusive: false, description: "Withholding Tax on Payments (3%)" },
-        { id: "TAX-03", name: "Zero-Rated / Exempt", ratePercent: 0, type: "VAT/GST", accountCode: "2210", isInclusive: false, description: "Zero-Rated or Exempt Supplies (0%)" }
-      ]
-
-      if (Array.isArray(taxRules) && taxRules.length > 0) {
+      if (Array.isArray(taxRules) && taxRules.length > 0 && !taxRules.some((t: any) => t.id === "TAX-01" || t.id === "TAX-001")) {
         this.taxRules = sortNewestFirst(taxRules.map((t: any) => ({
           ...t,
           id: t.id,
           name: t.name || "Tax Rule",
           ratePercent: Number(t.ratePercent ?? t.rate ?? 0),
           type: t.type || "VAT/GST",
-          accountCode: t.accountCode ?? t.gl_account_code ?? "",
+          accountCode: t.accountCode ?? t.gl_account_code ?? "2000-05",
           isInclusive: Boolean(t.isInclusive ?? t.is_inclusive ?? false),
+          isDeduction: Boolean(t.isDeduction ?? t.is_deduction ?? false),
+          appliesTo: t.appliesTo || t.applies_to || "BOTH",
           description: t.description || "",
+          is_active: t.is_active !== false,
         })))
       } else {
-        this.taxRules = initialTaxRules
+        this.taxRules = INITIAL_TAX_RULES
+        void persistResources([{ resource: "tax_rules", items: INITIAL_TAX_RULES }])
+      }
+
+      if (Array.isArray(taxSchedules) && taxSchedules.length > 0) {
+        this.taxSchedules = sortNewestFirst(taxSchedules)
+      } else {
+        this.taxSchedules = INITIAL_TAX_SCHEDULES
+        void persistResources([{ resource: "tax_schedules", items: INITIAL_TAX_SCHEDULES }])
       }
 
       // Trigger cross-module live finance sync
@@ -546,6 +577,8 @@ class FinanceStore {
             const subtotal = lineItems.reduce((sum, item) => sum + item.line_total, 0)
             const vatAmount = Number(si.vat_amount || 0)
             const discountAmount = Number(si.discount_amount || 0)
+            const whtAmount = Number(si.wht_amount || 0)
+            const netReceivableDue = Math.max(0, subtotal + vatAmount - discountAmount - whtAmount)
             const invoiceTotal = Math.max(0, subtotal + vatAmount - discountAmount)
             const taxRate = Number(si.vat_rate || (subtotal > 0 && vatAmount > 0 ? Math.round((vatAmount / subtotal) * 100) : (vatAmount > 0 ? 15 : 0)))
 
@@ -566,10 +599,14 @@ class FinanceStore {
                 this.entries = this.entries.filter((e) => e.id !== saleJeId)
                 this.lines = this.lines.filter((l) => l.journal_entry_id !== saleJeId)
 
-                const debitAcc = acc(isCredit ? "1200" : "1010")  // AR or Cash/Bank
-                const creditAcc = acc("4010")                     // Sales Revenue
+                const debitAcc = isCredit
+                  ? (acc("1300-03") || acc("1200-03") || acc("1100-03") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group))
+                  : (acc("1000-02-26") || acc("1000-01-01") || acc("1000") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group))
+                const revenueAcc = acc("4000-01-01") || acc("4000-03-02") || acc("4000") || this.accounts.find((a) => a.account_type === "Revenue" && !a.is_group)
+                const vatAcc = acc("2000-05") || this.accounts.find((a) => a.account_type === "Liability" && !a.is_group)
+                const whtAssetAcc = acc("1320-06-01") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group)
 
-                if (debitAcc && creditAcc) {
+                if (debitAcc && revenueAcc) {
                   this.entries.push({
                     id: saleJeId,
                     entry_date: si.sale_date || new Date().toISOString().split("T")[0],
@@ -578,13 +615,79 @@ class FinanceStore {
                     created_by: "System Synced",
                     currency: "ETB",
                     exchange_rate: 1.0,
-                    description: `Sales Issue ${si.fs_no || si.id} — ${si.customer_name || "Customer"}`,
+                    description: `Sales Issue ${si.fs_no || si.id} — ${si.customer_name || "Customer"}${whtAmount > 0 ? " (WHT applied)" : ""}`,
                     is_reversal_of: null,
                   })
-                  this.lines.push(
-                    { id: `${saleJeId}-1`, journal_entry_id: saleJeId, account_id: debitAcc.id, debit_amount: invoiceTotal, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null, party_type: "Customer", party_id: si.customer_id || null, party_name: si.customer_name || null },
-                    { id: `${saleJeId}-2`, journal_entry_id: saleJeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: invoiceTotal, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null, party_type: "Customer", party_id: si.customer_id || null, party_name: si.customer_name || null }
-                  )
+
+                  const newSaleLines: JournalEntryLine[] = []
+                  let lineIdx = 1
+
+                  // 1. Debit Net Receivable or Cash
+                  newSaleLines.push({
+                    id: `${saleJeId}-${lineIdx++}`,
+                    journal_entry_id: saleJeId,
+                    account_id: debitAcc.id,
+                    debit_amount: netReceivableDue,
+                    credit_amount: 0,
+                    currency: "ETB",
+                    exchange_rate_at_time: 1.0,
+                    warehouse_id: si.warehouse_id || null,
+                    party_type: "Customer",
+                    party_id: si.customer_id || null,
+                    party_name: si.customer_name || null,
+                  })
+
+                  // 2. Debit Withholding Tax Asset (if client withheld tax)
+                  if (whtAmount > 0 && whtAssetAcc) {
+                    newSaleLines.push({
+                      id: `${saleJeId}-${lineIdx++}`,
+                      journal_entry_id: saleJeId,
+                      account_id: whtAssetAcc.id,
+                      debit_amount: whtAmount,
+                      credit_amount: 0,
+                      currency: "ETB",
+                      exchange_rate_at_time: 1.0,
+                      warehouse_id: si.warehouse_id || null,
+                      party_type: "Customer",
+                      party_id: si.customer_id || null,
+                      party_name: si.customer_name || null,
+                    })
+                  }
+
+                  // 3. Credit Base Sales Revenue (Subtotal net of discount)
+                  const baseRevenue = Math.max(0, subtotal - discountAmount)
+                  newSaleLines.push({
+                    id: `${saleJeId}-${lineIdx++}`,
+                    journal_entry_id: saleJeId,
+                    account_id: revenueAcc.id,
+                    debit_amount: 0,
+                    credit_amount: baseRevenue,
+                    currency: "ETB",
+                    exchange_rate_at_time: 1.0,
+                    warehouse_id: si.warehouse_id || null,
+                    party_type: "Customer",
+                    party_id: si.customer_id || null,
+                    party_name: si.customer_name || null,
+                  })
+
+                  // 4. Credit Output VAT Payable (if VAT charged)
+                  if (vatAmount > 0 && vatAcc) {
+                    newSaleLines.push({
+                      id: `${saleJeId}-${lineIdx++}`,
+                      journal_entry_id: saleJeId,
+                      account_id: vatAcc.id,
+                      debit_amount: 0,
+                      credit_amount: vatAmount,
+                      currency: "ETB",
+                      exchange_rate_at_time: 1.0,
+                      warehouse_id: si.warehouse_id || null,
+                      party_type: "Customer",
+                      party_id: si.customer_id || null,
+                      party_name: si.customer_name || null,
+                    })
+                  }
+
+                  this.lines.push(...newSaleLines)
                   hasNewSync = true
                 }
               }
@@ -597,8 +700,8 @@ class FinanceStore {
                 this.entries = this.entries.filter((e) => e.id !== cogsJeId)
                 this.lines = this.lines.filter((l) => l.journal_entry_id !== cogsJeId)
 
-                const debitAcc = acc("5001")  // Cost of Goods Sold
-                const creditAcc = acc("1410") // Inventory Asset
+                const debitAcc = acc("6000-04") || acc("6000") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group)  // Cost of Sales
+                const creditAcc = acc("1410-01") || acc("1410-03") || acc("1410") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Inventory Asset
                 const estimatedCost = Math.round(invoiceTotal * 0.7)
 
                 if (debitAcc && creditAcc) {
@@ -683,8 +786,8 @@ class FinanceStore {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== po.id)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-              const stockAcc = acc("1410") // Inventory Asset
-              const apAcc = acc("2100")    // Accounts Payable
+              const stockAcc = acc("1410-01") || acc("1410-03") || acc("1100-03") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Inventory Asset / Advance
+              const apAcc = acc("2100-06") || acc("1000-02-26") || this.accounts.find((a) => a.account_type === "Liability" && !a.is_group) // Other Accruals / AP
 
               if (!stockAcc || !apAcc) {
                 console.warn(`[FinanceSync] Missing accounts for PO ${po.id} — skipping.`)
@@ -737,8 +840,8 @@ class FinanceStore {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== ec.id)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-              const expAcc = acc("5000")  // General Expenses
-              const cashAcc = acc("1010") // Cash/Bank
+              const expAcc = acc("8000-30") || acc("8000-01") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) // Miscellaneous / Expenses
+              const cashAcc = acc("1000-01-01") || acc("1000-02-26") || acc("1000") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Cash/Bank
 
               if (!expAcc || !cashAcc) {
                 console.warn(`[FinanceSync] Missing accounts for Expense Claim ${ec.id} — skipping.`)
@@ -776,8 +879,8 @@ class FinanceStore {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== pr.id)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-              const salaryAcc = acc("5010") // Salaries & Employee Wages
-              const cashAcc = acc("1010")   // Cash/Bank
+              const salaryAcc = acc("8000-01") || acc("6000-01") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) // Salary & Wage
+              const cashAcc = acc("1000-02-26") || acc("1000-01-01") || acc("1000") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group)   // Bank/Cash
 
               if (!salaryAcc || !cashAcc) {
                 console.warn(`[FinanceSync] Missing accounts for Payroll Record ${pr.id} — skipping.`)
@@ -826,6 +929,7 @@ class FinanceStore {
       { resource: "revaluations", items: this.revaluations },
       { resource: "fixed_assets", items: this.fixedAssets },
       { resource: "tax_rules", items: this.taxRules },
+      { resource: "tax_schedules", items: this.taxSchedules },
     ])
   }
 
@@ -927,7 +1031,7 @@ class FinanceStore {
   }
 
   // --- Chart of Accounts Actions ---
-  public getNextSuggestedAccountCode(parentCodeOrId?: string | null, accountType?: AccountItem["account_type"]): string {
+  public getNextSuggestedAccountCode(parentCodeOrId?: string | null, accountType?: string): string {
     const parent = parentCodeOrId
       ? this.accounts.find((a) => a.id === parentCodeOrId || a.code === parentCodeOrId || `ACC-${a.code}` === parentCodeOrId)
       : null
@@ -937,51 +1041,61 @@ class FinanceStore {
       const children = this.accounts.filter(
         (a) => a.parent_account_id === parent.id || a.parent_account_id === parent.code || a.parent_account_id === `ACC-${parent.code}`
       )
-      
-      const parentNum = parseInt(parent.code.replace(/\D/g, ""), 10)
-      if (!isNaN(parentNum)) {
-        if (children.length > 0) {
-          const childNums = children
-            .map((c) => parseInt(c.code.replace(/\D/g, ""), 10))
-            .filter((n) => !isNaN(n) && n > parentNum)
-          
-          if (childNums.length > 0) {
-            const maxChild = Math.max(...childNums)
-            const step = (maxChild - parentNum >= 10 && maxChild % 10 === 0) ? 10 : 1
-            return String(maxChild + step)
-          }
+
+      if (children.length > 0) {
+        // Check for hyphenated suffix pattern e.g. "6000-01", "6000-22", "8000-30"
+        const suffixNumbers: number[] = []
+        for (const child of children) {
+          const parts = child.code.split("-")
+          const lastPart = parts[parts.length - 1]
+          const num = parseInt(lastPart, 10)
+          if (!isNaN(num)) suffixNumbers.push(num)
         }
-        
-        if (parent.code.endsWith("00")) {
-          return String(parentNum + 10)
+
+        if (suffixNumbers.length > 0) {
+          const maxSuffix = Math.max(...suffixNumbers)
+          const nextSuffix = String(maxSuffix + 1).padStart(2, "0")
+          return `${parent.code}-${nextSuffix}`
         }
-        if (parent.code.endsWith("0")) {
-          return String(parentNum + 1)
-        }
+      }
+
+      // Default first child suffix
+      if (parent.code.includes("-")) {
         return `${parent.code}-01`
       }
-      return `${parent.code}-${children.length + 1}`
+      return `${parent.code}-01`
     }
 
     const type = accountType || "Asset"
-    const typeRange: Record<string, { start: number; max: number; step: number }> = {
-      Asset: { start: 1010, max: 1999, step: 10 },
-      Liability: { start: 2100, max: 2999, step: 10 },
-      Equity: { start: 3100, max: 3999, step: 10 },
-      Revenue: { start: 4010, max: 4999, step: 10 },
-      Expense: { start: 5000, max: 5999, step: 10 },
+    if (type === "COGS" || type === "Cost of Sales") {
+      const existing = this.accounts.filter((a) => a.code.startsWith("6000-") || a.code.startsWith("6"))
+      if (existing.length > 0) {
+        const lastPartNums = existing.map((a) => parseInt(a.code.split("-").pop() || "0", 10)).filter((n) => !isNaN(n))
+        const maxNum = lastPartNums.length > 0 ? Math.max(...lastPartNums) : 0
+        return `6000-${String(maxNum + 1).padStart(2, "0")}`
+      }
+      return "6000-01"
     }
 
-    const range = typeRange[type] || { start: 1000, max: 9999, step: 10 }
-    const existingTypeCodes = this.accounts
-      .filter((a) => a.account_type === type)
-      .map((a) => parseInt(a.code.replace(/\D/g, ""), 10))
-      .filter((n) => !isNaN(n) && n >= range.start && n <= range.max)
-
-    if (existingTypeCodes.length > 0) {
-      const maxCode = Math.max(...existingTypeCodes)
-      return String(maxCode + range.step)
+    if (type === "AdminExpense" || type === "Expenses") {
+      const existing = this.accounts.filter((a) => a.code.startsWith("8000-") || a.code.startsWith("8"))
+      if (existing.length > 0) {
+        const lastPartNums = existing.map((a) => parseInt(a.code.split("-").pop() || "0", 10)).filter((n) => !isNaN(n))
+        const maxNum = lastPartNums.length > 0 ? Math.max(...lastPartNums) : 0
+        return `8000-${String(maxNum + 1).padStart(2, "0")}`
+      }
+      return "8000-01"
     }
+
+    const typeRange: Record<string, { prefix: string; start: number }> = {
+      Asset: { prefix: "1", start: 1900 },
+      Liability: { prefix: "2", start: 2200 },
+      Equity: { prefix: "3", start: 3300 },
+      Revenue: { prefix: "4", start: 4300 },
+      Expense: { prefix: "8", start: 8100 },
+    }
+
+    const range = typeRange[type] || { prefix: "1", start: 1900 }
     return String(range.start)
   }
 
@@ -1022,6 +1136,7 @@ class FinanceStore {
       parent_account_id: normalizedParentId,
     }
     this.accounts = [newAcc, ...this.accounts]
+    persistResources([{ resource: "chart_of_accounts", items: this.accounts }])
     this.notify()
     return { success: true, account: newAcc }
   }
@@ -1432,25 +1547,61 @@ class FinanceStore {
     this.notify()
   }
 
+  public getPaymentsForInvoice(invoiceId: string): Payment[] {
+    return this.payments.filter((p) => p.linked_invoice_id === invoiceId)
+  }
+
+  public getPaymentsForSalesIssue(salesIssueId: string): Payment[] {
+    return this.payments.filter(
+      (p) => p.sales_issue_id === salesIssueId || p.linked_invoice_id === `INV-SI-${salesIssueId}` || p.reference.includes(salesIssueId)
+    )
+  }
+
+  public getPaymentsForSalesOrder(salesOrderId: string): Payment[] {
+    return this.payments.filter((p) => p.sales_order_id === salesOrderId || p.reference.includes(salesOrderId))
+  }
+
   public recordPayment(paymentData: {
     linked_invoice_id: string | null
+    sales_issue_id?: string | null
+    sales_order_id?: string | null
+    customer_id?: string | null
+    customer_name?: string | null
     amount: number
-    currency: string
+    currency?: string
     date: string
-    method: string
+    method?: string
+    bank_account_code?: string
     reference: string
-    direction: "Received" | "Made"
+    payment_advice_url?: string
+    payment_advice_filename?: string
+    notes?: string
+    direction?: "Received" | "Made"
   }): { payment: Payment; invoice?: Invoice } {
     const payId = `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const existingForInvoice = paymentData.linked_invoice_id
+      ? this.payments.filter((p) => p.linked_invoice_id === paymentData.linked_invoice_id)
+      : []
+    const installmentNo = existingForInvoice.length + 1
+
     const newPayment: Payment = {
       id: payId,
-      direction: paymentData.direction,
+      direction: paymentData.direction || "Received",
       linked_invoice_id: paymentData.linked_invoice_id,
+      sales_issue_id: paymentData.sales_issue_id || null,
+      sales_order_id: paymentData.sales_order_id || null,
+      customer_id: paymentData.customer_id || null,
+      customer_name: paymentData.customer_name || null,
       amount: paymentData.amount,
-      currency: paymentData.currency,
+      currency: paymentData.currency || "ETB",
       date: paymentData.date,
-      method: paymentData.method,
+      method: paymentData.method || "Bank Transfer",
+      bank_account_code: paymentData.bank_account_code || "1000-02-26",
       reference: paymentData.reference,
+      payment_advice_url: paymentData.payment_advice_url,
+      payment_advice_filename: paymentData.payment_advice_filename,
+      installment_no: installmentNo,
+      notes: paymentData.notes,
     }
 
     this.payments = [newPayment, ...this.payments]
@@ -1458,47 +1609,66 @@ class FinanceStore {
     let updatedInv: Invoice | undefined
 
     if (paymentData.linked_invoice_id) {
-      let custName = "Customer"
+      let custName = paymentData.customer_name || "Customer"
       this.invoices = this.invoices.map((inv) => {
         if (inv.id === paymentData.linked_invoice_id || inv.invoice_number === paymentData.linked_invoice_id) {
           custName = inv.customer_name
-          const newPaid = inv.amount_paid + paymentData.amount
-          const newBal = Math.max(0, inv.total - newPaid)
+          const newPaid = Number((inv.amount_paid + paymentData.amount).toFixed(2))
+          const newBal = Number(Math.max(0, inv.total - newPaid).toFixed(2))
           let newStatus: Invoice["status"] = inv.status
-          if (newBal === 0) {
+          let newSettlement: Invoice["settlement_status"] = "Ongoing"
+
+          if (newBal <= 0) {
             newStatus = "Paid"
+            newSettlement = "Fully Settled"
           } else if (newPaid > 0) {
             newStatus = "Partially Paid"
+            newSettlement = "Ongoing"
+          } else {
+            newSettlement = "Unpaid"
           }
+
           updatedInv = {
             ...inv,
             amount_paid: newPaid,
             balance_due: newBal,
             status: newStatus,
+            settlement_status: newSettlement,
           }
           return updatedInv
         }
         return inv
       })
 
-      // Post corresponding Journal Entry
-      const cashAcc = this.accounts.find((a) => a.code === "1000") || this.accounts[0]
-      const arAcc = this.accounts.find((a) => a.code === "1200") || this.accounts[0]
-      const cashAccId = cashAcc?.id || "acc-1000"
-      const arAccId = arAcc?.id || "acc-1200"
+      // Post corresponding Journal Entry with accurate Bank and Accounts Receivable accounts
+      const bankCode = paymentData.bank_account_code || "1000-02-26"
+      const bankAcc =
+        this.accounts.find((a) => a.code === bankCode || a.id === bankCode) ||
+        this.accounts.find((a) => a.code === "1000-02-26") ||
+        this.accounts.find((a) => a.code === "1000") ||
+        this.accounts[0]
+
+      const arAcc =
+        this.accounts.find((a) => a.code === "1300-03") ||
+        this.accounts.find((a) => a.code === "1300") ||
+        this.accounts.find((a) => a.code === "1200") ||
+        this.accounts[0]
+
+      const bankAccId = bankAcc?.id || "acc-1000"
+      const arAccId = arAcc?.id || "acc-1300-03"
 
       this.postJournalEntry(
         {
           entry_date: paymentData.date,
-          description: `Payment receipt (${paymentData.reference}) for Invoice ${paymentData.linked_invoice_id}`,
+          description: `Credit payment installment #${installmentNo} (${paymentData.reference}) for Invoice ${paymentData.linked_invoice_id} [Bank: ${bankAcc?.name || bankCode}]`,
           source_type: "Payment",
           source_id: payId,
           created_by: "Cashier",
-          currency: paymentData.currency,
+          currency: paymentData.currency || "ETB",
           exchange_rate: 1.0,
         },
         [
-          { account_id: cashAccId, debit_amount: paymentData.amount, credit_amount: 0 },
+          { account_id: bankAccId, debit_amount: paymentData.amount, credit_amount: 0 },
           {
             account_id: arAccId,
             debit_amount: 0,
@@ -1511,6 +1681,10 @@ class FinanceStore {
       )
     }
 
+    persistResources([
+      { resource: "payments", items: this.payments },
+      { resource: "invoices", items: this.invoices },
+    ])
     this.notify()
     return { payment: newPayment, invoice: updatedInv }
   }
@@ -2322,19 +2496,21 @@ class FinanceStore {
     return vatRule ? Number(vatRule.ratePercent) : 15
   }
 
-  public addTaxRule(rule: Omit<TaxRule, "id">): TaxRule {
+  public addTaxRule(rule: Partial<TaxRule> & { name: string; ratePercent: number }): TaxRule {
     const newId = `TAX-${String(this.taxRules.length + 1).padStart(2, "0")}`
     const ratePercent = Number(rule.ratePercent || 0)
     const newRule: TaxRule = {
-      ...rule,
       id: newId,
+      name: rule.name,
       ratePercent,
-      rate: ratePercent,
-      accountCode: rule.accountCode || "",
-      gl_account_code: rule.accountCode || "",
+      type: rule.type || "VAT/GST",
+      accountCode: rule.accountCode || "2000-05",
       isInclusive: Boolean(rule.isInclusive),
-      is_inclusive: Boolean(rule.isInclusive),
-    } as any
+      isDeduction: Boolean(rule.isDeduction),
+      appliesTo: rule.appliesTo || "BOTH",
+      description: rule.description || "",
+      is_active: rule.is_active !== false,
+    }
     this.taxRules = [newRule, ...this.taxRules]
     persistResources([{ resource: "tax_rules", items: this.taxRules }])
     this.notify()
@@ -2364,6 +2540,34 @@ class FinanceStore {
     this.taxRules = this.taxRules.filter((t) => t.id !== id)
     void deleteResource("tax_rules", id)
     persistResources([{ resource: "tax_rules", items: this.taxRules }])
+    this.notify()
+    return { success: true }
+  }
+
+  // --- Tax Schedules (Multi-Tax Bundles) Actions ---
+  public getTaxSchedules(): TaxSchedule[] {
+    return [...this.taxSchedules]
+  }
+
+  public addTaxSchedule(schedule: Omit<TaxSchedule, "id">): TaxSchedule {
+    const newId = `SCH-${String(this.taxSchedules.length + 1).padStart(2, "0")}`
+    const newSchedule: TaxSchedule = { ...schedule, id: newId }
+    this.taxSchedules = [newSchedule, ...this.taxSchedules]
+    persistResources([{ resource: "tax_schedules", items: this.taxSchedules }])
+    this.notify()
+    return newSchedule
+  }
+
+  public updateTaxSchedule(id: string, updated: Partial<TaxSchedule>) {
+    this.taxSchedules = this.taxSchedules.map((s) => (s.id === id ? { ...s, ...updated } : s))
+    persistResources([{ resource: "tax_schedules", items: this.taxSchedules }])
+    this.notify()
+  }
+
+  public deleteTaxSchedule(id: string): { success: boolean; error?: string } {
+    this.taxSchedules = this.taxSchedules.filter((s) => s.id !== id)
+    void deleteResource("tax_schedules", id)
+    persistResources([{ resource: "tax_schedules", items: this.taxSchedules }])
     this.notify()
     return { success: true }
   }

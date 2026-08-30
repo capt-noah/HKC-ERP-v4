@@ -131,6 +131,14 @@ export default function Leave() {
   const changeStatus = async (request: LeaveRequest, nextStatus: string) => {
     try {
       await hrApi.updateLeave(request.id, { status: nextStatus })
+      if (nextStatus === "Approved") {
+        await hrApi.updateEmployee(request.employee_id, { status: "On Leave" })
+      } else if (nextStatus === "Rejected" || nextStatus === "Cancelled") {
+        const emp = employeeById.get(request.employee_id)
+        if (emp && emp.status === "On Leave") {
+          await hrApi.updateEmployee(request.employee_id, { status: "Active" })
+        }
+      }
       showToast("Leave Status Updated", "success", `Request changed to ${nextStatus}.`)
       await refresh()
     } catch (err) {

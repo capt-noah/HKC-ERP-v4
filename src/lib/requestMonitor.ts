@@ -47,6 +47,7 @@ const RESOURCE_MODULE_MAP: Record<string, string> = {
   revaluations: "finance",
   fixed_assets: "finance",
   tax_rules: "finance",
+  tax_schedules: "finance",
 
   employees: "hr",
   attendance_records: "hr",

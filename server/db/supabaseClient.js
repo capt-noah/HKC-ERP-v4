@@ -209,6 +209,7 @@ const PROTECTED_TABLES = new Set([
   "invoices",
   "payments",
   "tax_rules",
+  "tax_schedules",
   "company_settings",
 ])
 

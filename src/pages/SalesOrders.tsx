@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
@@ -19,7 +19,7 @@ import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
-import { useFinanceStore } from "@/lib/financeStore"
+import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { type TableColumn } from "@/components/ResizableTable"
@@ -154,11 +154,27 @@ export default function SalesOrders() {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
   const financeStore = useFinanceStore()
   const taxRules = financeStore.getTaxRules()
-  const defaultVat = financeStore.getDefaultVatRate()
+  const taxSchedules = financeStore.getTaxSchedules()
 
   // Billing form state
-  const [taxPercent, setTaxPercent] = useState(defaultVat)
-  const [paymentTerms, setPaymentTerms] = useState("")
+  const [selectedTaxScheduleId, setSelectedTaxScheduleId] = useState<string>("SCH-DOM-VAT")
+  const [paymentTerms, setPaymentTerms] = useState("Net 30")
+
+  // Auto-resolve tax schedule whenever selectedOrder opens
+  useEffect(() => {
+    if (selectedOrder) {
+      const customers = erp.getCustomers()
+      const cust = customers.find((c) => c.name === selectedOrder.customer || c.id === selectedOrder.customer)
+      const firstItem = selectedOrder.items?.[0]
+      const autoId = resolveAutoTaxScheduleId(cust, { name: firstItem?.name }, "SALES")
+      setSelectedTaxScheduleId(autoId)
+    }
+  }, [selectedOrder, erp])
+
+  const orderTaxCalc = useMemo(() => {
+    if (!selectedOrder) return { subtotal: 0, taxLines: [], totalTaxAdded: 0, totalTaxDeducted: 0, netTotal: 0 }
+    return calculateMultiTax(selectedOrder.amount, taxRules, selectedTaxScheduleId)
+  }, [selectedOrder, taxRules, selectedTaxScheduleId])
 
   // New Sales Order Form State
   const [newCustomerId, setNewCustomerId] = useState("")
@@ -677,12 +693,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
   const handleConfirmInvoice = () => {
     if (!selectedOrder) return
 
-    const res = erp.createSalesInvoiceForSalesOrder(selectedOrder.id, taxPercent, paymentTerms)
+    const res = erp.createSalesInvoiceForSalesOrder(selectedOrder.id, selectedTaxScheduleId, paymentTerms)
     if (res.success && res.invoiceId) {
       showToast(
         "Sales Invoice Generated",
         "success",
-        `Invoice ${res.invoiceId} created in Finance Store with ${taxPercent}% Tax! Accounts Receivable GL entry updated.`
+        `Invoice ${res.invoiceId} created with multi-tax automation! Net due: ETB ${orderTaxCalc.netTotal.toLocaleString()}.`
       )
       setIsInvoiceModalOpen(false)
       const updated = erp.getSalesOrderById(selectedOrder.id)
@@ -792,9 +808,45 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               </td>
 
               <td style={{ width: `${colWidths.paymentType}px` }} className="py-4 px-4 overflow-hidden">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  {so.paymentType === "Credit" ? "Credit" : "Cash"}
-                </span>
+                {(() => {
+                  const isCredit = so.paymentType === "Credit"
+                  if (!isCredit) {
+                    return (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Cash
+                      </span>
+                    )
+                  }
+                  const totalAmt = Number(so.amount || 0)
+                  const paidAmt = Number(so.paidAmount || 0)
+                  const dueAmt = Number(so.remainingBalance ?? Math.max(0, totalAmt - paidAmt))
+                  const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
+
+                  if (dueAmt <= 0 && paidAmt > 0) {
+                    return (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        <CheckCircle2 className="size-3 text-emerald-600" /> Credit • Settled
+                      </span>
+                    )
+                  }
+                  if (paidAmt > 0) {
+                    return (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-200 self-start">
+                          Credit • Ongoing ({pct}%)
+                        </span>
+                        <span className="text-[10px] font-mono text-zinc-500">
+                          Paid: ETB {paidAmt.toLocaleString()}
+                        </span>
+                      </div>
+                    )
+                  }
+                  return (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">
+                      Credit (Unpaid)
+                    </span>
+                  )
+                })()}
               </td>
 
               {/* Approval Status */}
@@ -914,33 +966,23 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Tax Template / Rate</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <select
-                      onChange={(e) => {
-                        const found = taxRules.find((r) => r.id === e.target.value)
-                        if (found) setTaxPercent(Number(found.ratePercent))
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    >
-                      <option value="">Select Template...</option>
-                      {taxRules.map((rule) => (
-                        <option key={rule.id} value={rule.id}>
-                          {rule.name} ({rule.ratePercent}%)
-                        </option>
-                      ))}
-                    </select>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="0"
-                        value={taxPercent}
-                        onChange={(e) => setTaxPercent(Number(e.target.value))}
-                        className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none pr-8"
-                      />
-                      <span className="absolute right-3 top-2 text-xs font-bold text-zinc-400">%</span>
-                    </div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-zinc-700">Tax Schedule / Multi-Tax Profile</label>
+                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      ⚡ Auto-Determined
+                    </span>
                   </div>
+                  <select
+                    value={selectedTaxScheduleId}
+                    onChange={(e) => setSelectedTaxScheduleId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                  >
+                    {taxSchedules.map((sch) => (
+                      <option key={sch.id} value={sch.id}>
+                        {sch.name} ({sch.appliesTo})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -948,27 +990,34 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   <select 
                     value={paymentTerms}
                     onChange={(e) => setPaymentTerms(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                   >
-                    <option value="">Select payment terms</option>
                     <option value="Net 30">Net 30 Days</option>
                     <option value="Net 15">Net 15 Days</option>
                     <option value="Payment on Delivery">Payment on Delivery</option>
                   </select>
                 </div>
 
-                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200/80 font-mono text-xs space-y-1">
+                {/* Dynamic Multi-Tax Breakdown Card */}
+                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200/80 font-mono text-xs space-y-1.5">
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Contract Subtotal:</span>
-                    <span className="font-bold">ETB {selectedOrder.amount.toLocaleString()}</span>
+                    <span className="text-zinc-500 font-sans">Contract Subtotal:</span>
+                    <span className="font-bold">ETB {orderTaxCalc.subtotal.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">Tax Amount ({taxPercent}%):</span>
-                    <span className="font-bold text-amber-700">ETB {(selectedOrder.amount * (taxPercent / 100)).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between pt-1 border-t border-zinc-200 font-black">
-                    <span>Total Invoiced Amount:</span>
-                    <span className="text-emerald-700">ETB {(selectedOrder.amount * (1 + taxPercent / 100)).toLocaleString()}</span>
+                  {orderTaxCalc.taxLines.map((tl: any) => (
+                    <div key={tl.ruleId} className="flex justify-between text-[11px]">
+                      <span className="text-zinc-500 font-sans">
+                        {tl.isDeduction ? "–" : "+"} {tl.ruleName} ({tl.ratePercent}%):
+                      </span>
+                      <span className={`font-bold ${tl.isDeduction ? "text-amber-700" : "text-blue-700"}`}>
+                        {tl.isDeduction ? "-ETB " : "+ETB "}
+                        {tl.taxAmount.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between pt-1.5 border-t border-zinc-200 font-black text-sm">
+                    <span className="font-sans">Net Invoiced / Due:</span>
+                    <span className="text-emerald-700">ETB {orderTaxCalc.netTotal.toLocaleString()}</span>
                   </div>
                 </div>
               </div>

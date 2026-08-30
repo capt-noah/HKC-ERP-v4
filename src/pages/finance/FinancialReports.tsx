@@ -314,7 +314,7 @@ export default function FinancialReports() {
   const totalRevenue = accountsByType.Revenue.reduce((s, account) => s + accountBalance(account), 0)
   const totalExpenses = accountsByType.Expense.reduce((s, account) => s + accountBalance(account), 0)
   const netIncome = totalRevenue - totalExpenses
-  const cogsTotal = accountsByType.Expense.filter((account) => /^5/.test(account.code)).reduce((total, account) => total + accountBalance(account), 0)
+  const cogsTotal = accountsByType.Expense.filter((account) => /^6|^5/i.test(account.code) || account.peachtree_type === "Cost of Sales" || /cogs|cost of/i.test(account.name)).reduce((total, account) => total + accountBalance(account), 0)
   const operatingExpenseTotal = totalExpenses - cogsTotal
   const monthlyReports = new Map<string, { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; operating: number; investing: number; financing: number; netCash: number; cashBalance: number }>()
   let cumulativeCash = 0
@@ -324,10 +324,10 @@ export default function FinancialReports() {
     if (transaction.account_type === "Revenue") row.revenue += transaction.credit_amount - transaction.debit_amount
     if (transaction.account_type === "Expense") {
       const amount = transaction.debit_amount - transaction.credit_amount
-      if (/^5/.test(transaction.account_code)) row.cogs += amount
+      if (/^6|^5/i.test(transaction.account_code) || /cogs|cost of/i.test(transaction.account_name)) row.cogs += amount
       else row.expenses += amount
     }
-    if (transaction.account_type === "Asset" && /cash|bank/i.test(transaction.account_name)) row.operating += transaction.debit_amount - transaction.credit_amount
+    if (transaction.account_type === "Asset" && (transaction.account_code.startsWith("1000") || /cash|bank/i.test(transaction.account_name))) row.operating += transaction.debit_amount - transaction.credit_amount
     monthlyReports.set(month, row)
   }
   const plMonthlyTrendData = [...monthlyReports.values()].map((row) => ({ ...row, netProfit: row.revenue - row.cogs - row.expenses }))
@@ -1394,10 +1394,10 @@ export default function FinancialReports() {
                     )}
                   </div>
 
-                  {/* COGS Section */}
+                  {/* Cost of Sales (6000 Series) Section */}
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60">
                     <div className="flex justify-between items-center text-sm font-black text-zinc-900 uppercase font-sans mb-2 border-b border-zinc-200 pb-1.5">
-                      <span>2. Cost of Goods Sold (5000 Series)</span>
+                      <span>2. Cost of Sales / Selling & Distribution (6000 Series)</span>
                       <span className="text-rose-600 font-mono">ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
                     {isLoading ? (
@@ -1408,7 +1408,7 @@ export default function FinancialReports() {
                         </div>
                       ))
                     ) : (
-                      accountsByType.Expense.filter((a) => /^5/.test(a.code)).map((a) => (
+                      accountsByType.Expense.filter((a) => a.code.startsWith("6")).map((a) => (
                         <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
                           <span>{a.code} - {a.name}</span>
                           <span className="font-bold text-rose-600">ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
@@ -1423,10 +1423,10 @@ export default function FinancialReports() {
                     <span className="font-mono text-emerald-800 text-base">ETB {(totalRevenue - cogsTotal).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                   </div>
 
-                  {/* Operating Expenses Section */}
+                  {/* Administrative & General Expenses (8000 Series) Section */}
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60">
                     <div className="flex justify-between items-center text-sm font-black text-zinc-900 uppercase font-sans mb-2 border-b border-zinc-200 pb-1.5">
-                      <span>3. Operating & Administrative Expenses (6000 Series)</span>
+                      <span>3. Administrative & General Expenses (8000 Series)</span>
                       <span className="text-rose-600 font-mono">ETB ({operatingExpenseTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
                     {isLoading ? (
@@ -1437,7 +1437,7 @@ export default function FinancialReports() {
                         </div>
                       ))
                     ) : (
-                      accountsByType.Expense.map((a) => (
+                      accountsByType.Expense.filter((a) => !a.code.startsWith("6")).map((a) => (
                         <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
                           <span>{a.code} - {a.name}</span>
                           <span className="font-bold text-rose-600">
