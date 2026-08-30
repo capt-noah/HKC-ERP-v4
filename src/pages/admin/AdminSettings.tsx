@@ -601,20 +601,7 @@ export default function AdminSettings() {
           </div>
         </div>
 
-        {/* Saved Success Banner */}
-        <AnimatePresence>
-          {isSaved && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 text-xs sm:text-sm font-semibold px-4 py-3 rounded-2xl mb-6 flex items-center gap-2 shadow-sm"
-            >
-              <Check className="size-4 shrink-0 text-emerald-600" />
-              Configurations have been synchronized to Supabase!
-            </motion.div>
-          )}
-        </AnimatePresence>
+
 
         {/* Layout Main Grid or Skeleton */}
         {loading ? (
