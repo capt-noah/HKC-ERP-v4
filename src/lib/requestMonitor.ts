@@ -23,14 +23,11 @@ const RESOURCE_MODULE_MAP: Record<string, string> = {
   store_transfers: "inventory",
 
   sales_orders: "sales",
-  quotations: "sales",
-  delivery_notes: "sales",
   customers: "sales",
   suppliers: "sales",
   sales_issues: "sales",
   processing_services: "sales",
   shipment_documents: "sales",
-  shipment_document_officers: "sales",
   hkc_doc_records: "sales",
 
   chart_of_accounts: "finance",
@@ -48,12 +45,6 @@ const RESOURCE_MODULE_MAP: Record<string, string> = {
   attendance_records: "hr",
   payroll_periods: "hr",
   payroll_records: "hr",
-  departments: "hr",
-  designations: "hr",
-  job_openings: "hr",
-  job_applicants: "hr",
-  onboardings: "hr",
-  separations: "hr",
   leave_types: "hr",
   leave_requests: "hr",
 

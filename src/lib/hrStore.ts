@@ -338,33 +338,15 @@ class HRStore {
     this.listeners.forEach((l) => l())
     try {
       const [
-        departments,
-        designations,
-        jobOpenings,
-        jobApplicants,
-        onboardings,
-        separations,
         leaveTypes,
         leaveRequests,
       ] = await Promise.all([
-        loadResource<Department>("departments"),
-        loadResource<Designation>("designations"),
-        loadResource<JobOpening>("job_openings"),
-        loadResource<JobApplicant>("job_applicants"),
-        loadResource<OnboardingProcess>("onboardings"),
-        loadResource<SeparationProcess>("separations"),
         loadResource<LeaveType>("leave_types"),
         loadResource<LeaveRequest>("leave_requests"),
       ])
 
       // employees are intentionally NOT loaded here — they are owned exclusively
       // by hrApi (production schema). hrStore only manages non-employee HR entities.
-      this.departments = departments
-      this.designations = designations
-      this.jobOpenings = jobOpenings
-      this.jobApplicants = jobApplicants
-      this.onboardings = onboardings
-      this.separations = separations
       this.leaveTypes = leaveTypes
       this.leaveRequests = leaveRequests
       this._isLoaded = true
@@ -379,12 +361,6 @@ class HRStore {
   private saveToApi() {
     // employees are intentionally excluded — written only via hrApi to prevent schema collision.
     return persistResources([
-      { resource: "departments", items: this.departments },
-      { resource: "designations", items: this.designations },
-      { resource: "job_openings", items: this.jobOpenings },
-      { resource: "job_applicants", items: this.jobApplicants },
-      { resource: "onboardings", items: this.onboardings },
-      { resource: "separations", items: this.separations },
       { resource: "leave_types", items: this.leaveTypes },
       { resource: "leave_requests", items: this.leaveRequests },
     ])

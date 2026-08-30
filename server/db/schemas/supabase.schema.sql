@@ -82,12 +82,9 @@ from (
   values
     ('warehouses'),
     ('inventory_products'),
-    ('bin_cards'),
     ('stock_movements'),
     ('store_transfers'),
     ('sales_orders'),
-    ('quotations'),
-    ('delivery_notes'),
     ('purchase_orders'),
     ('customers'),
     ('suppliers'),
@@ -106,12 +103,6 @@ from (
     ('attendance_records'),
     ('payroll_periods'),
     ('payroll_records'),
-    ('departments'),
-    ('designations'),
-    ('job_openings'),
-    ('job_applicants'),
-    ('onboardings'),
-    ('separations'),
     ('leave_types'),
     ('leave_requests')
 ) as tables(table_name);

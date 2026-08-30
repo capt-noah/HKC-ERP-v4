@@ -113,18 +113,7 @@ export async function saveShipmentDoc(input) {
 }
 
 export async function listAssignedOfficers() {
-  try {
-    const url = new URL("shipment_document_officers", config.supabaseRestUrl)
-    url.searchParams.set("select", "*")
-    const response = await fetch(url, { headers: headers() })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows)) {
-      return { status: 200, body: rows }
-    }
-    return { status: response.status || 500, body: rows || [] }
-  } catch (err) {
-    return { status: 500, body: { error: "Failed to list assigned officers", message: err.message } }
-  }
+  return { status: 200, body: [] }
 }
 
 export async function assignOfficer(input) {
@@ -141,24 +130,7 @@ export async function assignOfficer(input) {
     updated_at: new Date().toISOString(),
   }
 
-  try {
-    const url = new URL("shipment_document_officers", config.supabaseRestUrl)
-    const response = await fetch(url, {
-      method: "POST",
-      headers: headers("resolution=merge-duplicates,return=representation"),
-      body: JSON.stringify(assignment),
-    })
-    const rows = await parseResponse(response)
-    if (response.ok && Array.isArray(rows) && rows.length > 0) {
-      return { status: 200, body: rows[0] }
-    }
-    if (!response.ok) {
-      return { status: response.status, body: rows }
-    }
-    return { status: 200, body: assignment }
-  } catch (err) {
-    return { status: 500, body: { error: "Failed to assign officer in DB", message: err.message } }
-  }
+  return { status: 200, body: assignment }
 }
 
 export async function deleteShipmentDoc(id) {

@@ -503,23 +503,19 @@ class ErpStore {
         purchaseOrders,
         customers,
         suppliers,
-        quotations,
-        deliveryNotes,
       ] = await Promise.all([
         loadResource<SalesOrder>("sales_orders"),
         loadResource<PurchaseOrder>("purchase_orders"),
         loadResource<Customer>("customers"),
         loadResource<Supplier>("suppliers"),
-        loadResource<Quotation>("quotations"),
-        loadResource<DeliveryNote>("delivery_notes"),
       ])
 
       this.salesOrders = sortNewestFirst(salesOrders)
       this.purchaseOrders = sortNewestFirst(purchaseOrders)
       this.customers = sortNewestFirst(customers)
       this.suppliers = sortNewestFirst(suppliers)
-      this.quotations = sortNewestFirst(quotations)
-      this.deliveryNotes = sortNewestFirst(deliveryNotes)
+      this.quotations = []
+      this.deliveryNotes = []
 
       this._salesLoaded = true
       this._loadError = null
@@ -596,9 +592,7 @@ class ErpStore {
         { resource: "sales_orders", items: this.salesOrders },
         { resource: "purchase_orders", items: this.purchaseOrders },
         { resource: "customers", items: this.customers },
-        { resource: "suppliers", items: this.suppliers },
-        { resource: "quotations", items: this.quotations },
-        { resource: "delivery_notes", items: this.deliveryNotes }
+        { resource: "suppliers", items: this.suppliers }
       )
     }
 

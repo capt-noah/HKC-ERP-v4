@@ -107,7 +107,6 @@ const resourceLabels: Record<string, string> = {
   stock_movements: "Stock Ledger",
   store_transfers: "Store Transfers",
   sales_orders: "Sales Orders",
-  quotations: "Quotations",
   purchase_orders: "Purchase Orders",
   sales_issues: "Issued Sales",
   customers: "Customers Directory",
