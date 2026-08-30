@@ -1,9 +1,6 @@
 import { config } from "../../config.js"
 import { DEFAULT_SHIPMENT_DOC_RULES, evaluateShipmentDocs } from "./shipmentDocumentLogic.js"
 
-const memoryShipmentDocs = new Map()
-const memoryRules = new Map(DEFAULT_SHIPMENT_DOC_RULES.map((r) => [r.id, r]))
-
 function headers(prefer) {
   const apiKey = config.supabaseServiceRoleKey || config.supabasePublishableKey
   const result = {
@@ -41,7 +38,7 @@ export async function listShipmentDocRules(query = {}) {
     console.warn("listShipmentDocRules DB warning:", err.message)
   }
 
-  let rules = Array.from(memoryRules.values())
+  let rules = DEFAULT_SHIPMENT_DOC_RULES
   if (query.applies_to) {
     rules = rules.filter((r) => r.applies_to === query.applies_to)
   }
@@ -61,24 +58,16 @@ export async function listShipmentDocs(query = {}) {
     if (recordType) {
       url.searchParams.set("record_type", `eq.${recordType}`)
     }
+    url.searchParams.set("order", "uploaded_at.desc")
     const response = await fetch(url, { headers: headers() })
     const rows = await parseResponse(response)
     if (response.ok && Array.isArray(rows)) {
       return { status: 200, body: rows }
     }
+    return { status: response.status || 500, body: rows || [] }
   } catch (err) {
-    console.warn("listShipmentDocs DB warning:", err.message)
+    return { status: 500, body: { error: "Failed to list shipment documents", message: err.message } }
   }
-
-  let docs = Array.from(memoryShipmentDocs.values())
-  if (recordId) {
-    docs = docs.filter((d) => d.record_id === recordId)
-  }
-  if (recordType) {
-    docs = docs.filter((d) => d.record_type === recordType)
-  }
-
-  return { status: 200, body: docs }
 }
 
 export async function saveShipmentDoc(input) {
@@ -94,14 +83,6 @@ export async function saveShipmentDoc(input) {
     uploaded_at: input?.uploaded_at || new Date().toISOString(),
     uploaded_by: input?.uploaded_by || "Current User",
   }
-
-  // Deduplicate existing document for the same record and document_type
-  for (const [existingId, existingDoc] of memoryShipmentDocs.entries()) {
-    if (existingDoc.record_id === doc.record_id && existingDoc.document_type === doc.document_type) {
-      memoryShipmentDocs.delete(existingId)
-    }
-  }
-  memoryShipmentDocs.set(id, doc)
 
   try {
     const url = new URL("shipment_documents", config.supabaseRestUrl)
@@ -122,28 +103,28 @@ export async function saveShipmentDoc(input) {
     if (response.ok && Array.isArray(rows) && rows.length > 0) {
       return { status: 200, body: rows[0] }
     }
+    if (!response.ok) {
+      return { status: response.status, body: rows }
+    }
+    return { status: 200, body: doc }
   } catch (err) {
-    console.warn("saveShipmentDoc DB warning:", err.message)
+    return { status: 500, body: { error: "Failed to save shipment document", message: err.message } }
   }
-
-  return { status: 200, body: doc }
 }
 
-const memoryAssignedOfficers = new Map([
-  [
-    "PO-2026-089",
-    {
-      record_id: "PO-2026-089",
-      assigned_employee_id: "EMP-004",
-      assigned_employee_name: "Tadesse Worku (Customs Compliance Officer)",
-      assigned_at: new Date().toISOString(),
-    },
-  ],
-])
-
 export async function listAssignedOfficers() {
-  const list = Array.from(memoryAssignedOfficers.values())
-  return { status: 200, body: list }
+  try {
+    const url = new URL("shipment_document_officers", config.supabaseRestUrl)
+    url.searchParams.set("select", "*")
+    const response = await fetch(url, { headers: headers() })
+    const rows = await parseResponse(response)
+    if (response.ok && Array.isArray(rows)) {
+      return { status: 200, body: rows }
+    }
+    return { status: response.status || 500, body: rows || [] }
+  } catch (err) {
+    return { status: 500, body: { error: "Failed to list assigned officers", message: err.message } }
+  }
 }
 
 export async function assignOfficer(input) {
@@ -157,24 +138,42 @@ export async function assignOfficer(input) {
     assigned_employee_id: input?.assigned_employee_id || input?.assignedEmployeeId || null,
     assigned_employee_name: input?.assigned_employee_name || input?.assignedEmployeeName || "Unassigned",
     assigned_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
 
-  memoryAssignedOfficers.set(record_id, assignment)
-  return { status: 200, body: assignment }
+  try {
+    const url = new URL("shipment_document_officers", config.supabaseRestUrl)
+    const response = await fetch(url, {
+      method: "POST",
+      headers: headers("resolution=merge-duplicates,return=representation"),
+      body: JSON.stringify(assignment),
+    })
+    const rows = await parseResponse(response)
+    if (response.ok && Array.isArray(rows) && rows.length > 0) {
+      return { status: 200, body: rows[0] }
+    }
+    if (!response.ok) {
+      return { status: response.status, body: rows }
+    }
+    return { status: 200, body: assignment }
+  } catch (err) {
+    return { status: 500, body: { error: "Failed to assign officer in DB", message: err.message } }
+  }
 }
 
 export async function deleteShipmentDoc(id) {
-  memoryShipmentDocs.delete(id)
-
   try {
     const url = new URL("shipment_documents", config.supabaseRestUrl)
     url.searchParams.set("id", `eq.${id}`)
-    await fetch(url, { method: "DELETE", headers: headers() })
+    const response = await fetch(url, { method: "DELETE", headers: headers() })
+    if (response.ok) {
+      return { status: 200, body: { ok: true, deletedId: id } }
+    }
+    const errBody = await parseResponse(response)
+    return { status: response.status, body: errBody }
   } catch (err) {
-    console.warn("deleteShipmentDoc DB warning:", err.message)
+    return { status: 500, body: { error: "Failed to delete shipment doc", message: err.message } }
   }
-
-  return { status: 200, body: { ok: true, deletedId: id } }
 }
 
 export { evaluateShipmentDocs, DEFAULT_SHIPMENT_DOC_RULES }
