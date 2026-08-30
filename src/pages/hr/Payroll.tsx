@@ -165,10 +165,10 @@ export default function Payroll() {
       const period = await hrApi.createPayrollPeriod({ id: makeId("PER"), ...periodForm })
       setShowPeriodForm(false)
       setSelectedPeriod(period.id)
-      showToast("Payroll Period Created", "success", `${period.name} was saved to Supabase.`)
+      showToast("Payroll Period Created", "success", `${period.name} was created successfully.`)
       await refresh()
     } catch (err) {
-      showToast("Period Save Failed", "warning", err instanceof Error ? err.message : "Supabase rejected the payroll period.")
+      showToast("Period Save Failed", "warning", err instanceof Error ? err.message : "Could not create the payroll period.")
     }
   }
 
@@ -229,13 +229,13 @@ export default function Payroll() {
 
       const msgs = []
       if (missing.length > 0) msgs.push(`${missing.length} active employees loaded`)
-      if (pendingToUpdate.length > 0) msgs.push(`${pendingToUpdate.length} salaries synchronized with employee profiles`)
-      if (msgs.length === 0) msgs.push("All payroll records and salaries are currently synchronized")
+      if (pendingToUpdate.length > 0) msgs.push(`${pendingToUpdate.length} salaries updated from employee profiles`)
+      if (msgs.length === 0) msgs.push("All payroll records and salaries are currently up to date")
 
-      showToast("Payroll Synchronized", "success", msgs.join("; ") + ".")
+      showToast("Payroll Updated", "success", msgs.join("; ") + ".")
       await refresh()
     } catch (err) {
-      showToast("Payroll Sync Failed", "warning", err instanceof Error ? err.message : "Supabase rejected payroll records.")
+      showToast("Payroll Update Failed", "warning", err instanceof Error ? err.message : "Could not update payroll records.")
     }
   }
 
@@ -314,7 +314,7 @@ export default function Payroll() {
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12 print:hidden">
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
-          <div><h1 className="text-3xl font-black text-black tracking-tight mt-1">Payroll</h1><p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Manual earnings, deductions, totals, workflow, and payslips from Supabase payroll data.</p></div>
+          <div><h1 className="text-3xl font-black text-black tracking-tight mt-1">Payroll</h1><p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Manual earnings, deductions, totals, workflow, and payslips.</p></div>
           <SubPageNav items={getSectionChildren("/hr")} />
         </motion.div>
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}

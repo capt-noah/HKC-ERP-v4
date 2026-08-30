@@ -97,7 +97,7 @@ export default function HRDashboard() {
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">HR Dashboard</h1>
-            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Workforce, attendance, leave, and payroll totals calculated from Supabase records.</p>
+            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Workforce, attendance, leave, and payroll summary overview.</p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
         </motion.div>
@@ -251,7 +251,7 @@ function ActivityGraph({
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-5">
         <div>
           <h3 className="text-sm font-black uppercase tracking-tight text-zinc-900">Recent HR Activity</h3>
-          <p className="text-xs font-semibold text-zinc-500 mt-1">Activity distribution across the latest Supabase HR records.</p>
+          <p className="text-xs font-semibold text-zinc-500 mt-1">Activity distribution across recent HR records.</p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {graph.map((item) => (
@@ -281,7 +281,7 @@ function ActivityGraph({
             </ResponsiveContainer>
           </div>
           {!hasActivity && (
-            <p className="text-xs font-semibold text-zinc-400 px-2 pb-2">No HR activity has been recorded yet. The chart will populate when Supabase records exist.</p>
+            <p className="text-xs font-semibold text-zinc-400 px-2 pb-2">No HR activity has been recorded yet.</p>
           )}
         </div>
           <div className="rounded-2xl border border-black/5 bg-black/[0.02] p-4">

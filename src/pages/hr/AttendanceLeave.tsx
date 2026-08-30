@@ -289,7 +289,7 @@ export default function AttendanceLeave() {
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-zinc-100 mb-6 gap-3">
                       <div>
                         <h3 className="text-xs font-black tracking-tight text-zinc-900 uppercase">Interactive Team Attendance Grid</h3>
-                        <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">Click cells to cycle: Present → Absent → On Leave. Saves to Supabase.</p>
+                        <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">Click cells to cycle: Present → Absent → On Leave.</p>
                       </div>
                       <div className="flex items-center gap-3 flex-wrap shrink-0">
                         <button onClick={() => showToast("Exporting Timecards", "info", "Compiling spreadsheet...")}
@@ -352,7 +352,7 @@ export default function AttendanceLeave() {
                     <div className="bg-zinc-50 border border-zinc-100 rounded-2xl p-4 mt-6 flex items-start gap-2.5">
                       <Info className="size-4 text-zinc-400 shrink-0 mt-0.5" />
                       <p className="text-[10px] font-semibold text-zinc-500 leading-normal">
-                        Attendance records are saved directly to Supabase. Each cell click creates or updates the record for that employee and day. Absence deductions can be entered manually in the Payroll module.
+                        Attendance records are automatically updated. Each cell click records the status for that employee and day. Absence deductions can be reviewed in the Payroll module.
                       </p>
                     </div>
                   </GlassCard>

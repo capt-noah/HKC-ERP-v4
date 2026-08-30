@@ -142,14 +142,14 @@ export default function Employees() {
       } else {
         savedEmployee = await hrApi.createEmployee({ id: employeeNumber, ...payload })
         setEmployees((prev) => [{ ...payload, ...savedEmployee, id: savedEmployee.id || employeeNumber }, ...prev])
-        showToast("Employee Registered", "success", `${payload.full_name} was saved to Supabase.`)
+        showToast("Employee Registered", "success", `${payload.full_name} was registered successfully.`)
       }
       setEditing(null)
       setForm(emptyEmployee)
       setShowForm(false)
       void refresh()
     } catch (err) {
-      showToast("Employee Save Failed", "warning", err instanceof Error ? err.message : "Supabase rejected the employee record.")
+      showToast("Employee Save Failed", "warning", err instanceof Error ? err.message : "Could not save the employee record.")
     } finally {
       setSaving(false)
     }
@@ -172,7 +172,7 @@ export default function Employees() {
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Employees</h1>
-            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Employee registration and employment records loaded from Supabase.</p>
+            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Employee registration and personnel directory.</p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
         </motion.div>

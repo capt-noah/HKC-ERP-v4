@@ -120,11 +120,11 @@ export default function Leave() {
       const payload = { ...form, number_of_days: days }
       if (editing) await hrApi.updateLeave(editing.id, payload)
       else await hrApi.createLeave({ id: makeId("LR"), ...payload })
-      showToast("Leave Request Saved", "success", "Leave request was saved to Supabase.")
+      showToast("Leave Request Saved", "success", "Leave request has been recorded successfully.")
       setShowForm(false)
       await refresh()
     } catch (err) {
-      showToast("Leave Save Failed", "warning", err instanceof Error ? err.message : "Supabase rejected the leave request.")
+      showToast("Leave Save Failed", "warning", err instanceof Error ? err.message : "Could not save the leave request.")
     }
   }
 
@@ -151,7 +151,7 @@ export default function Leave() {
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
       <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
-          <div><h1 className="text-3xl font-black text-black tracking-tight mt-1">Leave Requests</h1><p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Leave records, status changes, and date-range filtering from Supabase.</p></div>
+          <div><h1 className="text-3xl font-black text-black tracking-tight mt-1">Leave Requests</h1><p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Leave records, approvals, and date-range filtering.</p></div>
           <SubPageNav items={getSectionChildren("/hr")} />
         </motion.div>
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}

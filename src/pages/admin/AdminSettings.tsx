@@ -230,11 +230,11 @@ export default function AdminSettings() {
     }
   }, [])
 
-  // Save Company, Pension & Rates Configurations to Supabase
+  // Save Company, Pension & Rates Configurations
   const handleSave = () => {
     confirm({
       title: "Save System Settings",
-      message: "Persist the configured entity profile, fee rates, pension parameters, and tax brackets to Supabase?",
+      message: "Save changes to company profile, fee rates, pension parameters, and tax brackets?",
       confirmLabel: "Save Configurations",
       cancelLabel: "Cancel",
       onConfirm: () => {
@@ -264,7 +264,7 @@ export default function AdminSettings() {
 
         erp.updateCompanySettings(updated)
         setIsSaved(true)
-        showToast("System Settings Saved", "success", "Configuration parameters have been synchronized with the database.")
+        showToast("Settings Saved", "success", "Configuration parameters have been saved successfully.")
         setTimeout(() => setIsSaved(false), 3000)
       },
     })
@@ -298,7 +298,7 @@ export default function AdminSettings() {
         ? s.tax_brackets_config
         : DEFAULT_ETHIOPIAN_TAX_BRACKETS
     )
-    showToast("Changes Discarded", "info", "Reverted parameters back to active database values.")
+    showToast("Changes Discarded", "info", "Form changes have been reverted.")
   }
 
   const handleOpenBracketModal = (index?: number) => {
@@ -363,7 +363,7 @@ export default function AdminSettings() {
       isDestructive: true,
       onConfirm: () => {
         setTaxBrackets((prev) => prev.filter((_, i) => i !== index))
-        showToast("Tax Bracket Removed", "info", "Tier removed. Remember to click Save Changes to persist to the database.")
+        showToast("Tax Bracket Removed", "info", "Tier removed. Click Save Changes to apply.")
       },
     })
   }
@@ -553,7 +553,7 @@ export default function AdminSettings() {
         setTimeout(() => {
           confirm({
             title: `⚠️ FINAL CONFIRMATION (Step 2 of 2): Permanent Delete`,
-            message: `FINAL STEP: Are you absolutely certain you want to permanently delete '${wh.name}' (${wh.code || wh.id}) from the Supabase database? This action is irreversible.`,
+            message: `FINAL STEP: Are you absolutely certain you want to permanently delete '${wh.name}' (${wh.code || wh.id})? This action is irreversible.`,
             confirmLabel: "Yes, Permanently Delete Facility",
             cancelLabel: "Abort Deletion",
             isDestructive: true,
