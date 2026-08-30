@@ -33,6 +33,9 @@ export interface BatchInfo {
 
 export interface WH1Entry {
   entryId: string
+  voucherNo?: string
+  customer?: string
+  plateNumber?: string
   entryDate: string
   leaveDate?: string
   quantityReceived: number
@@ -59,6 +62,9 @@ export interface Product {
   id: string
   name: string
   sku: string
+  voucherNo?: string
+  customer?: string
+  plateNumber?: string
   dosage?: string
   shelfNo?: string
   category: string

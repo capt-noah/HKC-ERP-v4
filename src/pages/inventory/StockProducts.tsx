@@ -31,6 +31,7 @@ import StockBinCardLedger from "@/components/stock/StockBinCardLedger"
 import StockBinEntryModal from "@/components/stock/StockBinEntryModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
+import WH1ReceivingVoucherPrintModal from "@/components/stock/WH1ReceivingVoucherPrintModal"
 import { getExpiryStatus, getExpiringItemsSummary } from "@/lib/expiryUtils"
 
 const packagingUnits = ["Box", "Bottle", "Vial", "Sachet"]
@@ -42,6 +43,9 @@ const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 interface StockEditForm {
   name: string
   sku: string
+  voucherNo?: string
+  customer?: string
+  plateNumber?: string
   dosage?: string
   shelfNo?: string
   category: string
@@ -163,6 +167,9 @@ export default function StockProducts() {
   // Add Stock Item Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [addDescription, setAddDescription] = useState("")
+  const [addVoucherNo, setAddVoucherNo] = useState("")
+  const [addCustomer, setAddCustomer] = useState("")
+  const [addPlateNumber, setAddPlateNumber] = useState("")
   const [addDosage, setAddDosage] = useState("")
   const [addShelfNo, setAddShelfNo] = useState("")
   const [addPackagingUnit, setAddPackagingUnit] = useState("")
@@ -174,7 +181,6 @@ export default function StockProducts() {
   const [addQtyPerPack, setAddQtyPerPack] = useState("")
   const [addNumCartons, setAddNumCartons] = useState("")
   const [addEntryDate, setAddEntryDate] = useState("")
-  const [addLeaveDate, setAddLeaveDate] = useState("")
   const [addQuantity, setAddQuantity] = useState("")
   const [addNotes, setAddNotes] = useState("")
   const [isSavingAdd, setIsSavingAdd] = useState(false)
@@ -188,6 +194,9 @@ export default function StockProducts() {
   
   // Edit WH1 sub-entry modal state
   const [editingSubEntry, setEditingSubEntry] = useState<{ product: Product; entry: WH1Entry } | null>(null)
+  const [editSubEntryVoucherNo, setEditSubEntryVoucherNo] = useState("")
+  const [editSubEntryCustomer, setEditSubEntryCustomer] = useState("")
+  const [editSubEntryPlateNumber, setEditSubEntryPlateNumber] = useState("")
   const [editSubEntryQty, setEditSubEntryQty] = useState("")
   const [editSubEntryPrice, setEditSubEntryPrice] = useState("")
   const [editSubEntryDate, setEditSubEntryDate] = useState("")
@@ -206,8 +215,17 @@ export default function StockProducts() {
     entry: null,
   })
 
-  // Bin Card Print/Export Modal State
+  // Bin Card Print/Export Modal State (WH2 / WH3)
   const [printModalProduct, setPrintModalProduct] = useState<Product | null>(null)
+
+  // Goods Receiving Voucher Print/Export Modal State (WH1)
+  const [wh1VoucherModal, setWh1VoucherModal] = useState<{
+    isOpen: boolean
+    product: Product | null
+  }>({
+    isOpen: false,
+    product: null,
+  })
 
   // Edit/Delete Product state
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -215,6 +233,9 @@ export default function StockProducts() {
   const [editForm, setEditForm] = useState<StockEditForm>({
     name: "",
     sku: "",
+    voucherNo: "",
+    customer: "",
+    plateNumber: "",
     dosage: "",
     shelfNo: "",
     category: "",
@@ -252,9 +273,7 @@ export default function StockProducts() {
   const addShelfLifeDays = daysBetween(addMfgDate, addExpDate)
   const addShelfLifeMonths = addShelfLifeDays === null ? 0 : Math.max(0, Math.round((addShelfLifeDays / 30.4375) * 10) / 10)
   
-  const addDateInvalid = isWH1Form
-    ? Boolean(addEntryDate && addLeaveDate && daysBetween(addEntryDate, addLeaveDate) !== null && (daysBetween(addEntryDate, addLeaveDate) ?? 0) <= 0)
-    : Boolean(addShelfLifeDays !== null && addShelfLifeDays <= 0)
+  const addDateInvalid = !isWH1Form && Boolean(addShelfLifeDays !== null && addShelfLifeDays <= 0)
 
   const addNormalizedBatch = addBatchNumber.trim().toLowerCase()
   const addDuplicateBatch = !isWH1Form && Boolean(addNormalizedBatch) && products.some((product) => {
@@ -287,6 +306,9 @@ export default function StockProducts() {
 
   const resetAddForm = () => {
     setAddDescription("")
+    setAddVoucherNo("")
+    setAddCustomer("")
+    setAddPlateNumber("")
     setAddDosage("")
     setAddShelfNo("")
     setAddPackagingUnit("")
@@ -298,7 +320,6 @@ export default function StockProducts() {
     setAddQtyPerPack("")
     setAddNumCartons("")
     setAddEntryDate("")
-    setAddLeaveDate("")
     setAddQuantity("")
     setAddNotes("")
     setSelectedExistingProduct(null)
@@ -364,6 +385,9 @@ export default function StockProducts() {
 
     if (isWH1(selectedWarehouse)) {
       cols.push(
+        { key: "voucherNo", label: "Voucher No", align: "left" },
+        { key: "customer", label: "Customer", align: "left" },
+        { key: "plateNumber", label: "Plate No", align: "left" },
         { key: "entryDate", label: "Entry Date", align: "left" },
         { key: "leaveDate", label: "Leave Date", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
@@ -392,7 +416,10 @@ export default function StockProducts() {
 
   const productsTable = useResizableTable(currentProductColumns, filteredProducts, {
     sku: 110,
-    name: 200,
+    name: 180,
+    voucherNo: 110,
+    customer: 130,
+    plateNumber: 110,
     dosage: 130,
     shelfNo: 120,
     batch: 110,
@@ -452,8 +479,11 @@ export default function StockProducts() {
       if (selectedExistingProduct) {
         // Option A: Add sub-entry to existing item
         const newEntryPayload: Omit<WH1Entry, "entryId"> = {
+          voucherNo: addVoucherNo.trim() || undefined,
+          customer: addCustomer.trim() || undefined,
+          plateNumber: addPlateNumber.trim() || undefined,
           entryDate: addEntryDate,
-          leaveDate: addLeaveDate || undefined,
+          leaveDate: undefined,
           quantityReceived: addTotalQuantity,
           quantityRemaining: addTotalQuantity,
           unitPrice: Number(addUnitPrice || 0),
@@ -466,8 +496,11 @@ export default function StockProducts() {
         const productId = `P-${Date.now()}`
         const initialWH1Entries: WH1Entry[] = isWH1Form ? [{
           entryId: `WH1E-${Date.now()}`,
+          voucherNo: addVoucherNo.trim() || undefined,
+          customer: addCustomer.trim() || undefined,
+          plateNumber: addPlateNumber.trim() || undefined,
           entryDate: addEntryDate,
-          leaveDate: addLeaveDate || undefined,
+          leaveDate: undefined,
           quantityReceived: addTotalQuantity,
           quantityRemaining: addTotalQuantity,
           unitPrice: Number(addUnitPrice || 0),
@@ -478,6 +511,9 @@ export default function StockProducts() {
           id: productId,
           name: addDescription,
           sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? "WH1" : addBatchNumber}`,
+          voucherNo: isWH1Form ? (addVoucherNo.trim() || undefined) : undefined,
+          customer: isWH1Form ? (addCustomer.trim() || undefined) : undefined,
+          plateNumber: isWH1Form ? (addPlateNumber.trim() || undefined) : undefined,
           dosage: isWH1Form ? undefined : addDosage.trim() || undefined,
           shelfNo: isWH1Form ? undefined : addShelfNo.trim() || undefined,
           category: "",
@@ -500,7 +536,7 @@ export default function StockProducts() {
           expiry: isWH1Form ? "" : addExpDate,
           shelfLifeMonths: isWH1Form ? undefined : addShelfLifeMonths,
           entryDate: isWH1Form ? addEntryDate : undefined,
-          leaveDate: (isWH1Form && addLeaveDate) ? addLeaveDate : undefined,
+          leaveDate: undefined,
           status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
           stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
           batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, status: "Released" }],
@@ -554,8 +590,11 @@ export default function StockProducts() {
     try {
       const finalQty = addPackagingUnit === "Ton" ? Number(addQuantity) * TON_TO_QUINTAL : Number(addQuantity)
       const newEntryPayload: Omit<WH1Entry, "entryId"> = {
+        voucherNo: addVoucherNo.trim() || undefined,
+        customer: addCustomer.trim() || undefined,
+        plateNumber: addPlateNumber.trim() || undefined,
         entryDate: addEntryDate,
-        leaveDate: addLeaveDate || undefined,
+        leaveDate: undefined,
         quantityReceived: finalQty,
         quantityRemaining: finalQty,
         unitPrice: Number(addUnitPrice || 0),
@@ -575,6 +614,9 @@ export default function StockProducts() {
   // Handle Edit/Delete Sub Entry
   const openEditSubEntry = (product: Product, entry: WH1Entry) => {
     setEditingSubEntry({ product, entry })
+    setEditSubEntryVoucherNo(entry.voucherNo || "")
+    setEditSubEntryCustomer(entry.customer || "")
+    setEditSubEntryPlateNumber(entry.plateNumber || "")
     setEditSubEntryQty(String(entry.quantityReceived))
     setEditSubEntryPrice(String(entry.unitPrice))
     setEditSubEntryDate(entry.entryDate)
@@ -592,6 +634,9 @@ export default function StockProducts() {
       const nextRemaining = Math.max(0, originalRemaining - difference)
 
       await erp.updateWH1Entry(editingSubEntry.product.id, editingSubEntry.entry.entryId, {
+        voucherNo: editSubEntryVoucherNo.trim() || undefined,
+        customer: editSubEntryCustomer.trim() || undefined,
+        plateNumber: editSubEntryPlateNumber.trim() || undefined,
         entryDate: editSubEntryDate,
         leaveDate: editSubEntryLeave || undefined,
         quantityReceived: nextQty,
@@ -654,6 +699,9 @@ export default function StockProducts() {
     setEditForm({
       name: product.name,
       sku: product.sku,
+      voucherNo: product.voucherNo || (product.wh1Entries?.[0]?.voucherNo || ""),
+      customer: product.customer || (product.wh1Entries?.[0]?.customer || ""),
+      plateNumber: product.plateNumber || (product.wh1Entries?.[0]?.plateNumber || ""),
       dosage: product.dosage || "",
       shelfNo: product.shelfNo || "",
       category: product.category || "",
@@ -679,6 +727,9 @@ export default function StockProducts() {
     if (!editingProduct) return
     const name = editForm.name.trim()
     const sku = editForm.sku.trim()
+    const voucherNo = editForm.voucherNo?.trim() || undefined
+    const customer = editForm.customer?.trim() || undefined
+    const plateNumber = editForm.plateNumber?.trim() || undefined
     const dosage = editForm.dosage?.trim() || undefined
     const shelfNo = editForm.shelfNo?.trim() || undefined
     const batch = editForm.batch.trim()
@@ -728,6 +779,9 @@ export default function StockProducts() {
       const saved = await erp.updateProductDetails(editingProduct.id, {
         name,
         sku,
+        voucherNo,
+        customer,
+        plateNumber,
         dosage,
         shelfNo,
         category: editForm.category.trim(),
@@ -1008,6 +1062,21 @@ export default function StockProducts() {
                                     </div>
                                   </td>
 
+                                  {/* Voucher No */}
+                                  <td className="py-4 px-4 font-mono text-[11px] font-black text-rose-700">
+                                    {prod.voucherNo || (entries[0]?.voucherNo ? `No. ${entries[0].voucherNo}` : "—")}
+                                  </td>
+
+                                  {/* Customer */}
+                                  <td className="py-4 px-4 font-bold text-zinc-900 truncate max-w-[130px]" title={prod.customer || entries[0]?.customer || "—"}>
+                                    {prod.customer || (entries[0]?.customer || "—")}
+                                  </td>
+
+                                  {/* Plate Number */}
+                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
+                                    {prod.plateNumber || (entries[0]?.plateNumber || "—")}
+                                  </td>
+
                                   {/* Entry date */}
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">
                                     {earliestDate === latestDate ? earliestDate : `${earliestDate} to ${latestDate}`}
@@ -1034,14 +1103,26 @@ export default function StockProducts() {
                                   <td className="py-4 px-6 text-center whitespace-nowrap">
                                     <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                                       <button
+                                        type="button"
                                         onClick={() => setSlimAddEntryProduct(prod)}
-                                        className="px-2.5 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-800 transition-all active:scale-95 shadow-xs"
+                                        className="px-2.5 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-800 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                        title="Add sub-entry"
                                       >
                                         <PlusCircle className="size-3" /> Add
                                       </button>
                                       <button
+                                        type="button"
+                                        onClick={() => setWh1VoucherModal({ isOpen: true, product: prod })}
+                                        className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                        title="Print & Export Goods Receiving Voucher"
+                                      >
+                                        <Download className="size-3 text-zinc-500" /> Export
+                                      </button>
+                                      <button
+                                        type="button"
                                         onClick={() => openEditProduct(prod)}
-                                        className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-50 transition-all active:scale-95 shadow-xs"
+                                        className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-50 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                        title="Edit stock item"
                                       >
                                         <Edit3 className="size-3 text-zinc-500" /> Edit
                                       </button>
@@ -1061,6 +1142,9 @@ export default function StockProducts() {
                                               <thead>
                                                 <tr className="bg-zinc-50/90 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-500 tracking-wider">
                                                   <th className="py-2.5 px-4">Entry ID</th>
+                                                  <th className="py-2.5 px-4">Voucher No</th>
+                                                  <th className="py-2.5 px-4">Customer</th>
+                                                  <th className="py-2.5 px-4">Plate No</th>
                                                   <th className="py-2.5 px-4">Entry Date</th>
                                                   <th className="py-2.5 px-4">Leave Date</th>
                                                   <th className="py-2.5 px-4 text-right">Qty Received</th>
@@ -1073,6 +1157,9 @@ export default function StockProducts() {
                                                 {entries.map((entry) => (
                                                   <tr key={entry.entryId} className="hover:bg-zinc-50 transition-colors">
                                                     <td className="py-2.5 px-4 font-mono text-[11px] text-zinc-600 font-bold">{entry.entryId}</td>
+                                                    <td className="py-2.5 px-4 font-mono text-rose-700 font-bold">{entry.voucherNo ? `No. ${entry.voucherNo}` : "—"}</td>
+                                                    <td className="py-2.5 px-4 font-bold text-zinc-800">{entry.customer || "—"}</td>
+                                                    <td className="py-2.5 px-4 font-mono text-zinc-600">{entry.plateNumber || "—"}</td>
                                                     <td className="py-2.5 px-4 font-mono text-zinc-800">{entry.entryDate || prod.entryDate || "—"}</td>
                                                     <td className="py-2.5 px-4 font-mono text-zinc-500">{entry.leaveDate || "—"}</td>
                                                     <td className="py-2.5 px-4 text-right font-mono text-zinc-700">{entry.quantityReceived.toLocaleString()}</td>
@@ -1082,7 +1169,7 @@ export default function StockProducts() {
                                                       <button
                                                         type="button"
                                                         onClick={() => openEditSubEntry(prod, entry)}
-                                                        className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs"
+                                                        className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer"
                                                         title="Edit sub-entry details"
                                                       >
                                                         <Edit3 className="size-3 text-zinc-500" /> Edit
@@ -1389,12 +1476,42 @@ export default function StockProducts() {
                 {isWH1(editForm.warehouse) ? (
                   <>
                     <label className="space-y-1">
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Voucher No / ID (Optional)</span>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. 1251" 
+                        value={editForm.voucherNo || ""} 
+                        onChange={(e) => updateEditForm({ voucherNo: e.target.value })} 
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Customer (Optional)</span>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Samii" 
+                        value={editForm.customer || ""} 
+                        onChange={(e) => updateEditForm({ customer: e.target.value })} 
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" 
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-[11px] font-black uppercase text-zinc-500">Plate Number (Optional)</span>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. A52735" 
+                        value={editForm.plateNumber || ""} 
+                        onChange={(e) => updateEditForm({ plateNumber: e.target.value })} 
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                      />
+                    </label>
+                    <label className="space-y-1">
                       <span className="block text-[11px] font-black uppercase text-zinc-500">Entry Date</span>
-                      <input type="date" value={editForm.entryDate} onChange={(e) => updateEditForm({ entryDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
+                      <input type="date" value={editForm.entryDate} onChange={(e) => updateEditForm({ entryDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                     </label>
                     <label className="space-y-1">
                       <span className="block text-[11px] font-black uppercase text-zinc-500">Leave Date <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
-                      <input type="date" value={editForm.leaveDate} onChange={(e) => updateEditForm({ leaveDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
+                      <input type="date" value={editForm.leaveDate} onChange={(e) => updateEditForm({ leaveDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                     </label>
                   </>
                 ) : (
@@ -1656,20 +1773,41 @@ export default function StockProducts() {
                   {isWH1Form ? (
                     <>
                       <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Voucher No / ID <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
+                        <input
+                          type="text"
+                          placeholder="e.g. 1251"
+                          value={addVoucherNo}
+                          onChange={(e) => setAddVoucherNo(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Customer <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
+                        <input
+                          type="text"
+                          placeholder="e.g. Samii"
+                          value={addCustomer}
+                          onChange={(e) => setAddCustomer(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Plate Number <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
+                        <input
+                          type="text"
+                          placeholder="e.g. A52735"
+                          value={addPlateNumber}
+                          onChange={(e) => setAddPlateNumber(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                        />
+                      </label>
+                      <label className="space-y-1">
                         <span className="text-[11px] font-black uppercase text-zinc-700">Entry Date <span className="text-rose-600">*</span></span>
                         <input
                           type="date"
                           value={addEntryDate}
                           onChange={(e) => setAddEntryDate(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Leave Date <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
-                        <input
-                          type="date"
-                          value={addLeaveDate}
-                          onChange={(e) => setAddLeaveDate(e.target.value)}
                           className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
                         />
                       </label>
@@ -1810,11 +1948,44 @@ export default function StockProducts() {
               <div className="space-y-4 text-xs font-semibold">
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Voucher No / ID (Optional)</span>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 1251" 
+                      value={addVoucherNo} 
+                      onChange={(e) => setAddVoucherNo(e.target.value)} 
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Customer (Optional)</span>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Samii" 
+                      value={addCustomer} 
+                      onChange={(e) => setAddCustomer(e.target.value)} 
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Plate Number (Optional)</span>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. A52735" 
+                      value={addPlateNumber} 
+                      onChange={(e) => setAddPlateNumber(e.target.value)} 
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
                     <span className="text-zinc-500 uppercase text-[10px] font-black">UOM</span>
                     <select 
                       value={addPackagingUnit} 
                       onChange={(e) => setAddPackagingUnit(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 cursor-pointer"
                     >
                       <option value="Quintal">Quintal</option>
                       <option value="Ton">Ton</option>
@@ -1849,16 +2020,6 @@ export default function StockProducts() {
                       type="date" 
                       value={addEntryDate} 
                       onChange={(e) => setAddEntryDate(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Leave Date (Optional)</span>
-                    <input 
-                      type="date" 
-                      value={addLeaveDate} 
-                      onChange={(e) => setAddLeaveDate(e.target.value)} 
                       className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
                     />
                   </label>
@@ -1928,6 +2089,39 @@ export default function StockProducts() {
 
               <div className="space-y-4 text-xs font-semibold">
                 <div className="grid gap-4 md:grid-cols-2">
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Voucher No / ID (Optional)</span>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 1251" 
+                      value={editSubEntryVoucherNo} 
+                      onChange={(e) => setEditSubEntryVoucherNo(e.target.value)} 
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Customer (Optional)</span>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Samii" 
+                      value={editSubEntryCustomer} 
+                      onChange={(e) => setEditSubEntryCustomer(e.target.value)} 
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Plate Number (Optional)</span>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. A52735" 
+                      value={editSubEntryPlateNumber} 
+                      onChange={(e) => setEditSubEntryPlateNumber(e.target.value)} 
+                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
                   <label className="space-y-1 block">
                     <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity (Received)</span>
                     <input 
@@ -2013,11 +2207,18 @@ export default function StockProducts() {
         onDelete={handleDeleteBinEntry}
       />
 
-      {/* MODAL: BIN CARD PRINT & EXPORT */}
+      {/* MODAL: BIN CARD PRINT & EXPORT (WH2 / WH3) */}
       <StockBinCardPrintModal
         isOpen={!!printModalProduct}
         product={printModalProduct}
         onClose={() => setPrintModalProduct(null)}
+      />
+
+      {/* MODAL: GOODS RECEIVING VOUCHER PRINT & EXPORT (WH1) */}
+      <WH1ReceivingVoucherPrintModal
+        isOpen={wh1VoucherModal.isOpen}
+        product={wh1VoucherModal.product}
+        onClose={() => setWh1VoucherModal({ isOpen: false, product: null })}
       />
 
       {/* MODAL: DELETE PRODUCT */}

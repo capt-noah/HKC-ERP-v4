@@ -1003,3 +1003,176 @@ export function exportInvoiceToExcel(inv: PrintInvoiceOptions): void {
     rows,
   })
 }
+
+export interface PrintWH1ReceivingVoucherOptions {
+  voucherNo: string
+  date: string
+  customer: string
+  plateNumber: string
+  warehouseName?: string
+  items: Array<{
+    itemNo: number
+    description: string
+    unit: string
+    quantity: number
+    unitPrice: number
+    totalPrice: number
+    remarks?: string
+  }>
+  notes?: string
+}
+
+/**
+ * Print WH1 Goods Receiving Voucher (English Format)
+ */
+export function printWH1ReceivingVoucherDocument(v: PrintWH1ReceivingVoucherOptions): void {
+  const printWindow = window.open("", "_blank")
+  if (!printWindow) {
+    alert("Please allow pop-ups in your browser to print the Goods Receiving Voucher.")
+    return
+  }
+
+  const logoUrl = typeof window !== "undefined" && window.location?.origin ? `${window.location.origin}/hkc_logo.png` : "/hkc_logo.png"
+  const totalQuantity = v.items.reduce((sum, i) => sum + Number(i.quantity || 0), 0)
+  const totalValue = v.items.reduce((sum, i) => sum + Number(i.totalPrice || 0), 0)
+
+  const itemsRowsHtml = v.items.map((item) => `
+    <tr>
+      <td style="text-align: center; font-weight: 600;">${item.itemNo}</td>
+      <td style="font-weight: 700; color: #0f172a;">${item.description}</td>
+      <td style="text-align: center; text-transform: uppercase; font-weight: 600;">${item.unit}</td>
+      <td style="text-align: right; font-family: monospace; font-weight: 700;">${item.quantity.toLocaleString()}</td>
+      <td style="text-align: right; font-family: monospace;">${item.unitPrice > 0 ? item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</td>
+      <td style="text-align: right; font-family: monospace; font-weight: 700;">${item.totalPrice > 0 ? item.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</td>
+      <td style="color: #64748b; font-size: 11px;">${item.remarks || "—"}</td>
+    </tr>
+  `).join("")
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Receiving Voucher - ${v.voucherNo || "VOUCHER"}</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm 15mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif; color: #0f172a; background: #fff; line-height: 1.4; padding: 10px; font-size: 12px; }
+    .voucher-card { max-width: 800px; margin: 0 auto; border: 1.5px solid #0f172a; padding: 24px; border-radius: 8px; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 16px; }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .logo-img { height: 52px; width: auto; object-fit: contain; }
+    .company-title { font-size: 20px; font-weight: 950; letter-spacing: -0.5px; color: #0f172a; text-transform: uppercase; }
+    .company-sub { font-size: 11px; font-weight: 700; color: #047857; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1px; }
+    .voucher-badge { text-align: right; }
+    .voucher-title { font-size: 13px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+    .voucher-no { font-size: 18px; font-weight: 900; font-family: monospace; color: #b91c1c; margin-top: 2px; }
+    
+    .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; }
+    .meta-item { display: flex; flex-direction: column; }
+    .meta-label { font-size: 9px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+    .meta-value { font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 1px; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    th { background: #0f172a; color: #ffffff; font-weight: 800; text-transform: uppercase; font-size: 10px; padding: 8px 10px; letter-spacing: 0.5px; }
+    td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+    tr:last-child td { border-bottom: 2px solid #0f172a; }
+
+    .totals-area { display: flex; justify-content: space-between; align-items: center; background: #f1f5f9; padding: 10px 16px; border-radius: 6px; margin-bottom: 16px; font-weight: 800; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="voucher-card">
+    <div class="header-row">
+      <div class="header-left">
+        <img src="${logoUrl}" alt="HKC Logo" class="logo-img" />
+        <div>
+          <div class="company-title">Habtom Kebede Import & Export</div>
+          <div class="company-sub">Commodity Storage & Processing Warehouse</div>
+        </div>
+      </div>
+      <div class="voucher-badge">
+        <div class="voucher-title">Goods Receiving Voucher</div>
+        <div class="voucher-no">No. ${v.voucherNo || "—"}</div>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">Customer</span>
+        <span class="meta-value">${v.customer || "—"}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Plate Number</span>
+        <span class="meta-value" style="font-family: monospace;">${v.plateNumber || "—"}</span>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 35px; text-align: center;">#</th>
+          <th>Item Description</th>
+          <th style="width: 80px; text-align: center;">UoM</th>
+          <th style="width: 100px; text-align: right;">Quantity</th>
+          <th style="width: 110px; text-align: right;">Unit Price (ETB)</th>
+          <th style="width: 120px; text-align: right;">Total Price (ETB)</th>
+          <th style="width: 120px;">Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsRowsHtml}
+      </tbody>
+    </table>
+
+    <div class="totals-area">
+      <div>Total Items Received: <span style="color: #047857;">${totalQuantity.toLocaleString()}</span></div>
+      <div>Total Value: <span style="color: #0f172a; font-family: monospace;">${totalValue > 0 ? `ETB ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"}</span></div>
+    </div>
+
+    ${v.notes ? `<div style="font-size: 11px; color: #475569; margin-top: 12px;"><strong>Notes:</strong> ${v.notes}</div>` : ""}
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 250);
+    };
+  </script>
+</body>
+</html>`
+
+  printWindow.document.open()
+  printWindow.document.write(htmlContent)
+  printWindow.document.close()
+}
+
+/**
+ * Export WH1 Goods Receiving Voucher to Excel
+ */
+export function exportWH1ReceivingVoucherExcel(v: PrintWH1ReceivingVoucherOptions): void {
+  const headers = ["#", "Item Description", "UoM", "Quantity", "Unit Price (ETB)", "Total Price (ETB)", "Remarks"]
+  const rows = v.items.map((item) => [
+    item.itemNo,
+    item.description,
+    item.unit,
+    item.quantity,
+    item.unitPrice > 0 ? item.unitPrice : "—",
+    item.totalPrice > 0 ? item.totalPrice : "—",
+    item.remarks || "—",
+  ])
+
+  exportToExcel({
+    fileName: `Receiving_Voucher_${v.voucherNo || "WH1"}_${(v.customer || "Commodity").replace(/\s+/g, "_")}.xls`,
+    title: "Habtom Kebede Import & Export",
+    subtitle: `GOODS RECEIVING VOUCHER - No. ${v.voucherNo || "—"}`,
+    metadata: [
+      { label: "Voucher Number", value: v.voucherNo || "—" },
+      { label: "Customer", value: v.customer || "—" },
+      { label: "Plate Number", value: v.plateNumber || "—" },
+    ],
+    headers,
+    rows,
+  })
+}
+
