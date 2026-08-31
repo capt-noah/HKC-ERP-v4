@@ -29,6 +29,8 @@ import {
   Building2,
   FileText,
   Download,
+  Receipt,
+  ArrowRight,
 } from "lucide-react"
 import {
   ResponsiveContainer,
@@ -53,6 +55,7 @@ import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { fetchAllShipmentDocs, type ShipmentDocAttachment } from "@/lib/tradeDocumentService"
 import { type HRData, loadHRData, money } from "@/lib/hrApi"
 import { loadResource } from "@/lib/apiPersistence"
+import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { cn } from "@/lib/utils"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -124,37 +127,99 @@ const resourceLabels: Record<string, string> = {
 // Custom Skeleton Components (Zero Spinners)
 function StatCardSkeleton() {
   return (
-    <GlassCard className="p-6 relative overflow-hidden animate-pulse">
+    <div className="relative overflow-hidden rounded-3xl p-6 bg-black/[0.03] border border-black/5 animate-pulse">
       <div className="flex items-start justify-between">
-        <div className="h-3.5 w-28 bg-black/10 rounded-full" />
-        <div className="size-10 rounded-2xl bg-black/10" />
+        <div>
+          <div className="h-5 w-24 bg-black/10 rounded-full" />
+          <div className="h-3 w-32 bg-black/10 rounded-full mt-3" />
+        </div>
+        <div className="size-12 rounded-2xl bg-black/10" />
       </div>
-      <div className="h-8 w-44 bg-black/10 rounded-xl mt-4" />
-      <div className="h-3 w-56 bg-black/10 rounded-full mt-3" />
-    </GlassCard>
+      <div className="mt-4">
+        <div className="h-9 w-52 bg-black/10 rounded-xl" />
+        <div className="h-3 w-64 bg-black/5 rounded-full mt-2.5" />
+      </div>
+    </div>
   )
 }
 
-function ChartSkeleton() {
+function SystemOverviewGridSkeleton() {
   return (
-    <GlassCard className="p-6 relative overflow-hidden animate-pulse">
-      <div className="flex items-center justify-between mb-6">
-        <div className="space-y-2">
-          <div className="h-5 w-48 bg-black/10 rounded-lg" />
-          <div className="h-3 w-64 bg-black/5 rounded-full" />
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-pulse">
+      {/* Left (2/3): Analytics Chart Skeleton */}
+      <GlassCard className="p-6 xl:col-span-2 relative overflow-hidden flex flex-col justify-between">
+        <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="space-y-2">
+              <div className="h-5 w-52 bg-black/10 rounded-lg" />
+              <div className="h-3 w-72 bg-black/5 rounded-full" />
+            </div>
+            <div className="h-8 w-44 bg-black/5 rounded-2xl" />
+          </div>
+
+          <div className="h-[320px] w-full bg-black/[0.02] rounded-2xl flex items-end justify-between p-6 gap-3">
+            {[45, 65, 30, 85, 55, 70, 90, 45, 60, 75, 50, 80].map((h, i) => (
+              <div
+                key={i}
+                className="flex-1 bg-black/10 rounded-t-xl transition-all"
+                style={{ height: `${h}%` }}
+              />
+            ))}
+          </div>
         </div>
-        <div className="h-8 w-32 bg-black/10 rounded-full" />
-      </div>
-      <div className="h-[280px] w-full bg-black/[0.03] rounded-2xl flex items-end justify-between p-6 gap-3">
-        {[40, 65, 30, 85, 55, 70, 90, 45, 60, 75, 50, 80].map((h, i) => (
-          <div
-            key={i}
-            className="flex-1 bg-black/10 rounded-t-lg transition-all"
-            style={{ height: `${h}%` }}
-          />
-        ))}
-      </div>
-    </GlassCard>
+      </GlassCard>
+
+      {/* Right (1/3): Customer Receivables Skeleton */}
+      <GlassCard className="p-6 xl:col-span-1 relative overflow-hidden flex flex-col justify-between">
+        <div>
+          {/* Header Skeleton */}
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="size-8 rounded-xl bg-black/10" />
+              <div className="space-y-1.5">
+                <div className="h-4 w-32 bg-black/10 rounded-full" />
+                <div className="h-2.5 w-24 bg-black/5 rounded-full" />
+              </div>
+            </div>
+            <div className="size-7 bg-black/5 rounded-lg" />
+          </div>
+
+          {/* Metric Banner Skeleton */}
+          <div className="p-3.5 rounded-2xl bg-black/[0.03] border border-black/5 mb-3.5 flex items-center justify-between">
+            <div className="space-y-1.5">
+              <div className="h-2.5 w-20 bg-black/10 rounded-full" />
+              <div className="h-5 w-28 bg-black/10 rounded-lg" />
+            </div>
+            <div className="h-5 w-16 bg-black/10 rounded-md" />
+          </div>
+
+          {/* Filter Pills Skeleton */}
+          <div className="h-7 w-full bg-black/5 rounded-xl mb-3" />
+
+          {/* Issue Cards Skeleton */}
+          <div className="space-y-2.5">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="p-2 rounded-xl border border-black/[0.03] bg-black/[0.01] space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="h-3.5 w-28 bg-black/10 rounded-full" />
+                  <div className="h-3 w-16 bg-black/10 rounded-full" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="h-2.5 w-20 bg-black/5 rounded-full" />
+                  <div className="h-2.5 w-12 bg-black/5 rounded-full" />
+                </div>
+                <div className="w-full bg-black/5 rounded-full h-1.5" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer Button Skeleton */}
+        <div className="pt-3 border-t border-black/5 mt-3">
+          <div className="h-8 w-full bg-black/10 rounded-xl" />
+        </div>
+      </GlassCard>
+    </div>
   )
 }
 
@@ -256,6 +321,90 @@ export default function ControlCenter() {
     }).catch(() => {})
   }, [])
 
+  // Outstanding Customer Receivables & Unsettled Sales Issues State
+  const [salesIssues, setSalesIssues] = useState<SalesIssue[]>([])
+  const [salesIssuesLoading, setSalesIssuesLoading] = useState<boolean>(true)
+  const [receivableFilter, setReceivableFilter] = useState<"all" | "unpaid" | "ongoing">("all")
+  const [receivableSearch, setReceivableSearch] = useState<string>("")
+
+  const fetchSalesIssuesData = async () => {
+    setSalesIssuesLoading(true)
+    try {
+      const res = await listSalesIssues(new URLSearchParams({ limit: "100" }))
+      const rows = Array.isArray(res) ? res : (res.rows || [])
+      setSalesIssues(rows)
+    } catch (err: any) {
+      console.error("[SALES ISSUES FETCH ERROR]:", err.message)
+    } finally {
+      setSalesIssuesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchSalesIssuesData()
+  }, [])
+
+  // Unsettled Sales Issues & Outstanding Receivables Computation
+  const {
+    unsettledIssues,
+    filteredReceivables,
+    totalOutstandingReceivables,
+    unpaidCount,
+    ongoingCount,
+  } = useMemo(() => {
+    const list = salesIssues
+      .filter((si) => si.status !== "Cancelled")
+      .map((si) => {
+        const isCash = (si.payment_type || "Cash") === "Cash"
+        const totalAmount = Number(si.total_amount || 0)
+
+        // Cash sales are paid immediately at the point of issue (Immediate Cash Collection)
+        // Credit sales represent customer receivables with ongoing or unpaid installment balances
+        const amountPaid = isCash ? totalAmount : Number(si.amount_paid || 0)
+        const balanceDue = isCash ? 0 : (typeof si.balance_due === "number" ? Math.max(0, si.balance_due) : Math.max(0, totalAmount - amountPaid))
+        const percentPaid = totalAmount > 0 ? Math.min(100, Math.round((amountPaid / totalAmount) * 100)) : (isCash ? 100 : 0)
+        const settlementStatus = isCash ? "Fully Settled" : (si.settlement_status || (balanceDue <= 0 ? "Fully Settled" : (amountPaid > 0 ? "Ongoing" : "Unpaid")))
+
+        return {
+          ...si,
+          calculatedTotal: totalAmount,
+          calculatedPaid: amountPaid,
+          calculatedDue: balanceDue,
+          percentPaid,
+          effectiveSettlement: settlementStatus,
+        }
+      })
+      .filter((si) => si.calculatedDue > 0 && si.effectiveSettlement !== "Fully Settled")
+      .sort((a, b) => new Date(b.sale_date || 0).getTime() - new Date(a.sale_date || 0).getTime())
+
+    const totalOutstanding = list.reduce((sum, item) => sum + item.calculatedDue, 0)
+    const unpaid = list.filter((item) => item.calculatedPaid === 0 || item.effectiveSettlement === "Unpaid").length
+    const ongoing = list.filter((item) => item.calculatedPaid > 0 && item.calculatedDue > 0).length
+
+    const filtered = list.filter((item) => {
+      if (receivableFilter === "unpaid" && (item.calculatedPaid > 0 || item.effectiveSettlement !== "Unpaid")) return false
+      if (receivableFilter === "ongoing" && (item.calculatedPaid <= 0 || item.effectiveSettlement !== "Ongoing")) return false
+
+      if (receivableSearch.trim()) {
+        const q = receivableSearch.toLowerCase()
+        const matchCustomer = item.customer_name?.toLowerCase().includes(q)
+        const matchFs = item.fs_no?.toLowerCase().includes(q)
+        const matchRef = item.reference_no?.toLowerCase().includes(q)
+        if (!matchCustomer && !matchFs && !matchRef) return false
+      }
+
+      return true
+    })
+
+    return {
+      unsettledIssues: list,
+      filteredReceivables: filtered,
+      totalOutstandingReceivables: totalOutstanding,
+      unpaidCount: unpaid,
+      ongoingCount: ongoing,
+    }
+  }, [salesIssues, receivableFilter, receivableSearch])
+
   const filteredApprovals = useMemo(() => {
     return salesOrders.filter((so) => {
       const matchesSearch =
@@ -308,13 +457,21 @@ export default function ControlCenter() {
     }
   }
 
-  // Load standard overview HR data
+  // Load standard overview ERP, Finance, and HR data
   useEffect(() => {
     let cancelled = false
     setDataLoading(true)
-    loadHRData()
-      .then((data) => {
-        if (!cancelled) setHrData(data)
+
+    Promise.all([
+      loadHRData().catch((e) => {
+        console.warn("Failed to load HR data:", e)
+        return emptyHRData
+      }),
+      erp.reloadFromApi().catch((e) => console.warn("Failed to reload ERP data:", e)),
+      finance.reloadFromApi().catch((e) => console.warn("Failed to reload Finance data:", e)),
+    ])
+      .then(([hr]) => {
+        if (!cancelled) setHrData(hr)
       })
       .catch((error) => {
         if (!cancelled) setHrError(error instanceof Error ? error.message : "Failed to load HR data.")
@@ -322,6 +479,7 @@ export default function ControlCenter() {
       .finally(() => {
         if (!cancelled) setDataLoading(false)
       })
+
     return () => {
       cancelled = true
     }
@@ -353,71 +511,87 @@ export default function ControlCenter() {
     .getProducts()
     .reduce(
       (sum, product) =>
-        sum + Number(product.totalStockValue ?? Number(product.quantity || 0) * Number(product.unitCost || 0)),
+        sum + Number(product.totalStockValue ?? (Number(product.quantity || 0) * Number(product.unitCost || 0))),
       0
     )
 
-  const postedRevenue = finance.getJournalEntryLines().reduce((sum, line) => {
-    const account = finance.getAccounts().find((item) => item.id === line.account_id)
-    return account?.account_type === "Revenue"
-      ? sum + Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-      : sum
-  }, 0)
+  const postedRevenue = useMemo(() => {
+    // 1. Calculate from active Sales Issues (primary source of fulfilled enterprise sales)
+    const salesIssueRev = salesIssues
+      .filter((si) => si.status !== "Cancelled")
+      .reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
 
-  // Chart Data Preparation
+    // 2. Or from Journal Entry Lines if available
+    const glRev = finance.getJournalEntryLines().reduce((sum, line) => {
+      const account = finance.getAccounts().find((item) => item.id === line.account_id)
+      return account?.account_type === "Revenue"
+        ? sum + Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+        : sum
+    }, 0)
+
+    return Math.max(salesIssueRev, glRev)
+  }, [salesIssues, finance])
+
+  // Chart Data Preparation (Revenue & Sales Pipeline)
   const revenueChartData = useMemo(() => {
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    const currentYear = new Date().getFullYear()
-
-    // Group journal revenue lines & sales orders
     const monthlyMap: Record<string, { revenue: number; orders: number }> = {}
     months.forEach((m) => {
       monthlyMap[m] = { revenue: 0, orders: 0 }
     })
 
-    finance.getJournalEntries().forEach((entry) => {
-      const entryDate = entry.entry_date ? new Date(entry.entry_date) : null
-      if (entryDate && entryDate.getFullYear() === currentYear) {
-        const monthLabel = months[entryDate.getMonth()]
-        const lines = finance.getJournalEntryLines().filter((l) => l.journal_entry_id === entry.id)
-        lines.forEach((line) => {
-          const acc = finance.getAccounts().find((a) => a.id === line.account_id)
-          if (acc?.account_type === "Revenue") {
-            monthlyMap[monthLabel].revenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-          }
-        })
+    // 1. Aggregate posted revenue from Sales Issues
+    salesIssues.forEach((si) => {
+      if (si.status === "Cancelled") return
+      const dateStr = si.sale_date || (si as any).created_at
+      const d = dateStr ? new Date(dateStr) : null
+      if (d && !isNaN(d.getTime())) {
+        const monthLabel = months[d.getMonth()]
+        monthlyMap[monthLabel].revenue += Number(si.total_amount || 0)
       }
     })
 
+    // 2. Aggregate sales pipeline from Sales Orders
     erp.getSalesOrders().forEach((so) => {
-      const orderDate = so.date ? new Date(so.date) : null
-      if (orderDate && orderDate.getFullYear() === currentYear) {
-        const monthLabel = months[orderDate.getMonth()]
+      if (so.approvalStatus === "Declined") return
+      const dateStr = so.date || (so as any).createdAt
+      const d = dateStr ? new Date(dateStr) : null
+      if (d && !isNaN(d.getTime())) {
+        const monthLabel = months[d.getMonth()]
         monthlyMap[monthLabel].orders += Number(so.amount || 0)
       }
     })
 
-    // If no entries recorded yet for current month, provide default baseline visualization
-    const data = months.map((month) => ({
+    // 3. Fallback to Journal Revenue Entries if sales issues are not populated
+    if (salesIssues.length === 0) {
+      finance.getJournalEntries().forEach((entry) => {
+        const entryDate = entry.entry_date ? new Date(entry.entry_date) : null
+        if (entryDate && !isNaN(entryDate.getTime())) {
+          const monthLabel = months[entryDate.getMonth()]
+          const lines = finance.getJournalEntryLines().filter((l) => l.journal_entry_id === entry.id)
+          lines.forEach((line) => {
+            const acc = finance.getAccounts().find((a) => a.id === line.account_id)
+            if (acc?.account_type === "Revenue") {
+              monthlyMap[monthLabel].revenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+            }
+          })
+        }
+      })
+    }
+
+    return months.map((month) => ({
       name: month,
       revenue: Math.max(0, monthlyMap[month].revenue),
       orders: Math.max(0, monthlyMap[month].orders),
     }))
+  }, [salesIssues, erp, finance])
 
-    const hasAny = data.some((d) => d.revenue > 0 || d.orders > 0)
-    if (!hasAny && postedRevenue > 0) {
-      const currentMonth = months[new Date().getMonth()]
-      return data.map((d) => (d.name === currentMonth ? { ...d, revenue: postedRevenue, orders: postedRevenue } : d))
-    }
-
-    return data
-  }, [finance, erp, postedRevenue])
-
+  // Stock Valuation Breakdown by Commodity / Category
   const inventoryCategoryData = useMemo(() => {
     const categoryMap: Record<string, { value: number; count: number }> = {}
     erp.getProducts().forEach((p) => {
-      const cat = p.category || "General Stock"
-      const val = Number(p.totalStockValue ?? Number(p.quantity || 0) * Number(p.unitCost || 0))
+      const cat = p.category?.trim() || p.name || "General Stock"
+      const val = Number(p.totalStockValue ?? (Number(p.quantity || 0) * Number(p.unitCost || 0)))
       if (!categoryMap[cat]) {
         categoryMap[cat] = { value: 0, count: 0 }
       }
@@ -425,12 +599,15 @@ export default function ControlCenter() {
       categoryMap[cat].count += Number(p.quantity || 0)
     })
 
-    return Object.entries(categoryMap).map(([name, stat]) => ({
-      name,
-      value: Math.round(stat.value),
-      count: stat.count,
-    }))
-  }, [erp])
+    return Object.entries(categoryMap)
+      .map(([name, stat]) => ({
+        name,
+        value: Math.round(stat.value),
+        count: stat.count,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8)
+  }, [erp, erp.getProducts()])
 
   // Resolve user identity against employees and user profiles
   const logsWithUserInfo = useMemo(() => {
@@ -800,145 +977,347 @@ export default function ControlCenter() {
               )}
             </div>
 
-            {/* Interactive Graph Section Replacing Activity Feed & System Data Sources */}
+            {/* Interactive Graph & Outstanding Customer Receivables Section */}
             {dataLoading ? (
-              <ChartSkeleton />
+              <SystemOverviewGridSkeleton />
             ) : (
-              <GlassCard className="p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                {/* Left (2/3): Enterprise Performance Analytics */}
+                <GlassCard className="p-6 xl:col-span-2 flex flex-col justify-between">
                   <div>
-                    <h3 className="text-lg font-black text-black tracking-tight flex items-center gap-2">
-                      <BarChart3 className="size-5 text-zinc-900" />
-                      Enterprise Performance Analytics
-                    </h3>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {chartMode === "revenue"
-                        ? "Revenue performance & sales orders pipeline across the active fiscal year."
-                        : "Inventory valuation and stock distribution breakdown by product category."}
-                    </p>
-                  </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                      <div>
+                        <h3 className="text-lg font-black text-black tracking-tight flex items-center gap-2">
+                          <BarChart3 className="size-5 text-zinc-900" />
+                          Enterprise Performance Analytics
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {chartMode === "revenue"
+                            ? "Revenue performance & sales orders pipeline across the active fiscal year."
+                            : "Inventory valuation and stock distribution breakdown by product category."}
+                        </p>
+                      </div>
 
-                  <div className="flex items-center gap-1.5 p-1 bg-black/5 rounded-2xl shrink-0 self-start sm:self-auto">
-                    <button
-                      onClick={() => setChartMode("revenue")}
-                      className={cn(
-                        "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
-                        chartMode === "revenue"
-                          ? "bg-white text-black shadow-sm"
-                          : "text-gray-500 hover:text-black"
-                      )}
-                    >
-                      <TrendingUp className="size-3.5 text-emerald-600" />
-                      Revenue Trend
-                    </button>
-                    <button
-                      onClick={() => setChartMode("inventory")}
-                      className={cn(
-                        "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
-                        chartMode === "inventory"
-                          ? "bg-white text-black shadow-sm"
-                          : "text-gray-500 hover:text-black"
-                      )}
-                    >
-                      <PieChartIcon className="size-3.5 text-indigo-600" />
-                      Stock Valuation
-                    </button>
-                  </div>
-                </div>
+                      <div className="flex items-center gap-1.5 p-1 bg-black/5 rounded-2xl shrink-0 self-start sm:self-auto">
+                        <button
+                          onClick={() => setChartMode("revenue")}
+                          className={cn(
+                            "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
+                            chartMode === "revenue"
+                              ? "bg-white text-black shadow-sm"
+                              : "text-gray-500 hover:text-black"
+                          )}
+                        >
+                          <TrendingUp className="size-3.5 text-emerald-600" />
+                          Revenue Trend
+                        </button>
+                        <button
+                          onClick={() => setChartMode("inventory")}
+                          className={cn(
+                            "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
+                            chartMode === "inventory"
+                              ? "bg-white text-black shadow-sm"
+                              : "text-gray-500 hover:text-black"
+                          )}
+                        >
+                          <PieChartIcon className="size-3.5 text-indigo-600" />
+                          Stock Valuation
+                        </button>
+                      </div>
+                    </div>
 
-                {chartMode === "revenue" ? (
-                  <div className="h-[320px] w-full pt-4">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={revenueChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                          </linearGradient>
-                          <linearGradient id="colorOrders" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }} />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
-                          tickFormatter={(val) => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "rgba(255, 255, 255, 0.95)",
-                            borderRadius: "16px",
-                            border: "1px solid rgba(0,0,0,0.08)",
-                            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)",
-                            fontSize: "12px",
-                            fontWeight: "bold",
-                          }}
-                          formatter={(val: any) => [`ETB ${Number(val).toLocaleString()}`, "Amount"]}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="revenue"
-                          name="Posted Revenue"
-                          stroke="#059669"
-                          strokeWidth={2.5}
-                          fillOpacity={1}
-                          fill="url(#colorRevenue)"
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="orders"
-                          name="Sales Pipeline"
-                          stroke="#4f46e5"
-                          strokeWidth={2}
-                          strokeDasharray="4 4"
-                          fillOpacity={1}
-                          fill="url(#colorOrders)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="h-[320px] w-full pt-4">
-                    {inventoryCategoryData.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-xs font-semibold text-gray-400">
-                        No product category valuation data available.
+                    {chartMode === "revenue" ? (
+                      <div className="h-[320px] w-full pt-4">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={revenueChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                              </linearGradient>
+                              <linearGradient id="colorOrders" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                            <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }} />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
+                              tickFormatter={(val) => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: "rgba(255, 255, 255, 0.95)",
+                                borderRadius: "16px",
+                                border: "1px solid rgba(0,0,0,0.08)",
+                                boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)",
+                                fontSize: "12px",
+                                fontWeight: "bold",
+                              }}
+                              formatter={(val: any) => [`ETB ${Number(val).toLocaleString()}`, "Amount"]}
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="revenue"
+                              name="Posted Revenue"
+                              stroke="#059669"
+                              strokeWidth={2.5}
+                              fillOpacity={1}
+                              fill="url(#colorRevenue)"
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="orders"
+                              name="Sales Pipeline"
+                              stroke="#4f46e5"
+                              strokeWidth={2}
+                              strokeDasharray="4 4"
+                              fillOpacity={1}
+                              fill="url(#colorOrders)"
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
                       </div>
                     ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={inventoryCategoryData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                          <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }} />
-                          <YAxis
-                            tickLine={false}
-                            axisLine={false}
-                            tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
-                            tickFormatter={(val) => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "rgba(255, 255, 255, 0.95)",
-                              borderRadius: "16px",
-                              border: "1px solid rgba(0,0,0,0.08)",
-                              boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)",
-                              fontSize: "12px",
-                              fontWeight: "bold",
-                            }}
-                            formatter={(val: any) => [
-                              `ETB ${Number(val).toLocaleString()}`,
-                              "Category Value",
-                            ]}
-                          />
-                          <Bar dataKey="value" name="Valuation (ETB)" fill="#4f46e5" radius={[8, 8, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      <div className="h-[320px] w-full pt-4">
+                        {inventoryCategoryData.length === 0 ? (
+                          <div className="h-full flex items-center justify-center text-xs font-semibold text-gray-400">
+                            No product category valuation data available.
+                          </div>
+                        ) : (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={inventoryCategoryData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                              <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }} />
+                              <YAxis
+                                tickLine={false}
+                                axisLine={false}
+                                tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
+                                tickFormatter={(val) => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: "rgba(255, 255, 255, 0.95)",
+                                  borderRadius: "16px",
+                                  border: "1px solid rgba(0,0,0,0.08)",
+                                  boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)",
+                                  fontSize: "12px",
+                                  fontWeight: "bold",
+                                }}
+                                formatter={(val: any) => [
+                                  `ETB ${Number(val).toLocaleString()}`,
+                                  "Category Value",
+                                ]}
+                              />
+                              <Bar dataKey="value" name="Valuation (ETB)" fill="#4f46e5" radius={[8, 8, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </GlassCard>
+                </GlassCard>
+
+                {/* Right (1/3): Outstanding Customer Receivables & Unsettled Sales Issues Panel */}
+                <GlassCard className="p-6 xl:col-span-1 flex flex-col justify-between">
+                  <div>
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <div className="size-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600">
+                            <Receipt className="size-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-black tracking-tight flex items-center gap-1.5">
+                              Customer Receivables
+                              {unsettledIssues.length > 0 && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                                  {unsettledIssues.length} Unsettled
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-[11px] text-gray-500">Unpaid & partial customer sales</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => navigate("/sales/sales-issued")}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-black hover:bg-black/5 transition-all text-xs font-bold flex items-center gap-1"
+                        title="Open in Sales Issued"
+                      >
+                        <ArrowRight className="size-4" />
+                      </button>
+                    </div>
+
+                    {/* Total Outstanding Metric Banner */}
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 to-rose-50/80 border border-amber-200/50 mb-3.5 flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-bold text-amber-900/70 uppercase tracking-wider">Total Uncollected</p>
+                        <p className="text-base sm:text-lg font-black text-amber-950 tracking-tight">
+                          ETB {totalOutstandingReceivables.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md">
+                          {unpaidCount} Unpaid
+                        </span>
+                        {ongoingCount > 0 && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md ml-1">
+                            {ongoingCount} Ongoing
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Filter Tabs & Mini Search */}
+                    <div className="space-y-2 mb-3">
+                      <div className="flex items-center gap-1 p-1 bg-black/5 rounded-xl text-[11px] font-bold">
+                        <button
+                          onClick={() => setReceivableFilter("all")}
+                          className={cn(
+                            "flex-1 py-1 rounded-lg transition-all text-center",
+                            receivableFilter === "all" ? "bg-white text-black shadow-xs font-black" : "text-gray-500 hover:text-black"
+                          )}
+                        >
+                          All ({unsettledIssues.length})
+                        </button>
+                        <button
+                          onClick={() => setReceivableFilter("unpaid")}
+                          className={cn(
+                            "flex-1 py-1 rounded-lg transition-all text-center",
+                            receivableFilter === "unpaid" ? "bg-white text-rose-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                          )}
+                        >
+                          Unpaid ({unpaidCount})
+                        </button>
+                        <button
+                          onClick={() => setReceivableFilter("ongoing")}
+                          className={cn(
+                            "flex-1 py-1 rounded-lg transition-all text-center",
+                            receivableFilter === "ongoing" ? "bg-white text-amber-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                          )}
+                        >
+                          Ongoing ({ongoingCount})
+                        </button>
+                      </div>
+
+                      {unsettledIssues.length > 2 && (
+                        <div className="relative flex items-center h-8 px-2.5 rounded-xl border border-black/5 bg-black/[0.02]">
+                          <Search className="size-3.5 text-gray-400 mr-1.5 shrink-0" />
+                          <input
+                            type="text"
+                            value={receivableSearch}
+                            onChange={(e) => setReceivableSearch(e.target.value)}
+                            placeholder="Filter customer, FS no..."
+                            className="bg-transparent border-none text-[11px] font-medium text-black outline-none w-full placeholder:text-gray-400"
+                          />
+                          {receivableSearch && (
+                            <button onClick={() => setReceivableSearch("")} className="text-gray-400 hover:text-black">
+                              <X className="size-3" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Scrollable Issue Cards */}
+                    <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2 divide-y divide-black/5">
+                      {salesIssuesLoading ? (
+                        <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-gray-400">
+                          <RefreshCw className="size-4 animate-spin text-gray-400" />
+                          Loading receivables...
+                        </div>
+                      ) : filteredReceivables.length === 0 ? (
+                        <div className="py-8 text-center px-4">
+                          {unsettledIssues.length === 0 ? (
+                            <div className="flex flex-col items-center">
+                              <div className="size-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-1.5">
+                                <CheckCircle2 className="size-5" />
+                              </div>
+                              <p className="text-xs font-bold text-black">All Accounts Settled</p>
+                              <p className="text-[11px] text-gray-400 mt-0.5">No outstanding or partial customer balances.</p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-400">No sales issues match your filter.</p>
+                          )}
+                        </div>
+                      ) : (
+                        filteredReceivables.map((si) => (
+                          <div
+                            key={si.id}
+                            onClick={() => navigate(`/sales/sales-issued?search=${encodeURIComponent(si.fs_no || si.customer_name || "")}`)}
+                            className="pt-2 first:pt-0 group cursor-pointer hover:bg-black/[0.02] p-2 rounded-xl transition-all"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-xs font-bold text-black truncate group-hover:text-indigo-600 transition-colors">
+                                    {si.customer_name || "Unknown Customer"}
+                                  </p>
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0",
+                                      si.effectiveSettlement === "Unpaid"
+                                        ? "bg-rose-100 text-rose-700"
+                                        : "bg-amber-100 text-amber-700"
+                                    )}
+                                  >
+                                    {si.effectiveSettlement === "Ongoing" ? `${si.percentPaid}% paid` : "Unpaid"}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium mt-0.5">
+                                  <span>{si.fs_no || si.id}</span>
+                                  {si.sale_date && <span>• {si.sale_date}</span>}
+                                  <span>• {si.payment_type || "Credit"}</span>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <p className="text-xs font-black text-rose-600">
+                                  ETB {si.calculatedDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[10px] text-gray-400 font-semibold">
+                                  of {si.calculatedTotal.toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-black/5 rounded-full h-1.5 mt-2 overflow-hidden">
+                              <div
+                                className={cn(
+                                  "h-full rounded-full transition-all",
+                                  si.effectiveSettlement === "Unpaid"
+                                    ? "bg-rose-500 w-1"
+                                    : "bg-amber-500"
+                                )}
+                                style={{ width: `${Math.max(4, si.percentPaid)}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Footer CTA */}
+                  <div className="pt-3 border-t border-black/5 mt-3">
+                    <button
+                      onClick={() => navigate("/sales/sales-issued")}
+                      className="w-full py-2 px-3 rounded-xl bg-black text-white hover:bg-zinc-800 transition-all text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      <span>Manage All Sales Issues</span>
+                      <ArrowRight className="size-3.5" />
+                    </button>
+                  </div>
+                </GlassCard>
+              </div>
             )}
           </motion.div>
         )}
