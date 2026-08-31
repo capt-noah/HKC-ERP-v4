@@ -515,17 +515,15 @@ class FinanceStore {
    */
   public async syncCrossModule(customSalesIssues?: any[], customPurchaseOrders?: any[]) {
     try {
-      const [fetchedSI, , fetchedPO, fetchedEC, fetchedPR] = await Promise.all([
+      const [fetchedSI, , fetchedPO, fetchedPR] = await Promise.all([
         loadResource<any>("sales_issues").catch(() => []),
         loadResource<any>("sales_orders").catch(() => []),
         loadResource<any>("purchase_orders").catch(() => []),
-        loadResource<any>("expense_claims").catch(() => []),
         loadResource<any>("payroll_records").catch(() => []),
       ])
 
       const salesIssues = customSalesIssues || fetchedSI
       const purchaseOrders = customPurchaseOrders || fetchedPO
-      const expenseClaims = fetchedEC
       const payrollRecords = fetchedPR
 
       let hasNewSync = false
@@ -788,54 +786,40 @@ class FinanceStore {
             }
           })
 
-          // C. Sync Expense Claims → Expense & Cash GL Entries
-          expenseClaims.forEach((ec: any, idx: number) => {
-            const expId = `EXP-${ec.id || idx + 1}`
-            const jeId = `JE-EXP-${ec.id || idx + 1}`
+          // C. Sync Expenses → Expense & Cash GL Entries
+          this.expenses.forEach((ec: any, idx: number) => {
+            const expId = ec.id || `EXP-${idx + 1}`
+            const jeId = `JE-EXP-${expId}`
             const expAmt = Number(ec.amount || 0)
-            if (expAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
+            if (expAmt <= 0 || ec.status === "REJECTED") return  // Skip zero or rejected expenses
 
-            if (!this.expenses.some((e) => e.id === expId)) {
-              this.expenses.push({
-                id: expId,
-                merchant: ec.vendor || ec.merchant || "Vendor",
-                category: ec.category || "General Expenses",
-                date: ec.date || new Date().toISOString().split("T")[0],
-                employee: ec.employee_name || ec.employee || "Employee",
-                amount: expAmt,
-                currency: "ETB",
-                status: "APPROVED",
-              })
-              hasNewSync = true
-            }
-
-            const hasExpEntry = this.entries.some((e) => e.id === jeId || e.source_id === ec.id)
+            const hasExpEntry = this.entries.some((e) => e.id === jeId || e.source_id === expId)
             const hasExpLines = this.lines.some((l) => l.journal_entry_id === jeId)
 
             if (!hasExpEntry || !hasExpLines) {
-              this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== ec.id)
+              this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== expId)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
               const expAcc = acc("8000-30") || acc("8000-01") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) // Miscellaneous / Expenses
               const cashAcc = acc("1000-01-01") || acc("1000-02-26") || acc("1000") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Cash/Bank
 
               if (!expAcc || !cashAcc) {
-                console.warn(`[FinanceSync] Missing accounts for Expense Claim ${ec.id} — skipping.`)
+                console.warn(`[FinanceSync] Missing accounts for Expense ${expId} — skipping.`)
               } else {
                 this.entries.push({
                   id: jeId,
                   entry_date: ec.date || new Date().toISOString().split("T")[0],
-                  source_type: "Recurring Expense",
-                  source_id: ec.id,
-                  created_by: "System Synced",
+                  source_type: "Payment Voucher",
+                  source_id: expId,
+                  created_by: ec.employee || ec.employee_name || "System Synced",
                   currency: "ETB",
                   exchange_rate: 1.0,
-                  description: `Expense Claim — ${ec.employee_name || ec.employee || "Employee"}`,
+                  description: `Expense ${expId} — ${ec.merchant || ec.category || "Vendor"} (${ec.employee || "Employee"})`,
                   is_reversal_of: null,
                 })
                 this.lines.push(
                   { id: `${jeId}-1`, journal_entry_id: jeId, account_id: expAcc.id, debit_amount: expAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: expAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: ec.employee_id || null, party_name: ec.employee_name || ec.employee || null }
+                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: expAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: null, party_id: null, party_name: ec.merchant || null }
                 )
                 hasNewSync = true
               }
