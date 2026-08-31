@@ -3,6 +3,10 @@ import jwt from "jsonwebtoken"
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_dev_only"
 
 export function authenticateToken(req, res, next) {
+  if (req.method === "OPTIONS") {
+    return next()
+  }
+
   const authHeader = req.headers["authorization"]
   const token = authHeader && authHeader.split(" ")[1]
 
@@ -21,6 +25,10 @@ export function authenticateToken(req, res, next) {
 
 export function authorizeRoles(...allowedRoles) {
   return (req, res, next) => {
+    if (req.method === "OPTIONS") {
+      return next()
+    }
+
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" })
     }

@@ -7,6 +7,10 @@ export const crudRouter = Router()
 
 // Module-level RBAC middleware
 crudRouter.use("/:resource", (req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return next()
+  }
+
   const resource = getResource(req.params.resource)
   if (!resource) {
     return next()

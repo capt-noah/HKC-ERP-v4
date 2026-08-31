@@ -2,6 +2,7 @@ import path from "node:path"
 import fs from "node:fs"
 import { fileURLToPath } from "node:url"
 import express from "express"
+import cors from "cors"
 import { assertConfig, config } from "./config.js"
 import { masterRouter } from "./router/index.js"
 import { logger } from "./logger.js"
@@ -14,25 +15,38 @@ assertConfig()
 
 const app = express()
 
-// Request logger middleware — logs every request to stdout (for Render) and server/logs/access.log
+// 1. CORS — MUST be the VERY FIRST middleware so every request (and preflight OPTIONS) gets proper headers immediately!
+app.use(
+  cors({
+    origin: true, // Dynamically reflects request origin (e.g. https://hkc-erp-v4.vercel.app, localhost, etc.)
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+      "apikey",
+      "prefer",
+      "x-client-info",
+      "Cache-Control",
+      "Pragma",
+      "If-None-Match",
+    ],
+    exposedHeaders: ["Content-Length", "Content-Range", "Content-Type", "Authorization"],
+    credentials: true,
+    maxAge: 86400, // Cache preflight for 24 hours
+    optionsSuccessStatus: 204,
+  })
+)
+
+// 2. Request logger middleware — logs every request to stdout (for Render) and server/logs/access.log
 app.use(logger.requestLogger)
 
-// Parse JSON request bodies before any route handler runs.
-app.use(express.json({ limit: "1mb" }))
+// 3. Parse JSON request bodies before any route handler runs.
+app.use(express.json({ limit: "10mb" }))
 
-// CORS — allow all origins so the Vercel frontend can reach the Render API.
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*")
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
-  if (req.method === "OPTIONS") {
-    res.sendStatus(204)
-    return
-  }
-  next()
-})
-
-// 1. API & Backend routes
+// 4. API & Backend routes
 app.use("/", masterRouter)
 
 // 2. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
@@ -55,6 +69,9 @@ app.use((req, res, next) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
   logger.error(`Unhandled error on ${req.method} ${req.originalUrl || req.url}`, err)
+  res.header("Access-Control-Allow-Origin", "*")
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD")
+  res.header("Access-Control-Allow-Headers", "*")
   res.status(500).json({
     error: "Internal server error",
     message: err instanceof Error ? err.message : "Unknown error",

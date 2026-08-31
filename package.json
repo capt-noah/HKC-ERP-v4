@@ -24,6 +24,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "cors": "^2.8.6",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
@@ -51,6 +52,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/node": "^24.12.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.14",
