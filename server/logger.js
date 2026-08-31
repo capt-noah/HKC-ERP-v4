@@ -181,21 +181,23 @@ export const logger = {
       const timestamp = formatTimestamp()
       const userInfo = extractUserFromReq(req)
 
-      const timeStr = `${C.dim}[${timestamp}]${C.reset}`
-      const roleStr = `${C.cyan}[${userInfo.role}]${C.reset}`
-      const userStr = `${C.green}[${userInfo.username}]${C.reset}`
-      const methodStr = `${getMethodColor(method)}${C.bold}${method}${C.reset}`
-      const urlStr = `${C.bold}${url}${C.reset}`
-      const statusStr = `${getStatusColor(status)}${status}${C.reset}`
-      const durationStr = `${C.dim}${durationMs}ms${C.reset}`
-
-      const consoleLine = `${timeStr} ${roleStr} ${userStr} ${methodStr} ${urlStr} ${statusStr} ${durationStr}`
       const plainLine = `[${timestamp}] [${userInfo.role}] [${userInfo.username}] ${method} ${url} ${status} ${durationMs}ms`
 
       if (status >= 400) {
-        console.error(consoleLine)
+        // Highlight the ENTIRE row in bright bold red for instant visibility on failures
+        const failedConsoleLine = `${C.red}${C.bold}[${timestamp}] [${userInfo.role}] [${userInfo.username}] ${method} ${url} ${status} ${durationMs}ms${C.reset}`
+        console.error(failedConsoleLine)
         writeToFile(errorLogPath, `${plainLine} - UA: ${req.headers["user-agent"] || "-"}`)
       } else {
+        const timeStr = `${C.dim}[${timestamp}]${C.reset}`
+        const roleStr = `${C.cyan}[${userInfo.role}]${C.reset}`
+        const userStr = `${C.green}[${userInfo.username}]${C.reset}`
+        const methodStr = `${getMethodColor(method)}${C.bold}${method}${C.reset}`
+        const urlStr = `${C.bold}${url}${C.reset}`
+        const statusStr = `${getStatusColor(status)}${status}${C.reset}`
+        const durationStr = `${C.dim}${durationMs}ms${C.reset}`
+
+        const consoleLine = `${timeStr} ${roleStr} ${userStr} ${methodStr} ${urlStr} ${statusStr} ${durationStr}`
         console.log(consoleLine)
       }
 

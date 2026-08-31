@@ -1,11 +1,11 @@
-import { db } from "../../db/client.js"
 import {
-  processingServices,
-  invoices,
-  journalEntries,
-  journalEntryLines,
-} from "../../db/schema/index.js"
-import { eq, desc } from "drizzle-orm"
+  drizzleListRows,
+  drizzleGetRow,
+  drizzleCreateRow,
+  drizzleUpdateRow,
+  drizzleDeleteRow,
+} from "../../db/drizzleCrud.js"
+import { getResource } from "../../db/resourceRegistry.js"
 import {
   generateProcessingServiceRevenueJournalEntry,
   validateProcessingServiceOrder,
@@ -14,18 +14,13 @@ import {
 
 export async function listProcessingServices(query = {}) {
   try {
-    let q = db.select().from(processingServices).orderBy(desc(processingServices.createdAt))
-
+    const resource = getResource("processing_services")
+    const apiQuery = {}
     if (query.status) {
-      q = db
-        .select()
-        .from(processingServices)
-        .where(eq(processingServices.status, query.status))
-        .orderBy(desc(processingServices.createdAt))
+      apiQuery.status = `eq.${query.status}`
     }
-
-    const rows = await q
-    return { status: 200, body: rows }
+    const res = await drizzleListRows({ resource, query: apiQuery })
+    return res
   } catch (err) {
     console.error("[DRIZZLE PS LIST ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to list processing services", message: err.message } }
@@ -34,16 +29,9 @@ export async function listProcessingServices(query = {}) {
 
 export async function getProcessingService(id) {
   try {
-    const rows = await db
-      .select()
-      .from(processingServices)
-      .where(eq(processingServices.id, id))
-      .limit(1)
-
-    if (rows.length > 0) {
-      return { status: 200, body: rows[0] }
-    }
-    return { status: 404, body: { error: `Processing service '${id}' not found.` } }
+    const resource = getResource("processing_services")
+    const res = await drizzleGetRow({ resource, id })
+    return res
   } catch (err) {
     console.error(`[DRIZZLE PS GET ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: `Failed to get processing service '${id}'`, message: err.message } }
@@ -62,38 +50,38 @@ export async function createProcessingService(input) {
 
   const doc = {
     id,
-    referenceNumber,
-    clientCompanyName,
-    customerId: input?.customer_id || null,
-    goodsDescription: input?.goods_description || "Raw Agricultural Commodity",
+    reference_number: referenceNumber,
+    client_company_name: clientCompanyName,
+    customer_id: input?.customer_id || null,
+    goods_description: input?.goods_description || "Raw Agricultural Commodity",
     quantity: String(Number(input?.quantity || 1)),
     uom: input?.uom || "Quintal",
-    entryDate: input?.entry_date || input?.entryDate || new Date().toISOString().split("T")[0],
-    agreedPrice: String(Number(input?.agreed_price || input?.agreedPrice || 0)),
+    entry_date: input?.entry_date || input?.entryDate || new Date().toISOString().split("T")[0],
+    agreed_price: String(Number(input?.agreed_price || input?.agreedPrice || 0)),
     currency: input?.currency || "ETB",
     status: "Received",
-    statusHistory: [
+    status_history: [
       { stage: "Received", timestamp: new Date().toISOString() },
     ],
-    assignedTo: input?.assigned_to || input?.assignedTo || null,
-    invoiceId: null,
+    assigned_to: input?.assigned_to || input?.assignedTo || null,
+    invoice_id: null,
     notes: input?.notes || "",
-    contractUrl: input?.contract_url || null,
-    contractFileName: input?.contract_file_name || null,
-    lockedProcessingRate: input?.locked_processing_rate ? String(input.locked_processing_rate) : null,
-    lockedProcessingFee: input?.locked_processing_fee ? String(input.locked_processing_fee) : null,
-    lockedStorageFee: input?.locked_storage_fee ? String(input.locked_storage_fee) : null,
-    lockedTotalFee: input?.locked_total_fee ? String(input.locked_total_fee) : null,
-    processedAt: input?.processed_at ? new Date(input.processed_at) : null,
-    deliveredAt: input?.delivered_at ? new Date(input.delivered_at) : null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    contract_url: input?.contract_url || null,
+    contract_file_name: input?.contract_file_name || null,
+    locked_processing_rate: input?.locked_processing_rate ? String(input.locked_processing_rate) : null,
+    locked_processing_fee: input?.locked_processing_fee ? String(input.locked_processing_fee) : null,
+    locked_storage_fee: input?.locked_storage_fee ? String(input.locked_storage_fee) : null,
+    locked_total_fee: input?.locked_total_fee ? String(input.locked_total_fee) : null,
+    processed_at: input?.processed_at ? new Date(input.processed_at).toISOString() : null,
+    delivered_at: input?.delivered_at ? new Date(input.delivered_at).toISOString() : null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
 
   try {
-    const inserted = await db.insert(processingServices).values(doc).returning()
-    const resultDoc = inserted.length > 0 ? inserted[0] : doc
-    return { status: 200, body: resultDoc }
+    const resource = getResource("processing_services")
+    const res = await drizzleCreateRow({ resource, body: doc })
+    return res
   } catch (err) {
     console.error("[DRIZZLE PS CREATE ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to create processing service", message: err.message } }
@@ -107,34 +95,29 @@ export async function updateProcessingService(input, id) {
   }
 
   const patchFields = {
-    updatedAt: new Date(),
+    updated_at: new Date().toISOString(),
   }
 
-  if (input.reference_number || input.referenceNumber) patchFields.referenceNumber = input.reference_number || input.referenceNumber
-  if (input.client_company_name || input.customer_name || input.clientName) patchFields.clientCompanyName = input.client_company_name || input.customer_name || input.clientName
-  if (input.customer_id) patchFields.customerId = input.customer_id
-  if (input.goods_description) patchFields.goodsDescription = input.goods_description
+  if (input.reference_number || input.referenceNumber) patchFields.reference_number = input.reference_number || input.referenceNumber
+  if (input.client_company_name || input.customer_name || input.clientName) patchFields.client_company_name = input.client_company_name || input.customer_name || input.clientName
+  if (input.customer_id) patchFields.customer_id = input.customer_id
+  if (input.goods_description) patchFields.goods_description = input.goods_description
   if (input.quantity !== undefined) patchFields.quantity = String(Number(input.quantity))
   if (input.uom) patchFields.uom = input.uom
-  if (input.entry_date || input.entryDate) patchFields.entryDate = input.entry_date || input.entryDate
-  if (input.agreed_price !== undefined || input.agreedPrice !== undefined) patchFields.agreedPrice = String(Number(input.agreed_price ?? input.agreedPrice))
+  if (input.entry_date || input.entryDate) patchFields.entry_date = input.entry_date || input.entryDate
+  if (input.agreed_price !== undefined || input.agreedPrice !== undefined) patchFields.agreed_price = String(Number(input.agreed_price ?? input.agreedPrice))
   if (input.currency) patchFields.currency = input.currency
   if (input.status) patchFields.status = input.status
-  if (input.status_history) patchFields.statusHistory = input.status_history
-  if (input.assigned_to || input.assignedTo) patchFields.assignedTo = input.assigned_to || input.assignedTo
+  if (input.status_history || input.statusHistory) patchFields.status_history = input.status_history || input.statusHistory
+  if (input.assigned_to || input.assignedTo) patchFields.assigned_to = input.assigned_to || input.assignedTo
   if (input.notes !== undefined) patchFields.notes = input.notes
-  if (input.contract_url !== undefined) patchFields.contractUrl = input.contract_url
-  if (input.contract_file_name !== undefined) patchFields.contractFileName = input.contract_file_name
+  if (input.contract_url !== undefined) patchFields.contract_url = input.contract_url
+  if (input.contract_file_name !== undefined) patchFields.contract_file_name = input.contract_file_name
 
   try {
-    const updated = await db
-      .update(processingServices)
-      .set(patchFields)
-      .where(eq(processingServices.id, id))
-      .returning()
-
-    const resultDoc = updated.length > 0 ? updated[0] : { ...getRes.body, ...patchFields }
-    return { status: 200, body: resultDoc }
+    const resource = getResource("processing_services")
+    const res = await drizzleUpdateRow({ resource, id, body: patchFields })
+    return res
   } catch (err) {
     console.error(`[DRIZZLE PS UPDATE ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: "Failed to update processing service", message: err.message } }
@@ -152,25 +135,25 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
   }
 
   const existing = getRes.body
-  const history = Array.isArray(existing.statusHistory || existing.status_history)
-    ? [...(existing.statusHistory || existing.status_history)]
+  const history = Array.isArray(existing.status_history || existing.statusHistory)
+    ? [...(existing.status_history || existing.statusHistory)]
     : []
   history.push({ stage: targetStage, timestamp: new Date().toISOString() })
 
-  let invoiceId = existing.invoiceId || existing.invoice_id
+  let invoiceId = existing.invoice_id || existing.invoiceId
   let journalEntry = null
 
   // Rate locking parameters
-  let lockedProcessingRate = existing.lockedProcessingRate ?? existing.locked_processing_rate ?? null
-  let lockedProcessingFee = existing.lockedProcessingFee ?? existing.locked_processing_fee ?? null
-  let lockedStorageFee = existing.lockedStorageFee ?? existing.locked_storage_fee ?? null
-  let lockedTotalFee = existing.lockedTotalFee ?? existing.locked_total_fee ?? null
-  let processedAt = existing.processedAt ? new Date(existing.processedAt) : null
-  let deliveredAt = existing.deliveredAt ? new Date(existing.deliveredAt) : null
-  let agreedPrice = Number(existing.agreedPrice || existing.agreed_price || 0)
+  let lockedProcessingRate = existing.locked_processing_rate ?? existing.lockedProcessingRate ?? null
+  let lockedProcessingFee = existing.locked_processing_fee ?? existing.lockedProcessingFee ?? null
+  let lockedStorageFee = existing.locked_storage_fee ?? existing.lockedStorageFee ?? null
+  let lockedTotalFee = existing.locked_total_fee ?? existing.lockedTotalFee ?? null
+  let processedAt = existing.processed_at || existing.processedAt ? (existing.processed_at || existing.processedAt) : null
+  let deliveredAt = existing.delivered_at || existing.deliveredAt ? (existing.delivered_at || existing.deliveredAt) : null
+  let agreedPrice = Number(existing.agreed_price || existing.agreedPrice || 0)
 
   if (targetStage === "Processed") {
-    if (!processedAt) processedAt = new Date()
+    if (!processedAt) processedAt = new Date().toISOString()
     if (extraData.processingRate !== undefined && extraData.processingRate !== null) {
       lockedProcessingRate = Number(extraData.processingRate)
     }
@@ -182,7 +165,7 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
   }
 
   if (targetStage === "Delivered") {
-    if (!deliveredAt) deliveredAt = extraData.deliveryDate ? new Date(extraData.deliveryDate) : new Date()
+    if (!deliveredAt) deliveredAt = extraData.deliveryDate ? new Date(extraData.deliveryDate).toISOString() : new Date().toISOString()
     if (extraData.storageFee !== undefined && extraData.storageFee !== null) {
       lockedStorageFee = Number(extraData.storageFee)
     }
@@ -201,9 +184,9 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
     invoiceId = `INV-PS-${id}`
     journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id, agreed_price: agreedPrice })
 
-    // Save invoice via Drizzle
+    // Save invoice via Drizzle CRUD
     try {
-      const clientName = existing.clientCompanyName || existing.client_company_name || "Client Company"
+      const clientName = existing.client_company_name || existing.clientCompanyName || "Client Company"
       const invoicePayload = {
         id: invoiceId,
         invoice_number: invoiceId,
@@ -212,7 +195,7 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
         line_items: [
           {
-            description: `Toll processing & storage fee for ${existing.goodsDescription || existing.goods_description} (${existing.quantity} ${existing.uom})`,
+            description: `Toll processing & storage fee for ${existing.goods_description || existing.goodsDescription} (${existing.quantity} ${existing.uom})`,
             qty: Number(existing.quantity || 1),
             unit_price: Number(agreedPrice || 0) / Number(existing.quantity || 1),
             total: Number(agreedPrice || 0),
@@ -228,21 +211,20 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
         currency: "ETB",
       }
 
-      await db.insert(invoices).values({
-        id: invoiceId,
-        payload: invoicePayload,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }).onConflictDoNothing()
+      const invResource = getResource("invoices")
+      await drizzleCreateRow({ resource: invResource, body: invoicePayload })
     } catch (err) {
       console.warn("Failed to persist service invoice via Drizzle:", err.message)
     }
 
-    // Save journal entry & lines via Drizzle
+    // Save journal entry & lines via Drizzle CRUD
     try {
-      await db.insert(journalEntries).values({
-        id: journalEntry.id,
-        payload: {
+      const jeResource = getResource("journal_entries")
+      const jelResource = getResource("journal_entry_lines")
+
+      await drizzleCreateRow({
+        resource: jeResource,
+        body: {
           id: journalEntry.id,
           entry_number: journalEntry.id,
           entry_date: journalEntry.date,
@@ -254,16 +236,14 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
           exchange_rate: 1.0,
           posting_status: "POSTED",
         },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }).onConflictDoNothing()
+      })
 
       for (let idx = 0; idx < journalEntry.lines.length; idx++) {
         const l = journalEntry.lines[idx]
         const lineId = `${journalEntry.id}-${idx + 1}`
-        await db.insert(journalEntryLines).values({
-          id: lineId,
-          payload: {
+        await drizzleCreateRow({
+          resource: jelResource,
+          body: {
             id: lineId,
             journal_entry_id: journalEntry.id,
             account_id: l.accountId === "1200" ? "ACC-1200" : l.accountId === "4002" ? "ACC-4002" : l.accountId,
@@ -276,9 +256,7 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
             party_id: l.party_id || null,
             party_name: l.party_name || null,
           },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }).onConflictDoNothing()
+        })
       }
     } catch (err) {
       console.warn("Failed to persist service journal entry via Drizzle:", err.message)
@@ -287,31 +265,26 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
 
   const patchBody = {
     status: targetStage,
-    statusHistory: history,
-    invoiceId,
-    lockedProcessingRate: lockedProcessingRate ? String(lockedProcessingRate) : null,
-    lockedProcessingFee: lockedProcessingFee ? String(lockedProcessingFee) : null,
-    lockedStorageFee: lockedStorageFee ? String(lockedStorageFee) : null,
-    lockedTotalFee: lockedTotalFee ? String(lockedTotalFee) : null,
-    processedAt: processedAt ? new Date(processedAt) : null,
-    deliveredAt: deliveredAt ? new Date(deliveredAt) : null,
-    agreedPrice: String(agreedPrice),
-    updatedAt: new Date(),
+    status_history: history,
+    invoice_id: invoiceId,
+    locked_processing_rate: lockedProcessingRate ? String(lockedProcessingRate) : null,
+    locked_processing_fee: lockedProcessingFee ? String(lockedProcessingFee) : null,
+    locked_storage_fee: lockedStorageFee ? String(lockedStorageFee) : null,
+    locked_total_fee: lockedTotalFee ? String(lockedTotalFee) : null,
+    processed_at: processedAt,
+    delivered_at: deliveredAt,
+    agreed_price: String(agreedPrice),
+    updated_at: new Date().toISOString(),
   }
 
   try {
-    const updated = await db
-      .update(processingServices)
-      .set(patchBody)
-      .where(eq(processingServices.id, id))
-      .returning()
-
-    const resultDoc = updated.length > 0 ? updated[0] : { ...existing, ...patchBody }
+    const resource = getResource("processing_services")
+    const updateRes = await drizzleUpdateRow({ resource, id, body: patchBody })
 
     return {
       status: 200,
       body: {
-        ...resultDoc,
+        ...(updateRes.body || existing),
         ok: true,
         journalEntry,
       },
@@ -324,8 +297,8 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
 
 export async function deleteProcessingService(id) {
   try {
-    await db.delete(processingServices).where(eq(processingServices.id, id))
-    return { status: 200, body: { ok: true, deletedId: id } }
+    const resource = getResource("processing_services")
+    return await drizzleDeleteRow({ resource, id })
   } catch (err) {
     console.error(`[DRIZZLE PS DELETE ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: "Failed to delete processing service", message: err.message } }

@@ -1,6 +1,5 @@
-import { db } from "../../db/client.js"
-import { shipmentDocuments } from "../../db/schema/index.js"
-import { eq, and, desc } from "drizzle-orm"
+import { drizzleListRows, drizzleCreateRow, drizzleDeleteRow } from "../../db/drizzleCrud.js"
+import { getResource } from "../../db/resourceRegistry.js"
 import { DEFAULT_SHIPMENT_DOC_RULES, evaluateShipmentDocs } from "./shipmentDocumentLogic.js"
 
 export async function listShipmentDocRules(query = {}) {
@@ -16,19 +15,13 @@ export async function listShipmentDocs(query = {}) {
   const recordType = query.record_type || query.recordType || null
 
   try {
-    const conditions = []
-    if (recordId) conditions.push(eq(shipmentDocuments.recordId, recordId))
-    if (recordType) conditions.push(eq(shipmentDocuments.recordType, recordType))
+    const resource = getResource("shipment_documents")
+    const apiQuery = {}
+    if (recordId) apiQuery.record_id = `eq.${recordId}`
+    if (recordType) apiQuery.record_type = `eq.${recordType}`
 
-    let q = db.select().from(shipmentDocuments).orderBy(desc(shipmentDocuments.uploadedAt))
-    if (conditions.length === 1) {
-      q = db.select().from(shipmentDocuments).where(conditions[0]).orderBy(desc(shipmentDocuments.uploadedAt))
-    } else if (conditions.length > 1) {
-      q = db.select().from(shipmentDocuments).where(and(...conditions)).orderBy(desc(shipmentDocuments.uploadedAt))
-    }
-
-    const rows = await q
-    return { status: 200, body: rows }
+    const res = await drizzleListRows({ resource, query: apiQuery })
+    return res
   } catch (err) {
     console.error("[DRIZZLE DOCS LIST ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to list shipment documents", message: err.message } }
@@ -42,27 +35,22 @@ export async function saveShipmentDoc(input) {
 
   const doc = {
     id,
-    recordId,
-    recordType: input?.record_type || input?.recordType || "purchase_order",
-    documentType,
-    fileName: input?.file_name || input?.fileName || "document.pdf",
-    fileSize: String(Number(input?.file_size || input?.fileSize || 1024)),
-    fileUrl: input?.file_url || input?.fileUrl || "",
-    uploadedAt: input?.uploaded_at ? new Date(input.uploaded_at) : new Date(),
-    uploadedBy: input?.uploaded_by || "Current User",
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    record_id: recordId,
+    record_type: input?.record_type || input?.recordType || "purchase_order",
+    document_type: documentType,
+    file_name: input?.file_name || input?.fileName || "document.pdf",
+    file_size: String(Number(input?.file_size || input?.fileSize || 1024)),
+    file_url: input?.file_url || input?.fileUrl || "",
+    uploaded_at: input?.uploaded_at ? new Date(input.uploaded_at).toISOString() : new Date().toISOString(),
+    uploaded_by: input?.uploaded_by || "Current User",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
 
   try {
-    // Delete duplicate document of same type for record_id
-    await db
-      .delete(shipmentDocuments)
-      .where(and(eq(shipmentDocuments.recordId, recordId), eq(shipmentDocuments.documentType, documentType)))
-
-    const inserted = await db.insert(shipmentDocuments).values(doc).returning()
-    const resultDoc = inserted.length > 0 ? inserted[0] : doc
-    return { status: 200, body: resultDoc }
+    const resource = getResource("shipment_documents")
+    const res = await drizzleCreateRow({ resource, body: doc })
+    return res
   } catch (err) {
     console.error("[DRIZZLE DOCS SAVE ERROR]:", err.message)
     return { status: 500, body: { error: "Failed to save shipment document", message: err.message } }
@@ -92,8 +80,8 @@ export async function assignOfficer(input) {
 
 export async function deleteShipmentDoc(id) {
   try {
-    await db.delete(shipmentDocuments).where(eq(shipmentDocuments.id, id))
-    return { status: 200, body: { ok: true, deletedId: id } }
+    const resource = getResource("shipment_documents")
+    return await drizzleDeleteRow({ resource, id })
   } catch (err) {
     console.error(`[DRIZZLE DOCS DELETE ERROR] ${id}:`, err.message)
     return { status: 500, body: { error: "Failed to delete shipment doc", message: err.message } }

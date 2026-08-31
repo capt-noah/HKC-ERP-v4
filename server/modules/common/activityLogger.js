@@ -1,5 +1,5 @@
-import { db } from "../../db/client.js"
-import { userActivityLogs } from "../../db/schema/index.js"
+import { drizzleCreateRow } from "../../db/drizzleCrud.js"
+import { getResource } from "../../db/resourceRegistry.js"
 import crypto from "node:crypto"
 
 /**
@@ -41,21 +41,25 @@ export function parseRequestAction(method, path) {
 }
 
 /**
- * Log activity helper writing directly through Drizzle ORM.
+ * Log activity helper writing resiliently through Drizzle CRUD.
  */
 export async function logActivity(userId, username, fullname, action, resource, details = {}) {
   try {
     const id = `LOG-${Date.now()}-${crypto.randomUUID().slice(0, 6)}`
-    await db.insert(userActivityLogs).values({
-      id,
-      userId: userId || null,
-      username: username || "system",
-      action,
-      module: resource || "system",
-      entityType: details.entityType || resource || null,
-      entityId: details.itemId || null,
-      details: { fullname, ...details },
-      createdAt: new Date(),
+    const logResource = getResource("user_activity_logs")
+    await drizzleCreateRow({
+      resource: logResource,
+      body: {
+        id,
+        user_id: userId || null,
+        username: username || "system",
+        action,
+        module: resource || "system",
+        entity_type: details.entityType || resource || null,
+        entity_id: details.itemId || null,
+        details: { fullname, ...details },
+        created_at: new Date().toISOString(),
+      },
     })
   } catch (err) {
     console.error("[ACTIVITY LOGGER ERROR] Failed to write log via Drizzle:", err.message)
