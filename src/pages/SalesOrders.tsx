@@ -1032,7 +1032,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   if (!isCredit) {
                     return (
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Sales
+                        Cash
                       </span>
                     )
                   }
@@ -1455,7 +1455,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                           >
                             <option value="Credit">Credit</option>
-                            <option value="Cash">Sales</option>
+                            <option value="Cash">Cash</option>
                           </select>
                         </div>
 
@@ -2000,7 +2000,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                   >
                     <option value="Credit">Credit</option>
-                    <option value="Cash">Sales</option>
+                    <option value="Cash">Cash</option>
                   </select>
                 </div>
 
