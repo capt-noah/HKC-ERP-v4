@@ -25,6 +25,7 @@ import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus, type Customer, type Supplier } from "@/lib/erpStore"
+import { isWH1 } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
@@ -65,6 +66,7 @@ export default function PartnersRegistry() {
   const [custEmail, setCustEmail] = useState("")
   const [custAddress, setCustAddress] = useState("")
   const [custCategory, setCustCategory] = useState("Commercial Union")
+  const [custWarehouseTarget, setCustWarehouseTarget] = useState("WH1")
   const [custTradePaperName, setCustTradePaperName] = useState("")
   const [custTradePaperUrl, setCustTradePaperUrl] = useState("")
   const [isNewlyUploadedCustLicense, setIsNewlyUploadedCustLicense] = useState(false)
@@ -95,6 +97,7 @@ export default function PartnersRegistry() {
     setCustEmail("")
     setCustAddress("")
     setCustCategory("Commercial Union")
+    setCustWarehouseTarget("WH1")
     setCustTradePaperName("")
     setCustTradePaperUrl("")
     setIsNewlyUploadedCustLicense(false)
@@ -112,6 +115,7 @@ export default function PartnersRegistry() {
     setCustEmail(c.email || "")
     setCustAddress(c.address || "")
     setCustCategory(c.category || "Commercial Union")
+    setCustWarehouseTarget(c.warehouseTarget || "WH1")
     setCustTradePaperName(c.tradePaperFileName || "")
     setCustTradePaperUrl(c.tradePaperUrl || "")
     setIsNewlyUploadedCustLicense(false)
@@ -177,6 +181,7 @@ export default function PartnersRegistry() {
 
     try {
       setIsSubmittingCustomer(true)
+      const isWh1 = isWH1(custWarehouseTarget)
       if (editingCustomer) {
         const isNewFile = custTradePaperUrl !== (editingCustomer.tradePaperUrl || "")
         const uploadedAt = isNewFile ? new Date().toISOString() : editingCustomer.tradePaperUploadedAt
@@ -190,6 +195,7 @@ export default function PartnersRegistry() {
           email: custEmail,
           address: custAddress,
           category: custCategory,
+          warehouseTarget: custWarehouseTarget,
           tradePaperFileName: custTradePaperName,
           tradePaperUrl: custTradePaperUrl,
           tradePaperUploadedAt: uploadedAt,
@@ -201,6 +207,7 @@ export default function PartnersRegistry() {
             customerName: custName.trim(),
             fileName: custTradePaperName,
             fileUrl: custTradePaperUrl,
+            documentType: isWh1 ? "Bank Permit" : "Trade License",
             uploadedBy: "Admin / Registry",
           })
         }
@@ -219,6 +226,7 @@ export default function PartnersRegistry() {
           email: custEmail,
           address: custAddress,
           category: custCategory,
+          warehouseTarget: custWarehouseTarget,
           tradePaperFileName: custTradePaperName,
           tradePaperUrl: custTradePaperUrl,
           tradePaperUploadedAt: hasFile ? new Date().toISOString() : undefined,
@@ -231,6 +239,7 @@ export default function PartnersRegistry() {
             customerName: custName.trim(),
             fileName: custTradePaperName,
             fileUrl: custTradePaperUrl,
+            documentType: isWh1 ? "Bank Permit" : "Trade License",
             uploadedBy: "Admin / Registry",
           })
         }
@@ -528,6 +537,8 @@ export default function PartnersRegistry() {
                               (() => {
                                 const evaluation = getTradeLicenseStatus(c)
                                 const isExpired = evaluation.status === "expired"
+                                const isWh1 = evaluation.docType === "Bank Permit" || isWH1(c.warehouseTarget)
+                                const docTitle = isWh1 ? "Bank Permit" : "Trade License"
                                 return (
                                   <div className="flex flex-col items-center gap-1">
                                     {c.tradePaperUrl ? (
@@ -535,17 +546,17 @@ export default function PartnersRegistry() {
                                         type="button"
                                         onClick={() => {
                                           setPreviewUrl(c.tradePaperUrl || "")
-                                          setPreviewName(c.tradePaperFileName || "Trade License")
+                                          setPreviewName(c.tradePaperFileName || docTitle)
                                         }}
                                         className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-colors border ${
                                           isExpired 
                                             ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" 
                                             : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                                         }`}
-                                        title={isExpired ? "Trade License Expired! Click to view" : "View Trade License"}
+                                        title={isExpired ? `${docTitle} Expired! Click to view` : `View ${docTitle}`}
                                       >
                                         <FileText className="size-3 text-emerald-600" />
-                                        <span className="max-w-[130px] truncate">{c.tradePaperFileName || "Trade License"}</span>
+                                        <span className="max-w-[130px] truncate">{c.tradePaperFileName || docTitle}</span>
                                         <Eye className="size-3 text-emerald-500" />
                                       </button>
                                     ) : (
@@ -553,7 +564,11 @@ export default function PartnersRegistry() {
                                         <CheckCircle2 className="size-3 text-emerald-600" /> {c.tradePaperFileName || "On File"}
                                       </span>
                                     )}
-                                    {isExpired ? (
+                                    {isWh1 ? (
+                                      <span className="text-[9px] font-black text-emerald-800 bg-emerald-100/90 border border-emerald-200 px-1.5 py-0.2 rounded-md">
+                                        Bank Permit • Attached (Permanent)
+                                      </span>
+                                    ) : isExpired ? (
                                       <span className="text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md">
                                         Expired ({evaluation.daysRemaining}d ago)
                                       </span>
@@ -567,7 +582,7 @@ export default function PartnersRegistry() {
                               })()
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                <AlertCircle className="size-3 text-amber-500" /> Missing Trade License
+                                <AlertCircle className="size-3 text-amber-500" /> Missing {isWH1(c.warehouseTarget) ? "Bank Permit" : "Trade License"}
                               </span>
                             )}
                           </div>
@@ -835,17 +850,15 @@ export default function PartnersRegistry() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Category</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Primary Operating Hub *</label>
                     <select
-                      value={custCategory}
-                      onChange={(e) => setCustCategory(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                      value={custWarehouseTarget}
+                      onChange={(e) => setCustWarehouseTarget(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                     >
-                      <option value="Commercial Union">Commercial Union</option>
-                      <option value="Government Agency">Government Agency</option>
-                      <option value="Wholesale Distributor">Wholesale Distributor</option>
-                      <option value="Retail Pharmacy Chain">Retail Pharmacy Chain</option>
-                      <option value="International Importer">International Importer</option>
+                      <option value="WH1">WH1 - Ethiopia Agricultural Export Hub</option>
+                      <option value="WH2">WH2 - Central Veterinary Hub</option>
+                      <option value="WH3">WH3 - Regional Veterinary Depot</option>
                     </select>
                   </div>
                 </div>
@@ -907,81 +920,102 @@ export default function PartnersRegistry() {
 
                 {/* Customer Documents Section */}
                 <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
-                  <span className="text-xs font-black uppercase text-zinc-900 tracking-wider block">Customer Documents & Licenses</span>
-                  
-                  {/* Trade License */}
-                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-zinc-800">Trade License / Business Permit</span>
-                      {(() => {
-                        if (!custTradePaperName) {
-                          return (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
-                              Not Attached
+                  {(() => {
+                    const isWh1 = isWH1(custWarehouseTarget)
+                    const docTitle = isWh1 ? "Customer Bank Permit" : "Trade License / Business Permit"
+                    return (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black uppercase text-zinc-900 tracking-wider block">Customer Compliance Document</span>
+                          {isWh1 && (
+                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                              WH1 Bank Permit (Permanent • No Expiration)
                             </span>
-                          )
-                        }
+                          )}
+                        </div>
+                        
+                        <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-zinc-800">{docTitle}</span>
+                            {(() => {
+                              if (!custTradePaperName) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                                    Not Attached
+                                  </span>
+                                )
+                              }
 
-                        if (isNewlyUploadedCustLicense) {
-                          return (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
-                              <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
-                            </span>
-                          )
-                        }
+                              if (isNewlyUploadedCustLicense) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
+                                  </span>
+                                )
+                              }
 
-                        if (editingCustomer) {
-                          const evaluation = getTradeLicenseStatus(editingCustomer)
-                          if (evaluation.status === "expired") {
-                            return (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
-                                <AlertTriangle className="size-3 text-rose-600" /> Expired License
-                              </span>
-                            )
-                          }
-                          if (evaluation.status === "valid") {
-                            return (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
-                              </span>
-                            )
-                          }
-                        }
+                              if (isWh1) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    <CheckCircle2 className="size-3 text-emerald-600" /> Bank Permit Attached (Permanent)
+                                  </span>
+                                )
+                              }
 
-                        return (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                            <CheckCircle2 className="size-3" /> Attached
-                          </span>
-                        )
-                      })()}
-                    </div>
-                    {editingCustomer && getTradeLicenseStatus(editingCustomer).status === "expired" && !isNewlyUploadedCustLicense && custTradePaperName && (
-                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
-                        <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
-                        <span>This trade license has expired (&gt;30 days). Please select a renewed file to upload.</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 pt-1">
-                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                        <Upload className="size-3" /> Select File
-                        <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "trade")} />
-                      </label>
-                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
-                      {custTradePaperUrl && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewUrl(custTradePaperUrl)
-                            setPreviewName(custTradePaperName || "Trade License")
-                          }}
-                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
-                        >
-                          View Doc ↗
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                              if (editingCustomer) {
+                                const evaluation = getTradeLicenseStatus(editingCustomer, custWarehouseTarget)
+                                if (evaluation.status === "expired") {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
+                                      <AlertTriangle className="size-3 text-rose-600" /> Expired License
+                                    </span>
+                                  )
+                                }
+                                if (evaluation.status === "valid") {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                      <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
+                                    </span>
+                                  )
+                                }
+                              }
 
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                                  <CheckCircle2 className="size-3" /> Attached
+                                </span>
+                              )
+                            })()}
+                          </div>
+                          {!isWh1 && editingCustomer && getTradeLicenseStatus(editingCustomer, custWarehouseTarget).status === "expired" && !isNewlyUploadedCustLicense && custTradePaperName && (
+                            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
+                              <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
+                              <span>This trade license has expired (&gt;30 days). Please select a renewed file to upload.</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 pt-1">
+                            <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                              <Upload className="size-3" /> Select File
+                              <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "trade")} />
+                            </label>
+                            <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
+                            {custTradePaperUrl && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewUrl(custTradePaperUrl)
+                                  setPreviewName(custTradePaperName || docTitle)
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                              >
+                                View Doc ↗
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
 
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">

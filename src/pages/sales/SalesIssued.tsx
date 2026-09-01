@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil } from "lucide-react"
+import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore } from "@/lib/erpStore"
+import { useErpStore, getTradeLicenseStatus } from "@/lib/erpStore"
 import { financeStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
@@ -57,8 +57,17 @@ function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function blankItem(): SalesIssueItem {
-  return { item_id: "", item_name: "", batch_id: "", batch_no: "", packaging_unit: "", available_quantity: 0, quantity: 0, unit_price: 0, amount: 0 }
+const isWH1 = (w?: string) => {
+  if (!w) return false
+  const upper = w.toUpperCase()
+  return upper.includes("WH1") || upper.includes("WH-01") || upper.includes("WH 1") || upper.includes("AGRI")
+}
+
+export const COMMODITY_UNITS = ["Quintal", "Ton"]
+export const CONTAINER_UNITS = ["Box", "Bottle", "Vial", "Sachet", "Pack", "Carton"]
+
+function blankItem(defaultUnit = "Box"): SalesIssueItem {
+  return { item_id: "", item_name: "", batch_id: "", batch_no: "", packaging_unit: defaultUnit, available_quantity: 0, quantity: 0, unit_price: 0, amount: 0 }
 }
 
 function SalesIssuedSkeletonRows() {
@@ -103,7 +112,8 @@ export default function SalesIssued() {
   const [isSaving, setIsSaving] = useState(false)
   const [printingIssue, setPrintingIssue] = useState<SalesIssue | null>(null)
   const [batchOptions, setBatchOptions] = useState<Record<number, AvailableBatch[]>>({})
-  const [selectedSoIds, setSelectedSoIds] = useState<string[]>([])
+  const [selectedSoId, setSelectedSoId] = useState<string | null>(null)
+  const [issueFormErrors, setIssueFormErrors] = useState<Record<string, string>>({})
   const [fsNo, setFsNo] = useState("")
   const [referenceNo, setReferenceNo] = useState("")
   const [saleDate, setSaleDate] = useState("")
@@ -133,30 +143,53 @@ export default function SalesIssued() {
 
   const salesOrders = erp.getSalesOrders()
 
-  const pendingSalesOrders = useMemo(() => {
-    return salesOrders.filter((so) => {
-      if (so.deliveryStatus === "Fully Delivered") return false
+  const evaluatedPendingSalesOrders = useMemo(() => {
+    const customers = erp.getCustomers()
+    return salesOrders.map((so) => {
       const alreadyIssued = rows.some((row) => (row.reference_no || "").includes(so.id))
-      return !alreadyIssued
-    })
-  }, [salesOrders, rows])
+      const isFullyDelivered = so.deliveryStatus === "Fully Delivered"
+
+      if (isFullyDelivered || alreadyIssued) {
+        return null
+      }
+
+      const isWh1Order = isWH1(so.warehouse)
+      const matchedCust = customers.find((c) => c.id === so.customerId || c.name === so.customer)
+
+      let lockReason = ""
+      const isApproved = so.approvalStatus === "Approved"
+      if (!isApproved) {
+        lockReason = so.approvalStatus === "Declined" ? "Declined by Admin" : "Pending Admin Approval"
+      } else if (matchedCust) {
+        const compliance = getTradeLicenseStatus(matchedCust, so.warehouse)
+        if (compliance.status === "missing") {
+          lockReason = isWh1Order ? "Missing Bank Permit" : "Missing Trade License"
+        } else if (compliance.status === "expired") {
+          lockReason = "Expired Trade License"
+        }
+      }
+
+      const isFulfillable = !lockReason
+
+      return {
+        ...so,
+        isFulfillable,
+        lockReason,
+      }
+    }).filter(Boolean) as (any)[]
+  }, [salesOrders, rows, erp])
+
+  const fulfillableOrders = useMemo(() => evaluatedPendingSalesOrders.filter((s) => s.isFulfillable), [evaluatedPendingSalesOrders])
+  const lockedOrders = useMemo(() => evaluatedPendingSalesOrders.filter((s) => !s.isFulfillable), [evaluatedPendingSalesOrders])
 
   const canonicalWarehouseId = (value: string) => {
     const warehouse = warehouses.find((entry) => entry.id === value || entry.code === value || entry.name === value)
     return warehouse?.id || value
   }
 
-  const handleTogglePullSalesOrder = async (so: any) => {
-    let nextSelected = [...selectedSoIds]
-    if (nextSelected.includes(so.id)) {
-      nextSelected = nextSelected.filter((id) => id !== so.id)
-    } else {
-      nextSelected.push(so.id)
-    }
-    setSelectedSoIds(nextSelected)
-
-    const activeOrders = pendingSalesOrders.filter((s) => nextSelected.includes(s.id))
-    if (activeOrders.length === 0) {
+  const handleSelectPullSalesOrder = async (so: any) => {
+    if (selectedSoId === so.id) {
+      setSelectedSoId(null)
       setCustomerName("")
       setWarehouseId("")
       setReferenceNo("")
@@ -166,23 +199,27 @@ export default function SalesIssued() {
       setStagedTradePaperName("")
       setStagedTradePaperUrl("")
       setItems([blankItem()])
+      setIssueFormErrors({})
       return
     }
 
-    const firstSo = activeOrders[0]
-    setCustomerName(firstSo.customer)
-    const matchedWh = warehouses.find((w) => w.code === firstSo.warehouse || w.id === firstSo.warehouse || w.name === firstSo.warehouse)
-    const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(firstSo.warehouse)
+    setSelectedSoId(so.id)
+    setCustomerName(so.customer)
+    const matchedWh = warehouses.find((w) => w.code === so.warehouse || w.id === so.warehouse || w.name === so.warehouse)
+    const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(so.warehouse)
+    const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
     setWarehouseId(targetWhId)
-    setPaymentType(firstSo.paymentType === "Credit" ? "Credit" : "Cash")
-    setReferenceNo("")
+    setPaymentType(so.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+    setReferenceNo(so.id)
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
+    setIssueFormErrors({})
 
+    setIsDocsLoading(true)
     try {
       const resolved = await fetchTradeAndAdviceDocs({
-        salesOrderId: firstSo.id,
-        customerId: firstSo.customerId,
-        customerName: firstSo.customer,
+        salesOrderId: so.id,
+        customerId: so.customerId,
+        customerName: so.customer,
       })
 
       if (resolved.tradeLicense) {
@@ -205,26 +242,40 @@ export default function SalesIssued() {
       setStagedTradePaperUrl("")
       setStagedPaymentAdviceName("")
       setStagedPaymentAdviceUrl("")
+    } finally {
+      setIsDocsLoading(false)
     }
 
-    const combinedItems: SalesIssueItem[] = []
-    activeOrders.forEach((order) => {
-      ;(order.items || []).forEach((item: any) => {
-        combinedItems.push({
-          item_id: item.productId || item.item_id || item.id,
-          item_name: item.name || item.item_name || "Contract Item",
-          batch_id: item.batch_id || "",
-          batch_no: item.batch_no || item.batch || "",
-          packaging_unit: item.unit || item.packaging_unit || "Box",
-          available_quantity: item.available_quantity || 1000,
-          quantity: item.qty || item.quantity || 1,
-          unit_price: item.unitPrice || item.unit_price || 0,
-          amount: (item.qty || item.quantity || 1) * (item.unitPrice || item.unit_price || 0),
-        })
+    const newItems: SalesIssueItem[] = []
+    const allProducts = erp.getProducts()
+
+    ;(so.items || []).forEach((item: any, idx: number) => {
+      const prod = allProducts.find((p) => p.id === (item.productId || item.item_id || item.id))
+      const autoBatch = targetIsWh1 
+        ? "N/A" 
+        : (item.batch_no || item.batch || prod?.batches?.[0]?.batchNo || prod?.batch || "")
+      const availQty = prod?.quantity || item.available_quantity || 1000
+
+      newItems.push({
+        item_id: item.productId || item.item_id || item.id,
+        item_name: item.name || item.item_name || prod?.name || "Contract Item",
+        batch_id: autoBatch,
+        batch_no: autoBatch,
+        packaging_unit: item.unit || item.packaging_unit || (targetIsWh1 ? "Quintal" : "Box"),
+        available_quantity: availQty,
+        quantity: item.qty || item.quantity || 1,
+        unit_price: item.unitPrice || item.unit_price || 0,
+        amount: (item.qty || item.quantity || 1) * (item.unitPrice || item.unit_price || 0),
       })
+
+      if (!targetIsWh1 && item.productId) {
+        void getAvailableBatches(item.productId, canonicalWarehouseId(targetWhId)).then((batches) => {
+          setBatchOptions((prev) => ({ ...prev, [idx]: batches }))
+        }).catch(() => {})
+      }
     })
 
-    setItems(combinedItems.length > 0 ? combinedItems : [blankItem()])
+    setItems(newItems.length > 0 ? newItems : [blankItem(targetIsWh1 ? "Quintal" : "Box")])
   }
 
   const batchFilters = useMemo(() => {
@@ -262,6 +313,7 @@ export default function SalesIssued() {
 
   const openCreate = (preselectedSo?: any) => {
     setEditing(null)
+    setIssueFormErrors({})
     const nextFs = `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
     setFsNo(nextFs)
     setSaleDate(new Date().toISOString().split("T")[0])
@@ -271,28 +323,46 @@ export default function SalesIssued() {
     setStagedPaymentAdviceUrl("")
 
     if (preselectedSo && preselectedSo.id) {
-      setSelectedSoIds([preselectedSo.id])
+      setSelectedSoId(preselectedSo.id)
       setCustomerName(preselectedSo.customer)
       const matchedWh = warehouses.find((w) => w.code === preselectedSo.warehouse || w.id === preselectedSo.warehouse || w.name === preselectedSo.warehouse)
-      setWarehouseId(matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse))
-      setPaymentType(preselectedSo.paymentType === "Credit" ? "Credit" : "Cash")
-      setReferenceNo("")
+      const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse)
+      const targetIsWh1 = isWH1(preselectedSo.warehouse) || isWH1(targetWhId)
+      setWarehouseId(targetWhId)
+      setPaymentType(preselectedSo.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+      setReferenceNo(preselectedSo.id)
+      const allProducts = erp.getProducts()
+
       if (Array.isArray(preselectedSo.items) && preselectedSo.items.length > 0) {
         setItems(
-          preselectedSo.items.map((i: any) => ({
-            item_id: i.productId || i.item_id || i.id,
-            item_name: i.name || i.item_name || "Contract Item",
-            batch_id: i.batch_id || "",
-            batch_no: i.batch_no || i.batch || "",
-            packaging_unit: i.unit || i.packaging_unit || "Box",
-            available_quantity: i.available_quantity || 1000,
-            quantity: i.qty || i.quantity || 1,
-            unit_price: i.unitPrice || i.unit_price || 0,
-            amount: (i.qty || i.quantity || 1) * (i.unitPrice || i.unit_price || 0),
-          }))
+          preselectedSo.items.map((i: any, idx: number) => {
+            const prod = allProducts.find((p) => p.id === (i.productId || i.item_id || i.id))
+            const autoBatch = targetIsWh1 
+              ? "N/A" 
+              : (i.batch_no || i.batch || prod?.batches?.[0]?.batchNo || prod?.batch || "")
+            const availQty = prod?.quantity || i.available_quantity || 1000
+
+            if (!targetIsWh1 && i.productId) {
+              void getAvailableBatches(i.productId, canonicalWarehouseId(targetWhId)).then((batches) => {
+                setBatchOptions((prev) => ({ ...prev, [idx]: batches }))
+              }).catch(() => {})
+            }
+
+            return {
+              item_id: i.productId || i.item_id || i.id,
+              item_name: i.name || i.item_name || prod?.name || "Contract Item",
+              batch_id: autoBatch,
+              batch_no: autoBatch,
+              packaging_unit: i.unit || i.packaging_unit || (targetIsWh1 ? "Quintal" : "Box"),
+              available_quantity: availQty,
+              quantity: i.qty || i.quantity || 1,
+              unit_price: i.unitPrice || i.unit_price || 0,
+              amount: (i.qty || i.quantity || 1) * (i.unitPrice || i.unit_price || 0),
+            }
+          })
         )
       } else {
-        setItems([blankItem()])
+        setItems([blankItem(targetIsWh1 ? "Quintal" : "Box")])
       }
 
       setIsDocsLoading(true)
@@ -314,7 +384,7 @@ export default function SalesIssued() {
         .catch(() => {})
         .finally(() => setIsDocsLoading(false))
     } else {
-      setSelectedSoIds([])
+      setSelectedSoId(null)
       setReferenceNo("")
       setCustomerName("")
       setWarehouseId("")
@@ -498,12 +568,24 @@ export default function SalesIssued() {
     const next = [...items]
     const current = next[index]
     const updated = { ...current, ...patch }
+    const targetIsWh1 = isWH1(warehouseId)
+
     if (patch.item_id && patch.item_id !== current.item_id && warehouseId) {
-      try {
-        const batches = await getAvailableBatches(patch.item_id, canonicalWarehouseId(warehouseId))
-        setBatchOptions((prev) => ({ ...prev, [index]: batches }))
-      } catch {
-        setBatchOptions((prev) => ({ ...prev, [index]: [] }))
+      if (targetIsWh1) {
+        updated.batch_no = "N/A"
+        updated.batch_id = "N/A"
+      } else {
+        const prod = products.find((p) => p.id === patch.item_id)
+        const activeBatch = prod?.batches?.[0]?.batchNo || prod?.batch || ""
+        updated.batch_no = activeBatch
+        updated.batch_id = activeBatch
+        updated.available_quantity = prod?.quantity || 1000
+        try {
+          const batches = await getAvailableBatches(patch.item_id, canonicalWarehouseId(warehouseId))
+          setBatchOptions((prev) => ({ ...prev, [index]: batches }))
+        } catch {
+          setBatchOptions((prev) => ({ ...prev, [index]: [] }))
+        }
       }
     }
     const qty = Number(updated.quantity || 0)
@@ -517,28 +599,82 @@ export default function SalesIssued() {
   const grandTotal = useMemo(() => items.reduce((sum, item) => sum + Number(item.amount || 0), 0), [items])
 
   const selectableProducts = useMemo(() => {
+    if (!warehouseId) return []
+    const targetWh = canonicalWarehouseId(warehouseId)
+    const targetWhBase = targetWh.split("-")[0].toUpperCase()
+    const targetIsWh1 = isWH1(targetWh)
+
     return products.filter((p) => {
-      if (!warehouseId) return true
-      const targetWh = canonicalWarehouseId(warehouseId)
-      const targetWhBase = targetWh.split("-")[0]
-      const totalWhQty = (p.stockBreakdown || [])
-        .filter((sb) => sb.warehouse === targetWh || (sb.warehouse || "").split("-")[0] === targetWhBase)
-        .reduce((sum, sb) => sum + Number(sb.qty || 0), 0)
-      return totalWhQty > 0 || (p.quantity || 0) > 0
+      // 1. Check stock breakdown for warehouse match with qty > 0
+      const sbEntry = (p.stockBreakdown || []).find((sb) => {
+        if (!sb.warehouse) return false
+        const sbCanon = canonicalWarehouseId(sb.warehouse)
+        return (
+          sb.warehouse === targetWh ||
+          sbCanon === targetWh ||
+          sb.warehouse.toUpperCase().startsWith(targetWhBase) ||
+          sbCanon.toUpperCase().startsWith(targetWhBase)
+        )
+      })
+      if (sbEntry && Number(sbEntry.qty || 0) > 0) return true
+
+      // 2. Check primary product warehouse property
+      if (p.warehouse) {
+        const prodWhCanon = canonicalWarehouseId(p.warehouse)
+        const prodWhMatches =
+          p.warehouse === targetWh ||
+          prodWhCanon === targetWh ||
+          p.warehouse.toUpperCase().startsWith(targetWhBase) ||
+          prodWhCanon.toUpperCase().startsWith(targetWhBase)
+        if (prodWhMatches && Number(p.quantity || 0) > 0) return true
+      }
+
+      // 3. WH1 commodities check
+      if (targetIsWh1 && isWH1(p.warehouse) && Number(p.quantity || 0) > 0) return true
+
+      return false
     })
   }, [products, warehouseId])
 
   const handleSave = async () => {
-    if (!fsNo.trim() || !saleDate || !customerName.trim() || !warehouseId) {
-      showToast("Missing fields", "warning", "Please fill in all header fields.")
-      return
+    const isWh1Active = isWH1(warehouseId)
+    const errors: Record<string, string> = {}
+    if (!fsNo.trim()) errors.fsNo = "FS Number is required."
+    if (!saleDate) errors.saleDate = "Sale Date is required."
+    if (!customerName.trim()) errors.customer = "Customer Name is required."
+    if (!warehouseId) errors.warehouse = "Warehouse selection is required."
+
+    const matchedCust = erp.getCustomers().find((c) => c.name.toLowerCase() === customerName.trim().toLowerCase() || c.id === customerName)
+    if (matchedCust) {
+      const evaluation = getTradeLicenseStatus(matchedCust, warehouseId)
+      if (evaluation.status === "missing" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
+        errors.tradePaper = isWh1Active ? "A valid Customer Bank Permit must be attached." : "Trade License file is required."
+      } else if (evaluation.status === "expired" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
+        errors.tradePaper = "This customer's Trade License has expired. An active permit must be uploaded."
+      }
+    } else if (!stagedTradePaperUrl || !stagedTradePaperName) {
+      errors.tradePaper = isWh1Active ? "Customer Bank Permit is required." : "Trade License is required."
+    }
+
+    if (paymentType === "Cash" && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
+      errors.paymentAdvice = "Payment Advice (deposit receipt / bank slip) is mandatory for Cash sales issues."
     }
 
     const validItems = items.filter((item) => item.item_id && item.quantity > 0)
     if (validItems.length === 0) {
-      showToast("No items", "warning", "At least one item with quantity > 0 is required.")
+      errors.items = "At least one item with a valid product and quantity > 0 is required."
+    } else if (!isWh1Active) {
+      const hasMissingBatch = validItems.some((item) => !item.batch_no || item.batch_no === "N/A")
+      if (hasMissingBatch) {
+        errors.items = "Batch selection is required for all veterinary/pharma line items."
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setIssueFormErrors(errors)
       return
     }
+    setIssueFormErrors({})
 
     setIsSaving(true)
     try {
@@ -548,7 +684,7 @@ export default function SalesIssued() {
       if (editing) {
         await updateSalesIssue(editing.id, {
           fs_no: fsNo.trim(),
-          reference_no: referenceNo.trim() || (selectedSoIds.length > 0 ? selectedSoIds.join(", ") : undefined),
+          reference_no: referenceNo.trim() || selectedSoId || undefined,
           sale_date: saleDate,
           customer_name: customerName.trim(),
           warehouse_id: canonicalWarehouseId(warehouseId),
@@ -558,7 +694,7 @@ export default function SalesIssued() {
       } else {
         const created = await createSalesIssue({
           fs_no: fsNo.trim(),
-          reference_no: referenceNo.trim() || (selectedSoIds.length > 0 ? selectedSoIds.join(", ") : undefined),
+          reference_no: referenceNo.trim() || selectedSoId || undefined,
           sale_date: saleDate,
           customer_name: customerName.trim(),
           warehouse_id: canonicalWarehouseId(warehouseId),
@@ -576,10 +712,11 @@ export default function SalesIssued() {
             customerName: customerName.trim() || undefined,
             fileName: stagedTradePaperName,
             fileUrl: stagedTradePaperUrl,
+            documentType: isWh1Active ? "Bank Permit" : "Trade License",
             uploadedBy: "Sales Officer",
           })
         } catch (docErr) {
-          console.warn("Trade license upload notice:", docErr)
+          console.warn("Trade document upload notice:", docErr)
         }
       }
 
@@ -599,10 +736,8 @@ export default function SalesIssued() {
         }
       }
 
-      if (selectedSoIds.length > 0) {
-        selectedSoIds.forEach((soId) => {
-          erp.updateSalesOrderStage(soId, "Shipped")
-        })
+      if (selectedSoId) {
+        erp.updateSalesOrderStage(selectedSoId, "Shipped")
       }
 
       showToast(
@@ -759,7 +894,7 @@ export default function SalesIssued() {
                       <td style={{ width: `${salesTable.colWidths.payment_status}px` }} className="px-3 py-3">
                         {isCash ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Cash (Immediate)
+                            Sales
                           </span>
                         ) : dueAmt <= 0 && paidAmt > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -786,7 +921,9 @@ export default function SalesIssued() {
                         )}
                       </td>
 
-                      <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{Number(row.total_quantity).toLocaleString()}</td>
+                      <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">
+                        {Number(row.total_quantity).toLocaleString()}{row.items?.[0]?.packaging_unit ? ` ${row.items[0].packaging_unit}` : ""}
+                      </td>
                       <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
                       <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
                       <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
@@ -1012,226 +1149,400 @@ export default function SalesIssued() {
               )}
 
               {/* SALES ORDER PULL SELECTOR (Only in create mode) */}
-              {!editing && pendingSalesOrders.length > 0 && (
-                <div className="mb-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2.5">
+              {!editing && (fulfillableOrders.length > 0 || lockedOrders.length > 0) && (
+                <div className="mb-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-zinc-800 block">
-                        Pull from Pending Sales Orders ({pendingSalesOrders.length} available)
+                      <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">
+                        Pull from Approved Sales Orders ({fulfillableOrders.length} available)
                       </span>
                       <span className="text-[11px] font-semibold text-zinc-500 block mt-0.5">
-                        Selecting order(s) auto-populates Customer, Warehouse, Items, and Payment Terms.
+                        Selecting an approved order auto-populates Customer, Warehouse, Items, and Payment Terms.
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-zinc-400">
-                      {selectedSoIds.length} selected
-                    </span>
+                    {selectedSoId && (
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        1 order selected
+                      </span>
+                    )}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
-                    {pendingSalesOrders.map((so) => {
-                      const isSelected = selectedSoIds.includes(so.id)
-                      const isCredit = so.paymentType === "Credit"
-                      return (
-                        <button
-                          key={so.id}
-                          type="button"
-                          onClick={() => handleTogglePullSalesOrder(so)}
-                          className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold text-left transition-all ${
-                            isSelected 
-                              ? "bg-emerald-700 text-white border-emerald-700 shadow-sm" 
-                              : "bg-white text-zinc-800 border-zinc-200 hover:bg-zinc-100"
-                          }`}
-                        >
-                          <div>
-                            <div className="font-bold font-mono text-xs flex items-center gap-1.5 flex-wrap">
-                              {so.id} • {so.customer}
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold ${isCredit ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`}>
-                                {isCredit ? "Credit" : "Cash"}
-                              </span>
+
+                  {/* Fulfillable Orders (Single Selection) */}
+                  {fulfillableOrders.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                      {fulfillableOrders.map((so) => {
+                        const isSelected = selectedSoId === so.id
+                        const isCredit = so.paymentType === "Credit"
+                        return (
+                          <button
+                            key={so.id}
+                            type="button"
+                            onClick={() => void handleSelectPullSalesOrder(so)}
+                            className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold text-left transition-all cursor-pointer ${
+                              isSelected 
+                                ? "bg-emerald-700 text-white border-emerald-700 shadow-sm ring-2 ring-emerald-500/20" 
+                                : "bg-white text-zinc-800 border-zinc-200 hover:bg-zinc-100"
+                            }`}
+                          >
+                            <div>
+                              <div className="font-bold font-mono text-xs flex items-center gap-1.5 flex-wrap">
+                                {so.id} • {so.customer}
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold ${
+                                  isSelected 
+                                    ? "bg-white/20 text-white" 
+                                    : (isCredit ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800")
+                                }`}>
+                                  {isCredit ? "Credit" : "Sales"}
+                                </span>
+                              </div>
+                              <div className={`text-[10px] mt-0.5 ${isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
+                                {so.warehouse} • ETB {Number(so.amount || 0).toLocaleString()} ({so.items.length} items)
+                              </div>
                             </div>
-                            <div className={`text-[10px] mt-0.5 ${isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
-                              {so.warehouse} • ETB {Number(so.amount || 0).toLocaleString()} ({so.items.length} contract items)
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Locked Orders (Pending Approval or Missing Files) */}
+                  {lockedOrders.length > 0 && (
+                    <div className="pt-2 border-t border-zinc-200/80 space-y-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">
+                        Locked Orders — Cannot Fulfill Yet ({lockedOrders.length})
+                      </span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-28 overflow-y-auto pr-1">
+                        {lockedOrders.map((so) => (
+                          <div
+                            key={so.id}
+                            className="p-2.5 rounded-xl border border-zinc-200 bg-zinc-100/70 text-zinc-400 text-xs flex items-center justify-between opacity-75"
+                            title={`Locked: ${so.lockReason}`}
+                          >
+                            <div className="truncate pr-2">
+                              <span className="font-mono font-bold text-zinc-600 block truncate">{so.id} • {so.customer}</span>
+                              <span className="text-[10px] text-zinc-400 block">{so.warehouse}</span>
                             </div>
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 shrink-0 inline-flex items-center gap-1">
+                              🔒 {so.lockReason}
+                            </span>
                           </div>
-                        </button>
-                      )
-                    })}
-                  </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* HEADER FIELDS */}
               <div className="grid gap-4 md:grid-cols-3">
                 <label>
-                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">FS No</span>
-                  <input value={fsNo} onChange={(e) => setFsNo(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 font-mono text-xs font-black" placeholder="FS-2026-XXXX" />
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">FS No *</span>
+                  <input 
+                    value={fsNo} 
+                    onChange={(e) => {
+                      setFsNo(e.target.value)
+                      setIssueFormErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.fsNo
+                        return next
+                      })
+                    }} 
+                    className={`h-10 w-full rounded-xl border px-3 font-mono text-xs font-black transition-colors ${
+                      issueFormErrors.fsNo ? "border-rose-400 bg-rose-50 text-rose-900" : "border-zinc-200 bg-white"
+                    }`} 
+                    placeholder="FS-2026-XXXX" 
+                  />
+                  {issueFormErrors.fsNo && (
+                    <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                      ⚠️ {issueFormErrors.fsNo}
+                    </span>
+                  )}
                 </label>
                 <label>
                   <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Reference / SO No</span>
                   <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 font-mono text-xs font-bold" placeholder="REF-XXXX or SO-XXXX" />
                 </label>
                 <label>
-                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Date</span>
-                  <input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold" />
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Date *</span>
+                  <input 
+                    type="date" 
+                    value={saleDate} 
+                    onChange={(e) => {
+                      setSaleDate(e.target.value)
+                      setIssueFormErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.saleDate
+                        return next
+                      })
+                    }} 
+                    className={`h-10 w-full rounded-xl border px-3 text-xs font-bold transition-colors ${
+                      issueFormErrors.saleDate ? "border-rose-400 bg-rose-50 text-rose-900" : "border-zinc-200 bg-white"
+                    }`} 
+                  />
+                  {issueFormErrors.saleDate && (
+                    <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                      ⚠️ {issueFormErrors.saleDate}
+                    </span>
+                  )}
                 </label>
                 <label>
-                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Customer Name</span>
-                  <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold" placeholder="Customer name" />
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Customer Name *</span>
+                  <input 
+                    value={customerName} 
+                    onChange={(e) => {
+                      setCustomerName(e.target.value)
+                      setIssueFormErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.customer
+                        return next
+                      })
+                    }} 
+                    className={`h-10 w-full rounded-xl border px-3 text-xs font-bold transition-colors ${
+                      issueFormErrors.customer ? "border-rose-400 bg-rose-50 text-rose-900" : "border-zinc-200 bg-white"
+                    }`} 
+                    placeholder="Customer name" 
+                  />
+                  {issueFormErrors.customer && (
+                    <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                      ⚠️ {issueFormErrors.customer}
+                    </span>
+                  )}
                 </label>
                 <label>
-                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Warehouse</span>
-                  <select disabled={isPostedEditing} value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setItems([blankItem()]) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100">
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Warehouse *</span>
+                  <select 
+                    disabled={isPostedEditing} 
+                    value={warehouseId} 
+                    onChange={(e) => { 
+                      const wh = e.target.value
+                      setWarehouseId(wh)
+                      if (isWH1(wh)) {
+                        setPaymentType("Credit")
+                      } else {
+                        setPaymentType("Cash")
+                      }
+                      setItems([blankItem(isWH1(wh) ? "Quintal" : "Box")]) 
+                      setIssueFormErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.warehouse
+                        return next
+                      })
+                    }} 
+                    className={`h-10 w-full rounded-xl border px-3 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100 cursor-pointer transition-colors ${
+                      issueFormErrors.warehouse ? "border-rose-400 bg-rose-50 text-rose-900" : "border-zinc-200 bg-white"
+                    }`}
+                  >
                     <option value="">Select warehouse</option>
                     {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
+                  {issueFormErrors.warehouse && (
+                    <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                      ⚠️ {issueFormErrors.warehouse}
+                    </span>
+                  )}
                 </label>
                 <label>
-                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Payment Terms</span>
+                  <span className="mb-1 block text-xs font-black uppercase text-zinc-500">Payment Terms *</span>
                   <select
                     value={paymentType}
                     onChange={(e) => setPaymentType(e.target.value as PaymentType)}
                     className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold cursor-pointer"
                   >
-                    <option value="Cash">Cash (Immediate Receipt)</option>
-                    <option value="Credit">Credit (Installment & Ongoing Settlement)</option>
+                    <option value="Credit">Credit</option>
+                    <option value="Cash">Cash</option>
                   </select>
                 </label>
               </div>
 
               {/* DOCUMENTATION & PAYMENT ADVICE ATTACHMENTS */}
-              <div className="mt-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-black uppercase tracking-wider text-zinc-800 block">
-                      Order Documentation & Payment Advice
-                    </span>
-                    <span className="text-[11px] font-semibold text-zinc-500 block mt-0.5">
-                      {paymentType === "Cash"
-                        ? "Payment Advice is mandatory / recommended for Cash sales proof"
-                        : "Payment Advice can be attached anytime when recording partial installments"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+              {(() => {
+                const isWh1Active = isWH1(warehouseId)
+                const docLabel = isWh1Active ? "Customer Bank Permit" : "Customer Trade License"
+                return (
+                  <div className="mt-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                        <FileText className="size-3.5 text-emerald-600" /> Customer Trade License
-                      </span>
-                      {stagedTradePaperName ? (
-                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                          Attached
+                      <div>
+                        <span className="text-xs font-black uppercase tracking-wider text-zinc-800 block">
+                          {isWh1Active ? "Order Bank Permit & Proof of Payment" : "Order Documentation & Payment Advice"}
                         </span>
-                      ) : isDocsLoading ? (
-                        <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
-                      ) : (
-                        <span className="text-[9px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
-                          Not on file
+                        <span className="text-[11px] font-semibold text-zinc-500 block mt-0.5">
+                          {paymentType === "Cash"
+                            ? (isWh1Active 
+                                ? "Payment Advice receipt is mandatory for Cash export sales issues" 
+                                : "Payment Advice is mandatory / recommended for Cash sales proof")
+                            : (isWh1Active 
+                                ? "Bank Permit is attached for this credit export issue (Payment Advice is hidden)"
+                                : "Payment Advice can be attached anytime when recording partial installments")}
                         </span>
-                      )}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between pt-1 text-xs">
-                      {isDocsLoading && !stagedTradePaperName ? (
-                        <div className="flex items-center justify-between w-full">
-                          <Skeleton className="h-4 w-44 bg-zinc-200/80 rounded-md" />
-                          <Skeleton className="h-6 w-16 bg-zinc-200/80 rounded-md" />
-                        </div>
-                      ) : (
-                        <>
-                          <span className="text-[11px] font-mono text-zinc-600 truncate">
-                            {stagedTradePaperName || "No file attached from order"}
+
+                    <div className={`grid gap-3 ${paymentType === "Cash" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
+                      <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                        issueFormErrors.tradePaper 
+                          ? "bg-rose-50/40 border-rose-400" 
+                          : "bg-white border-zinc-200"
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                            <FileText className="size-3.5 text-emerald-600" /> {docLabel}
                           </span>
-                          {stagedTradePaperUrl && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPreviewDocUrl(stagedTradePaperUrl)
-                                setPreviewDocName(stagedTradePaperName || "Trade License")
-                              }}
-                              className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                            >
-                              View Doc ↗
-                            </button>
+                          {stagedTradePaperName ? (
+                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                              Attached
+                            </span>
+                          ) : isDocsLoading ? (
+                            <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
+                          ) : (
+                            <span className="text-[9px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                              Not on file
+                            </span>
                           )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                        <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
-                      </span>
-                      {stagedPaymentAdviceName ? (
-                        <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                          Attached
-                        </span>
-                      ) : isDocsLoading ? (
-                        <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
-                      ) : (
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${paymentType === "Cash" ? "text-amber-700 bg-amber-50" : "text-zinc-500 bg-zinc-100"}`}>
-                          {paymentType === "Cash" ? "Required for Cash" : "Optional (Credit)"}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      {isDocsLoading && !stagedPaymentAdviceName ? (
-                        <div className="flex items-center gap-2 w-full">
-                          <Skeleton className="h-7 w-24 bg-zinc-200/80 rounded-lg" />
-                          <Skeleton className="h-4 flex-1 bg-zinc-200/80 rounded-md" />
                         </div>
-                      ) : (
-                        <>
-                          <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                            <Upload className="size-3" /> Select File
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0]
-                                if (f) {
-                                  const reader = new FileReader()
-                                  reader.onload = () => {
-                                    setStagedPaymentAdviceName(f.name)
-                                    setStagedPaymentAdviceUrl(reader.result as string)
-                                  }
-                                  reader.readAsDataURL(f)
-                                }
-                              }}
-                            />
-                          </label>
-                          <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                            {stagedPaymentAdviceName || "No slip uploaded"}
+                        <div className="flex items-center justify-between pt-1 text-xs">
+                          {isDocsLoading && !stagedTradePaperName ? (
+                            <div className="flex items-center justify-between w-full">
+                              <Skeleton className="h-4 w-44 bg-zinc-200/80 rounded-md" />
+                              <Skeleton className="h-6 w-16 bg-zinc-200/80 rounded-md" />
+                            </div>
+                          ) : (
+                            <>
+                              <span className="text-[11px] font-mono text-zinc-600 truncate">
+                                {stagedTradePaperName || "No file attached from order"}
+                              </span>
+                              {stagedTradePaperUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewDocUrl(stagedTradePaperUrl)
+                                    setPreviewDocName(stagedTradePaperName || docLabel)
+                                  }}
+                                  className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                >
+                                  View Doc ↗
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {issueFormErrors.tradePaper && (
+                          <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                            ⚠️ {issueFormErrors.tradePaper}
                           </span>
-                        </>
-                      )}
-                      {stagedPaymentAdviceUrl && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewDocUrl(stagedPaymentAdviceUrl)
-                            setPreviewDocName(stagedPaymentAdviceName || "Payment Advice")
-                          }}
-                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                        >
-                          View Doc ↗
-                        </button>
+                        )}
+                      </div>
+
+                      {/* Payment Advice Dropzone - Shown when Cash */}
+                      {paymentType === "Cash" && (
+                        <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                          issueFormErrors.paymentAdvice 
+                            ? "bg-rose-50/40 border-rose-400" 
+                            : "bg-white border-zinc-200"
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                              <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
+                            </span>
+                            {stagedPaymentAdviceName ? (
+                              <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                                Attached
+                              </span>
+                            ) : isDocsLoading ? (
+                              <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
+                            ) : (
+                              <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                                Required for Cash
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 pt-1">
+                            {isDocsLoading && !stagedPaymentAdviceName ? (
+                              <div className="flex items-center gap-2 w-full">
+                                <Skeleton className="h-7 w-24 bg-zinc-200/80 rounded-lg" />
+                                <Skeleton className="h-4 flex-1 bg-zinc-200/80 rounded-md" />
+                              </div>
+                            ) : (
+                              <>
+                                <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                                  <Upload className="size-3" /> Select File
+                                  <input
+                                    type="file"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0]
+                                      if (f) {
+                                        const reader = new FileReader()
+                                        reader.onload = () => {
+                                          setStagedPaymentAdviceName(f.name)
+                                          setStagedPaymentAdviceUrl(reader.result as string)
+                                          setIssueFormErrors((prev) => {
+                                            const next = { ...prev }
+                                            delete next.paymentAdvice
+                                            return next
+                                          })
+                                        }
+                                        reader.readAsDataURL(f)
+                                      }
+                                    }}
+                                  />
+                                </label>
+                                <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                                  {stagedPaymentAdviceName || "No slip uploaded"}
+                                </span>
+                              </>
+                            )}
+                            {stagedPaymentAdviceUrl && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewDocUrl(stagedPaymentAdviceUrl)
+                                  setPreviewDocName(stagedPaymentAdviceName || "Payment Advice")
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                              >
+                                View Doc ↗
+                              </button>
+                            )}
+                          </div>
+                          {issueFormErrors.paymentAdvice && (
+                            <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                              ⚠️ {issueFormErrors.paymentAdvice}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
-              </div>
+                )
+              })()}
 
               {/* ITEM ROWS */}
               <div className="mt-6 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-black uppercase tracking-wide text-zinc-500">
-                    {isPostedEditing ? "Item Rows (Locked)" : "Item Rows"}
-                  </h3>
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wide text-zinc-500">
+                      {isPostedEditing ? "Item Rows (Locked)" : "Item Rows"}
+                    </h3>
+                    {issueFormErrors.items && (
+                      <span className="text-[10px] font-bold text-rose-600 block mt-0.5">
+                        ⚠️ {issueFormErrors.items}
+                      </span>
+                    )}
+                  </div>
                   {!isPostedEditing && (
-                    <button onClick={() => setItems((current) => [...current, blankItem()])} className="inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 px-3 text-xs font-black cursor-pointer"><Plus className="size-4" /> Add Item Row</button>
+                    <button 
+                      onClick={() => {
+                        setItems((current) => [...current, blankItem(isWH1(warehouseId) ? "Quintal" : "Box")])
+                        setIssueFormErrors((prev) => {
+                          const next = { ...prev }
+                          delete next.items
+                          return next
+                        })
+                      }} 
+                      className="inline-flex h-9 items-center gap-2 rounded-xl border border-zinc-200 px-3 text-xs font-black cursor-pointer"
+                    >
+                      <Plus className="size-4" /> Add Item Row
+                    </button>
                   )}
                 </div>
                 {items.map((item, index) => (
@@ -1239,74 +1550,129 @@ export default function SalesIssued() {
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-xs font-black text-zinc-500">Row {index + 1}</span>
                       {!isPostedEditing && (
-                        <button disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer" title="Remove row"><Trash2 className="size-3.5" /></button>
+                        <button 
+                          disabled={items.length === 1} 
+                          onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} 
+                          className="rounded-lg border border-rose-200 bg-white p-2 text-rose-700 disabled:cursor-not-allowed disabled:opacity-35 cursor-pointer" 
+                          title="Remove row"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
                       )}
                     </div>
-                    <div className="grid gap-3 md:grid-cols-12">
-                      <label className="md:col-span-6">
+                    <div className="grid gap-2.5 md:grid-cols-12 items-end">
+                      {/* Item Column: 5 cols for WH1, 4 cols for WH2/WH3 */}
+                      <label className={isWH1(warehouseId) ? "md:col-span-5" : "md:col-span-4"}>
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Item</span>
                         {isPostedEditing ? (
                           <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-700 font-mono">
                             {item.item_name}
                           </div>
                         ) : (
-                          <select disabled={!warehouseId} value={item.item_id} onChange={(e) => { const product = selectableProducts.find((p) => p.id === e.target.value); void updateItem(index, { item_id: e.target.value, item_name: product?.name || "", packaging_unit: product?.unit || "", unit_price: product?.sellingPrice || 0, batch_id: "", batch_no: "", available_quantity: 0 }) }} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100">
-                            <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>{selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
-                        )}
-                      </label>
-                      <label className="md:col-span-2">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Batch No</span>
-                        {isPostedEditing ? (
-                          <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-700 font-mono">
-                            {item.batch_no || "—"}
-                          </div>
-                        ) : (
-                          <select
-                            value={item.batch_no}
-                            onChange={(e) => {
-                              const rawOpts = batchOptions[index] || []
-                              const batch = rawOpts.find((b) => b.batch_no === e.target.value)
-                              void updateItem(index, {
-                                batch_no: e.target.value,
-                                batch_id: e.target.value,
-                                packaging_unit: batch?.packaging_unit || item.packaging_unit,
-                                available_quantity: batch?.available_quantity || item.available_quantity || 1000,
-                                unit_price: batch?.unit_price ?? item.unit_price,
-                              })
-                            }}
-                            className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold"
+                          <select 
+                            disabled={!warehouseId} 
+                            value={item.item_id} 
+                            onChange={(e) => { 
+                              const product = selectableProducts.find((p) => p.id === e.target.value); 
+                              const isWh1 = isWH1(warehouseId);
+                              const autoBatch = isWh1 ? "N/A" : (product?.batches?.[0]?.batchNo || product?.batch || "");
+                              void updateItem(index, { 
+                                item_id: e.target.value, 
+                                item_name: product?.name || "", 
+                                packaging_unit: product?.unit || (isWh1 ? "Quintal" : "Box"), 
+                                unit_price: product?.sellingPrice || 0, 
+                                batch_id: autoBatch, 
+                                batch_no: autoBatch, 
+                                available_quantity: product?.quantity || 0 
+                              }) 
+                            }} 
+                            className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100"
                           >
-                            <option value="">Select batch</option>
-                            {(() => {
-                              const opts = batchOptions[index] || []
-                              const hasSelected = opts.some((b) => b.batch_no === item.batch_no)
-                              const displayOpts = item.batch_no && !hasSelected
-                                ? [{ batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
-                                : opts
-                              return displayOpts.map((b) => (
-                                <option key={b.batch_no} value={b.batch_no}>
-                                  {b.batch_no}
-                                </option>
-                              ))
-                            })()}
+                            <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>
+                            {selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                         )}
                       </label>
-                      <label className="md:col-span-1">
+
+                      {/* Batch Column: Completely removed for WH1; 2 cols for WH2/WH3 */}
+                      {!isWH1(warehouseId) && (
+                        <label className="md:col-span-2">
+                          <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">
+                            Batch No
+                          </span>
+                          {isPostedEditing ? (
+                            <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-700 font-mono">
+                              {item.batch_no || "—"}
+                            </div>
+                          ) : (
+                            <select
+                              value={item.batch_no}
+                              onChange={(e) => {
+                                const rawOpts = batchOptions[index] || []
+                                const batch = rawOpts.find((b) => b.batch_no === e.target.value)
+                                void updateItem(index, {
+                                  batch_no: e.target.value,
+                                  batch_id: e.target.value,
+                                  packaging_unit: batch?.packaging_unit || item.packaging_unit,
+                                  available_quantity: batch?.available_quantity || item.available_quantity || 1000,
+                                  unit_price: batch?.unit_price ?? item.unit_price,
+                                })
+                              }}
+                              className={`h-10 w-full rounded-xl text-xs font-bold ${
+                                issueFormErrors.items && (!item.batch_no || item.batch_no === "N/A") 
+                                  ? "border border-rose-400 bg-rose-50" 
+                                  : "border border-zinc-200 bg-white"
+                              } px-2`}
+                            >
+                              <option value="">Select batch</option>
+                              {(() => {
+                                const opts = batchOptions[index] || []
+                                const hasSelected = opts.some((b) => b.batch_no === item.batch_no)
+                                const displayOpts = item.batch_no && !hasSelected && item.batch_no !== "N/A"
+                                  ? [{ batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
+                                  : opts
+                                return displayOpts.map((b) => (
+                                  <option key={b.batch_no} value={b.batch_no}>
+                                    {b.batch_no} {b.available_quantity ? `(${b.available_quantity} avail)` : ""}
+                                  </option>
+                                ))
+                              })()}
+                            </select>
+                          )}
+                        </label>
+                      )}
+
+                      {/* Quantity: 2 cols for WH1, 1 col for WH2/WH3 */}
+                      <label className={isWH1(warehouseId) ? "md:col-span-2" : "md:col-span-1"}>
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Qty</span>
                         {isPostedEditing ? (
                           <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-mono font-black text-zinc-700">
                             {item.quantity}
                           </div>
                         ) : (
-                          <input type="number" min="1" value={item.quantity} onChange={(e) => void updateItem(index, { quantity: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold" />
+                          <input type="number" min={1} value={item.quantity === 0 ? "" : item.quantity} onChange={(e) => void updateItem(index, { quantity: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-center font-mono text-xs font-black" />
                         )}
                       </label>
+
+                      {/* Unit: 1 col */}
                       <label className="md:col-span-1">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Price</span>
-                        <input readOnly value={money(item.unit_price)} className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2 text-right font-mono text-xs font-black text-zinc-700" />
+                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Unit</span>
+                        <input readOnly value={item.packaging_unit || (isWH1(warehouseId) ? "Quintal" : "Box")} className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2 text-center text-xs font-bold text-zinc-700" />
                       </label>
+
+                      {/* Unit Price: 2 cols */}
+                      <label className="md:col-span-2">
+                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Unit Price</span>
+                        {isPostedEditing ? (
+                          <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2 text-right font-mono text-xs font-bold text-zinc-700 flex items-center justify-end">
+                            {money(item.unit_price)}
+                          </div>
+                        ) : (
+                          <input type="number" min={0} value={item.unit_price === 0 ? "" : item.unit_price} onChange={(e) => void updateItem(index, { unit_price: Number(e.target.value) })} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-bold" />
+                        )}
+                      </label>
+
+                      {/* Amount: 2 cols */}
                       <label className="md:col-span-2">
                         <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Amount</span>
                         <input readOnly value={money(item.amount)} className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-right font-mono text-xs font-black text-zinc-950" />
@@ -1322,6 +1688,21 @@ export default function SalesIssued() {
                 </div>
                 <div className="flex gap-4 text-sm font-black"><span>Total Quantity: {totalQuantity.toLocaleString()}</span><span>Grand Total: {money(grandTotal)}</span></div>
               </div>
+
+              {Object.keys(issueFormErrors).length > 0 && (
+                <div className="mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold space-y-1.5 animate-in fade-in-50">
+                  <div className="flex items-center gap-1.5 font-black text-rose-700 uppercase tracking-wider text-[11px]">
+                    <AlertCircle className="size-4 shrink-0 text-rose-600" />
+                    Please complete the required items before saving sales issue:
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-800 font-medium pl-1">
+                    {Object.values(issueFormErrors).map((msg, i) => (
+                      <li key={i}>{msg}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
                 <button
                   type="button"

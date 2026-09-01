@@ -164,14 +164,16 @@ export async function fetchTradeAndAdviceDocs(params: {
     }
   }
 
-  // 2. Resolve Trade License (Order/Issue specific or from Customer Registry)
+  // 2. Resolve Trade License / Bank Permit (Order/Issue specific or from Customer Registry)
   let tradeLicense: DocumentInfo | null = null
   const tradeDoc = attachedDocs.find(
     (d) =>
+      d.document_type === "Bank Permit" ||
       d.document_type === "Trade License" ||
       d.document_type === "Trade Paper" ||
-      d.file_name?.toLowerCase().includes("license") ||
-      d.file_name?.toLowerCase().includes("permit")
+      d.document_type?.toLowerCase().includes("permit") ||
+      d.file_name?.toLowerCase().includes("permit") ||
+      d.file_name?.toLowerCase().includes("license")
   )
 
   if (tradeDoc && tradeDoc.file_url) {
@@ -194,7 +196,7 @@ export async function fetchTradeAndAdviceDocs(params: {
 
     if (matchedCust?.tradePaperUrl) {
       tradeLicense = {
-        name: matchedCust.tradePaperFileName || "Trade License.pdf",
+        name: matchedCust.tradePaperFileName || "Permit Document.pdf",
         url: matchedCust.tradePaperUrl,
         uploadedAt: matchedCust.tradePaperUploadedAt || new Date().toISOString(),
         uploadedBy: matchedCust.name,
@@ -210,7 +212,7 @@ export async function fetchTradeAndAdviceDocs(params: {
 }
 
 /**
- * Persists a Trade License across all linked records AND updates the customer registry profile in erpStore.
+ * Persists a Trade License / Bank Permit across all linked records AND updates the customer registry profile in erpStore.
  */
 export async function saveTradeLicense(params: {
   customerId?: string
@@ -221,12 +223,14 @@ export async function saveTradeLicense(params: {
   fileUrl: string
   fileSize?: number
   uploadedBy?: string
+  documentType?: string
 }): Promise<void> {
-  const { customerId, customerName, salesOrderId, salesIssueId, fileName, fileUrl, fileSize, uploadedBy } = params
+  const { customerId, customerName, salesOrderId, salesIssueId, fileName, fileUrl, fileSize, uploadedBy, documentType } = params
   if (!fileName || !fileUrl) return
 
   const now = new Date().toISOString()
   const user = uploadedBy || "Sales Officer"
+  const docType = documentType || "Trade License"
 
   // 1. Sync to Customer Registry in erpStore
   const customers = erpStore.getCustomers()
@@ -262,13 +266,13 @@ export async function saveTradeLicense(params: {
       uploadShipmentDoc({
         record_id: rec.id,
         record_type: rec.type,
-        document_type: "Trade License",
+        document_type: docType,
         file_name: fileName,
         file_url: fileUrl,
         file_size: fileSize || 102400,
         uploaded_at: now,
         uploaded_by: user,
-      }).catch((err) => console.warn(`Failed saving Trade License for ${rec.id}:`, err))
+      }).catch((err) => console.warn(`Failed saving ${docType} for ${rec.id}:`, err))
     )
   )
 }

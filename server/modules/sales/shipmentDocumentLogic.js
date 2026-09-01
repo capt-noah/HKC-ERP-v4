@@ -88,12 +88,20 @@ export function evaluateShipmentDocs({ record, items = [], attachments = [], rul
   const activeRules = rules.filter((r) => r.applies_to === appliesTo && r.is_required)
   const originCountry = record?.origin_country || record?.originCountry || record?.supplierCountry || record?.origin || null
   const destinationRegion = record?.destination_region || record?.destinationRegion || record?.destination || null
+  const rawWarehouse = String(record?.warehouse || record?.warehouse_id || record?.warehouseName || "").toUpperCase()
+  const isWH1Record = rawWarehouse.includes("WH1") || rawWarehouse.includes("WH-01") || rawWarehouse.includes("WH 1") || rawWarehouse.includes("AGRI")
+  const isCreditOrder = String(record?.payment_type || record?.paymentType || "").toLowerCase() === "credit"
 
   const categories = new Set(
     (items || []).map((i) => i.category || i.product_category || i.itemCategory || "").filter(Boolean)
   )
 
   const applicableRules = activeRules.filter((rule) => {
+    // Waive Payment Advice on Credit sales orders
+    if (appliesTo === "sales_order" && rule.document_type === "Payment Advice" && isCreditOrder) {
+      return false
+    }
+
     // Check origin country match
     if (rule.origin_country && originCountry) {
       if (rule.origin_country.toLowerCase() !== originCountry.toLowerCase()) {
@@ -121,8 +129,15 @@ export function evaluateShipmentDocs({ record, items = [], attachments = [], rul
   // Deduplicate required document types
   const requiredDocTypesMap = new Map()
   applicableRules.forEach((rule) => {
-    if (!requiredDocTypesMap.has(rule.document_type)) {
-      requiredDocTypesMap.set(rule.document_type, rule.description || `Required for ${appliesTo.replace("_", " ")}`)
+    let docType = rule.document_type
+    let desc = rule.description || `Required for ${appliesTo.replace("_", " ")}`
+    if (isWH1Record && docType === "Trade License") {
+      docType = "Bank Permit"
+      desc = "Mandatory banking permit for export commodities"
+    }
+
+    if (!requiredDocTypesMap.has(docType)) {
+      requiredDocTypesMap.set(docType, desc)
     }
   })
 
@@ -137,7 +152,16 @@ export function evaluateShipmentDocs({ record, items = [], attachments = [], rul
   const missing = []
 
   for (const [docType, reason] of requiredDocTypesMap.entries()) {
-    const matchedFile = attachedTypesMap.get(docType.toLowerCase().trim())
+    let matchedFile = attachedTypesMap.get(docType.toLowerCase().trim())
+    // For WH1 Bank Permit, also accept Trade License if present
+    if (!matchedFile && isWH1Record && docType === "Bank Permit") {
+      matchedFile = attachedTypesMap.get("trade license") || attachedTypesMap.get("trade paper")
+    }
+    // For Trade License, also accept Bank Permit
+    if (!matchedFile && docType === "Trade License") {
+      matchedFile = attachedTypesMap.get("bank permit") || attachedTypesMap.get("bank permit / advice")
+    }
+
     if (matchedFile) {
       satisfied.push({ document_type: docType, file: matchedFile })
     } else {

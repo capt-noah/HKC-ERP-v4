@@ -199,7 +199,7 @@ export default function CreditSalesAttachment() {
         id: item.id,
         itemName: item.item_name || product?.name || item.item_id || "Product",
         batchNo: item.batch_no || product?.batch || "BATCH-MAIN",
-        packagingUnit: item.packaging_unit || product?.unit || "Box",
+        packagingUnit: item.packaging_unit || product?.unit || ((issue?.warehouse_id || "").toUpperCase().includes("WH1") ? "Quintal" : "Box"),
         quantity: Number(item.quantity || 0),
         unitPrice: Number(item.unit_price || 0),
         amount: Number(item.amount || item.quantity * item.unit_price || 0),

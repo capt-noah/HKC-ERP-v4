@@ -14,6 +14,7 @@ import {
   Phone,
   ExternalLink,
   Clock,
+  AlertCircle,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -37,24 +38,43 @@ import {
   fetchAllShipmentDocs,
 } from "@/lib/tradeDocumentService"
 
+const isWH1 = (w?: string) => {
+  if (!w) return false
+  const upper = w.toUpperCase()
+  return upper.includes("WH1") || upper.includes("WH-01") || upper.includes("WH 1") || upper.includes("AGRI")
+}
+
+const COMMODITY_UNITS = ["Quintal", "Ton"]
+const CONTAINER_UNITS = ["Box", "Bottle", "Vial", "Sachet", "Pack", "Carton"]
+
 function resolveSalesOrderDocs(
   soId: string,
   customerName: string,
   tradePaperUrl: string | undefined,
   tradePaperFileName: string | undefined,
-  attachments: ShipmentDocAttachment[]
+  attachments: ShipmentDocAttachment[],
+  warehouse?: string
 ) {
   const docsList = [...(attachments || [])]
-  let tradeLicense = docsList.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-  const paymentAdvice = docsList.find((d) => d.document_type === "Payment Advice")
+  const isWh1Order = isWH1(warehouse)
+  const defaultDocType = isWh1Order ? "Bank Permit" : "Trade License"
+
+  let tradeLicense = docsList.find(
+    (d) =>
+      d.document_type === "Bank Permit" ||
+      d.document_type === "Trade License" ||
+      d.document_type === "Trade Paper" ||
+      d.document_type?.toLowerCase().includes("permit")
+  )
+  const paymentAdvice = docsList.find((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
 
   if (!tradeLicense && tradePaperUrl) {
     tradeLicense = {
-      id: `CUST-TL-${soId}`,
+      id: `CUST-DOC-${soId}`,
       record_id: soId,
       record_type: "sales_order",
-      document_type: "Trade License",
-      file_name: tradePaperFileName || "Trade License.pdf",
+      document_type: defaultDocType,
+      file_name: tradePaperFileName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
       file_size: 102400,
       file_url: tradePaperUrl,
       uploaded_at: new Date().toISOString(),
@@ -71,8 +91,6 @@ function resolveSalesOrderDocs(
 }
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
-
-const CONTAINER_UNITS = ["Box", "Bottle", "Vial", "Sachet"]
 
 export default function SalesOrders() {
   const { showToast } = useFeedback()
@@ -95,6 +113,12 @@ export default function SalesOrders() {
 
   const [soAttachmentsMap, setSoAttachmentsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
   const [soAttachmentsLoaded, setSoAttachmentsLoaded] = useState(false)
+
+  // Hydrate sales & inventory data on mount
+  useEffect(() => {
+    void erp.loadSalesData()
+    void erp.loadInventoryData()
+  }, [erp])
 
   // Batch load all shipment documents on mount to eliminate N separate async calls
   useEffect(() => {
@@ -184,7 +208,7 @@ export default function SalesOrders() {
   const [custPhone, setCustPhone] = useState("")
   const [custEmail, setCustEmail] = useState("")
   const [custAddress, setCustAddress] = useState("")
-  const [newPaymentType, setNewPaymentType] = useState<"Cash" | "Credit">("Cash")
+  const [newPaymentType, setNewPaymentType] = useState<"Cash" | "Credit">("Credit")
 
   // Staged Attachments
   const [stagedTradePaperName, setStagedTradePaperName] = useState("")
@@ -200,6 +224,10 @@ export default function SalesOrders() {
   const [newWarehouse, setNewWarehouse] = useState("")
   const [newDesc, setNewDesc] = useState("")
   const [orderItems, setOrderItems] = useState<SalesOrderItem[]>([])
+
+  // Inline Form Validation Errors
+  const [createFormErrors, setCreateFormErrors] = useState<Record<string, string>>({})
+  const [editFormErrors, setEditFormErrors] = useState<Record<string, string>>({})
 
   // New Quotation Form State
   const [quoteCustomerId, setQuoteCustomerId] = useState("")
@@ -251,20 +279,39 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
   // Open New Order modal prefilled with default line item and product warehouse
   const handleOpenNewOrderModal = () => {
-    const defaultProduct = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", sku: "AMX-500", valuationRate: 150, unit: "Box", sellingPrice: 150, warehouse: "WH1" }
-    const loadedPrice = defaultProduct.sellingPrice || defaultProduct.unitCost || defaultProduct.valuationRate || 150
-    
-    // Robustly resolve warehouse code
-    const targetWh = resolveWarehouseCode(defaultProduct.warehouse, warehouses)
+    const targetWh = soWhFilter !== "ALL" 
+      ? soWhFilter 
+      : (warehouses[0]?.code || warehouses[0]?.id || "WH1")
+    const isWh1Target = isWH1(targetWh)
+    const matchingProducts = products.filter(p => !targetWh || p.warehouse === targetWh || resolveWarehouseCode(p.warehouse, warehouses) === targetWh)
+    const defaultProduct = matchingProducts[0] || products[0] || (isWh1Target 
+      ? { id: "PRD-001", name: "Sesame Seed", sku: "SES-001", valuationRate: 1500, unit: "Quintal", sellingPrice: 1500, warehouse: "WH1" }
+      : { id: "PRD-002", name: "Oxytetracycline 20%", sku: "OXY-002", valuationRate: 850, unit: "Box", sellingPrice: 850, warehouse: "WH2" }
+    )
+    const loadedPrice = defaultProduct.sellingPrice || defaultProduct.unitCost || defaultProduct.valuationRate || 1500
+    const defaultUnit = isWh1Target ? (defaultProduct.unit === "Ton" ? "Ton" : "Quintal") : (defaultProduct.unit || "Box")
+
     setNewWarehouse(targetWh)
-    setNewPaymentType("Cash")
+    setNewPaymentType(isWh1Target ? "Credit" : "Cash")
+    setNewCustomerId(customers[0]?.id || "")
+    setCustomerSearchInput("")
+    setShowCustomerDropdown(false)
+    setCustPhone(customers[0]?.phone || "")
+    setCustEmail(customers[0]?.email || "")
+    setCustAddress(customers[0]?.address || "")
+    setNewDesc("")
+    setStagedTradePaperName("")
+    setStagedTradePaperUrl("")
+    setStagedPaymentAdviceName("")
+    setStagedPaymentAdviceUrl("")
+    setIsNewlyUploadedTradeLicense(false)
 
     setOrderItems([
       {
         productId: defaultProduct.id,
         name: defaultProduct.name,
         qty: 10,
-        unit: defaultProduct.unit || "Box",
+        unit: defaultUnit,
         unitPrice: loadedPrice,
         total: loadedPrice * 10,
       },
@@ -283,16 +330,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         const prod = products.find((p) => p.id === value)
         if (prod) {
           const loadedPrice = prod.sellingPrice || prod.unitCost || prod.valuationRate || 150
+          const targetWh = !isEditing ? resolveWarehouseCode(prod.warehouse, warehouses) : (editingOrder?.warehouse || newWarehouse)
+          const targetIsWh1 = isWH1(targetWh)
+          const prodUnit = targetIsWh1 ? (prod.unit === "Ton" ? "Ton" : "Quintal") : (prod.unit || "Box")
+
           current.productId = prod.id
           current.name = prod.name
-          current.unit = prod.unit || "Box"
+          current.unit = prodUnit
           current.unitPrice = loadedPrice
           current.total = current.qty * current.unitPrice
 
-          // Auto-bind warehouse to product's designated stock warehouse
-          if (!isEditing) {
-            const targetWh = resolveWarehouseCode(prod.warehouse, warehouses)
+          // If no warehouse has been chosen yet, auto-bind to product's designated stock warehouse
+          if (!isEditing && !newWarehouse) {
             setNewWarehouse(targetWh)
+            if (targetIsWh1) {
+              setNewPaymentType("Credit")
+            }
           }
         }
       } else if (field === "qty") {
@@ -312,17 +365,70 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     })
   }
 
+  const handleWarehouseChange = (whCode: string, isEditing = false) => {
+    const isWh1 = isWH1(whCode)
+    if (isEditing && editingOrder) {
+      setEditingOrder({ ...editingOrder, warehouse: whCode })
+      if (isWh1) {
+        setEditingPaymentType("Credit")
+      }
+      setEditingOrderItems((prev) =>
+        prev.map((item) => {
+          const prod = products.find((p) => p.id === item.productId)
+          let newUnit = item.unit
+          if (isWh1) {
+            if (!COMMODITY_UNITS.includes(newUnit)) {
+              newUnit = prod?.unit === "Ton" ? "Ton" : "Quintal"
+            }
+          } else {
+            if (!CONTAINER_UNITS.includes(newUnit)) {
+              newUnit = prod?.unit && CONTAINER_UNITS.includes(prod.unit) ? prod.unit : "Box"
+            }
+          }
+          return { ...item, unit: newUnit }
+        })
+      )
+    } else {
+      setNewWarehouse(whCode)
+      if (isWh1) {
+        setNewPaymentType("Credit")
+      } else {
+        setNewPaymentType("Cash")
+      }
+      setOrderItems((prev) =>
+        prev.map((item) => {
+          const prod = products.find((p) => p.id === item.productId)
+          let newUnit = item.unit
+          if (isWh1) {
+            if (!COMMODITY_UNITS.includes(newUnit)) {
+              newUnit = prod?.unit === "Ton" ? "Ton" : "Quintal"
+            }
+          } else {
+            if (!CONTAINER_UNITS.includes(newUnit)) {
+              newUnit = prod?.unit && CONTAINER_UNITS.includes(prod.unit) ? prod.unit : "Box"
+            }
+          }
+          return { ...item, unit: newUnit }
+        })
+      )
+    }
+  }
+
   const handleAddOrderItemRow = (isEditing = false) => {
-    const p = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", unit: "Box", valuationRate: 150, sellingPrice: 150 }
-    const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 150
+    const currentWh = isEditing ? editingOrder?.warehouse : newWarehouse
+    const targetIsWh1 = isWH1(currentWh)
+    const p = products[0] || { id: "PRD-001", name: "Sesame Seed", unit: targetIsWh1 ? "Quintal" : "Box", valuationRate: 1500, sellingPrice: 1500 }
+    const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
+    const defaultUnit = targetIsWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
     const setter = isEditing ? setEditingOrderItems : setOrderItems
+
     setter((prev) => [
       ...prev,
       {
         productId: p.id,
         name: p.name,
         qty: 10,
-        unit: p.unit || "Box",
+        unit: defaultUnit,
         unitPrice: loadedPrice,
         total: loadedPrice * 10,
       },
@@ -337,21 +443,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
   // State for Editing Sales Order
   const [editingOrderItems, setEditingOrderItems] = useState<SalesOrderItem[]>([])
   const [editingCustPhone, setEditingCustPhone] = useState("")
-  const [editingPaymentType, setEditingPaymentType] = useState<"Cash" | "Credit">("Cash")
+  const [editingPaymentType, setEditingPaymentType] = useState<"Cash" | "Credit">("Credit")
 
   const handleOpenEditModal = async (so: SalesOrder) => {
+    const isWh1 = isWH1(so.warehouse)
     setEditingOrder(so)
     setEditingCustPhone(so.customerPhone || "")
     setCustomerSearchInput(so.customer)
-    setEditingPaymentType(so.paymentType || "Cash")
+    setEditingPaymentType(so.paymentType || (isWh1 ? "Credit" : "Cash"))
     setEditingOrderItems(so.items.length > 0 ? [...so.items] : [
       {
         productId: products[0]?.id || "PRD-001",
-        name: products[0]?.name || "Amoxicillin 500mg",
+        name: products[0]?.name || (isWh1 ? "Sesame Seed" : "Amoxicillin 500mg"),
         qty: 10,
-        unit: products[0]?.unit || "Box",
-        unitPrice: products[0]?.valuationRate || 150,
-        total: (products[0]?.valuationRate || 150) * 10,
+        unit: isWh1 ? "Quintal" : (products[0]?.unit || "Box"),
+        unitPrice: products[0]?.valuationRate || 1500,
+        total: (products[0]?.valuationRate || 1500) * 10,
       }
     ])
 
@@ -364,7 +471,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       so.customer,
       cust?.tradePaperUrl,
       cust?.tradePaperFileName,
-      cachedDocs
+      cachedDocs,
+      so.warehouse
     )
 
     setStagedTradePaperName(resolved.tradeLicense?.file_name || "")
@@ -384,7 +492,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           so.customer,
           cust?.tradePaperUrl,
           cust?.tradePaperFileName,
-          freshDocs
+          freshDocs,
+          so.warehouse
         )
         if (updatedResolved.tradeLicense) {
           setStagedTradePaperName(updatedResolved.tradeLicense.file_name || "")
@@ -402,19 +511,36 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     e.preventDefault()
     if (!editingOrder) return
 
+    const isWh1Order = isWH1(editingOrder.warehouse)
     const matchedCust = customers.find((c) => c.id === editingOrder.customerId || c.name === editingOrder.customer)
+
+    const errors: Record<string, string> = {}
+    if (!isWh1Order && !editingCustPhone.trim()) {
+      errors.phone = "Customer phone number is required for WH2/WH3 orders."
+    }
+
     if (matchedCust) {
-      const evaluation = getTradeLicenseStatus(matchedCust)
+      const evaluation = getTradeLicenseStatus(matchedCust, editingOrder.warehouse)
       if (evaluation.status !== "valid" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
-        showToast("Validation Error", "warning", "An active (unexpired) Trade License must be uploaded for this customer.")
-        return
+        errors.tradePaper = isWh1Order 
+          ? "A valid Customer Bank Permit file must be attached." 
+          : "An active (unexpired) Trade License file must be attached."
       }
     }
 
     if (editingPaymentType === "Cash" && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
-      showToast("Validation Error", "warning", "Payment Advice (deposit receipt) is mandatory for Cash orders.")
+      errors.paymentAdvice = "Payment Advice deposit receipt is mandatory when saving or converting to a Cash order."
+    }
+
+    if (editingOrderItems.length === 0 || editingOrderItems.some((i) => !i.productId || Number(i.qty) <= 0)) {
+      errors.items = "Order must contain at least one valid item with a quantity greater than 0."
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setEditFormErrors(errors)
       return
     }
+    setEditFormErrors({})
 
     const sanitizedItems: SalesOrderItem[] = editingOrderItems.map((i) => {
       const q = Math.max(1, Number(i.qty) || 1)
@@ -425,7 +551,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     const totalAmt = sanitizedItems.reduce((sum, i) => sum + i.total, 0)
     const updatedSo: SalesOrder = {
       ...editingOrder,
-      customerPhone: editingCustPhone.trim(),
+      customerPhone: isWh1Order ? "" : editingCustPhone.trim(),
       items: sanitizedItems,
       amount: totalAmt,
       paymentType: editingPaymentType,
@@ -442,10 +568,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           salesOrderId: editingOrder.id,
           fileName: stagedTradePaperName,
           fileUrl: stagedTradePaperUrl,
+          documentType: isWh1Order ? "Bank Permit" : "Trade License",
           uploadedBy: "Sales Officer",
         })
       } catch (err) {
-        console.error("Failed uploading Trade License:", err)
+        console.error(`Failed uploading document:`, err)
       }
     }
 
@@ -481,38 +608,59 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
   // Handle Create Sales Order
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
+    const targetWh = newWarehouse || (warehouses[0]?.code || "WH1")
+    const isWh1Order = isWH1(targetWh)
+
     let finalCustName = customerSearchInput.trim()
     if (!finalCustName && newCustomerId) {
       const found = customers.find((c) => c.id === newCustomerId)
       if (found) finalCustName = found.name
     }
 
-    if (!custPhone.trim()) {
-      showToast("Validation Error", "warning", "Customer phone number is required.")
-      return
-    }
-
     let selectedCust = customers.find(
       (c) => c.name.toLowerCase() === finalCustName.toLowerCase() || c.id === newCustomerId
     )
 
+    const errors: Record<string, string> = {}
+    if (!finalCustName) {
+      errors.customer = "Customer selection or customer name is required."
+    }
+
+    if (!isWh1Order && !custPhone.trim()) {
+      errors.phone = "Customer phone number is required for WH2/WH3 orders."
+    }
+
     if (selectedCust) {
-      const evaluation = getTradeLicenseStatus(selectedCust)
+      const evaluation = getTradeLicenseStatus(selectedCust, targetWh)
       if (evaluation.status !== "valid" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
-        showToast("Validation Error", "warning", "An active (unexpired) Trade License must be uploaded for this customer.")
-        return
+        errors.tradePaper = isWh1Order 
+          ? "Customer Bank Permit file is required before submitting this order." 
+          : "An active (unexpired) Trade License file is required before submitting this order."
       }
+    } else if (!stagedTradePaperUrl || !stagedTradePaperName) {
+      errors.tradePaper = isWh1Order 
+        ? "Customer Bank Permit file is required for new customer orders." 
+        : "Trade License file is required for new customer orders."
     }
 
     if (newPaymentType === "Cash" && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
-      showToast("Validation Error", "warning", "Payment Advice (deposit receipt) is mandatory for Cash orders.")
-      return
+      errors.paymentAdvice = "Payment Advice (bank deposit receipt) is mandatory for Cash orders."
     }
 
     if (orderItems.length === 0) {
-      showToast("Validation Error", "warning", "Please add at least one line item.")
+      errors.items = "Please add at least one line item."
+    } else {
+      const hasInvalidItem = orderItems.some((i) => !i.productId || Number(i.qty) <= 0)
+      if (hasInvalidItem) {
+        errors.items = "All line items must have a selected product and quantity greater than 0."
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setCreateFormErrors(errors)
       return
     }
+    setCreateFormErrors({})
 
     if (selectedCust && (stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "") || stagedTradePaperName !== (selectedCust.tradePaperFileName || ""))) {
       erp.updateCustomer(selectedCust.id, {
@@ -530,11 +678,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         country: "Ethiopia",
         region: "Addis Ababa",
         contactPerson: finalCustName,
-        phone: custPhone.trim(),
+        phone: isWh1Order ? "" : custPhone.trim(),
         email: custEmail.trim() || `${finalCustName.toLowerCase().replace(/\s+/g, "")}@example.com`,
         address: custAddress.trim() || "Addis Ababa, Ethiopia",
-        category: "Pharmaceutical Distributor",
-        tradePaperFileName: stagedTradePaperName || "Trade License.pdf",
+        category: isWh1Order ? "Commodities Exporter / Union" : "Pharmaceutical Distributor",
+        tradePaperFileName: stagedTradePaperName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
         tradePaperUrl: stagedTradePaperUrl,
         tradePaperUploadedAt: new Date().toISOString(),
       }
@@ -548,14 +696,13 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }))
     const totalAmt = finalItems.reduce((sum, i) => sum + i.total, 0)
 
-    const targetWh = newWarehouse || (warehouses[0]?.code || "WH1")
     const wh = warehouses.find((w) => w.code === targetWh || w.id === targetWh)
 
     const newSo: SalesOrder = {
       id: soId,
       customerId: selectedCust.id,
       customer: selectedCust.name,
-      customerPhone: custPhone.trim(),
+      customerPhone: isWh1Order ? "" : custPhone.trim(),
       customerGroup: selectedCust.category,
       warehouse: targetWh,
       warehouseName: wh ? `${wh.code} - ${wh.name}` : targetWh,
@@ -578,8 +725,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       paymentType: newPaymentType,
     }
 
-    // Persist Trade License and Payment Advice via unified tradeDocumentService
-    const activeTradeName = stagedTradePaperName || selectedCust.tradePaperFileName || "Trade License.pdf"
+    // Persist Trade License / Bank Permit and Payment Advice via unified tradeDocumentService
+    const activeTradeName = stagedTradePaperName || selectedCust.tradePaperFileName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf")
     const activeTradeUrl = stagedTradePaperUrl || selectedCust.tradePaperUrl || ""
 
     if (activeTradeUrl && activeTradeName) {
@@ -590,10 +737,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           salesOrderId: soId,
           fileName: activeTradeName,
           fileUrl: activeTradeUrl,
+          documentType: isWh1Order ? "Bank Permit" : "Trade License",
           uploadedBy: "Sales Officer",
         })
       } catch (err) {
-        console.error("Failed uploading Trade License:", err)
+        console.error(`Failed uploading ${isWh1Order ? "Bank Permit" : "Trade License"}:`, err)
       }
     }
 
@@ -813,7 +961,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   if (!isCredit) {
                     return (
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Cash
+                        Sales
                       </span>
                     )
                   }
@@ -879,7 +1027,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 {(() => {
                   const docs = soAttachmentsMap[so.id] || []
                   const cust = customers.find((c) => c.id === so.customerId || c.name === so.customer)
-                  const hasTrade = docs.some((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper") || !!cust?.tradePaperUrl
+                  const isWh1 = isWH1(so.warehouse)
+                  const docName = isWh1 ? "Bank Permit" : "Trade License"
+                  const hasTrade = docs.some((d) => d.document_type === "Bank Permit" || d.document_type === "Trade License" || d.document_type === "Trade Paper") || !!cust?.tradePaperUrl
                   const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
                   const isCredit = so.paymentType === "Credit"
 
@@ -893,7 +1043,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     }
                     return (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                        <AlertTriangle className="size-3 text-amber-600" /> Trade License Missing
+                        <AlertTriangle className="size-3 text-amber-600" /> {docName} Missing
                       </span>
                     )
                   }
@@ -909,7 +1059,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   if (!hasTrade && !hasAdvice) {
                     return (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                        <AlertTriangle className="size-3 text-amber-600" /> Trade & Advice Missing
+                        <AlertTriangle className="size-3 text-amber-600" /> {docName} & Advice Missing
                       </span>
                     )
                   }
@@ -922,7 +1072,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   }
                   return (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                      <AlertTriangle className="size-3 text-amber-600" /> Trade License Missing
+                      <AlertTriangle className="size-3 text-amber-600" /> {docName} Missing
                     </span>
                   )
                 })()}
@@ -1083,23 +1233,26 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     <div className="relative flex items-center">
                       <input
                         type="text"
-                        required
-                        placeholder="Search existing or type new customer..."
+                        placeholder="Search or enter customer..."
                         value={customerSearchInput}
-                        onFocus={() => setShowCustomerDropdown(true)}
                         onChange={(e) => {
                           setCustomerSearchInput(e.target.value)
                           setShowCustomerDropdown(true)
-                          const matched = customers.find((c) => (c.name || "").toLowerCase() === e.target.value.toLowerCase())
-                          if (matched) {
-                            setNewCustomerId(matched.id)
-                            setCustPhone(matched.phone || "")
-                            setCustEmail(matched.email || "")
-                            setCustAddress(matched.address || "")
-                            const evaluation = getTradeLicenseStatus(matched)
-                            if (evaluation.status === "valid" && matched.tradePaperFileName && matched.tradePaperUrl) {
-                              setStagedTradePaperName(matched.tradePaperFileName)
-                              setStagedTradePaperUrl(matched.tradePaperUrl)
+                          setCreateFormErrors((prev) => {
+                            const next = { ...prev }
+                            delete next.customer
+                            return next
+                          })
+                          const match = customers.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase())
+                          if (match) {
+                            setNewCustomerId(match.id)
+                            setCustPhone(match.phone || "")
+                            setCustEmail(match.email || "")
+                            setCustAddress(match.address || "")
+                            const evaluation = getTradeLicenseStatus(match)
+                            if (evaluation.status === "valid" && match.tradePaperFileName && match.tradePaperUrl) {
+                              setStagedTradePaperName(match.tradePaperFileName)
+                              setStagedTradePaperUrl(match.tradePaperUrl)
                             } else {
                               setStagedTradePaperName("")
                               setStagedTradePaperUrl("")
@@ -1110,7 +1263,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             setStagedTradePaperUrl("")
                           }
                         }}
-                        className="w-full pl-3 pr-16 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                        className={`w-full pl-3 pr-16 py-2 rounded-xl text-xs font-bold outline-none transition-colors ${
+                          createFormErrors.customer ? "bg-rose-50 border border-rose-400 text-rose-900" : "bg-zinc-50 border border-zinc-200"
+                        }`}
                       />
                       <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
                         {customerSearchInput && (
@@ -1137,6 +1292,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         </button>
                       </div>
                     </div>
+                    {createFormErrors.customer && (
+                      <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                        ⚠️ {createFormErrors.customer}
+                      </span>
+                    )}
 
                     {showCustomerDropdown && customers.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white rounded-2xl border border-zinc-200 shadow-xl max-h-48 overflow-y-auto divide-y divide-zinc-100">
@@ -1152,6 +1312,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 setCustPhone(c.phone || "")
                                 setCustEmail(c.email || "")
                                 setCustAddress(c.address || "")
+                                setCreateFormErrors((prev) => {
+                                  const next = { ...prev }
+                                  delete next.customer
+                                  delete next.phone
+                                  return next
+                                })
                                 const evaluation = getTradeLicenseStatus(c)
                                 if (evaluation.status === "valid" && c.tradePaperFileName && c.tradePaperUrl) {
                                   setStagedTradePaperName(c.tradePaperFileName)
@@ -1175,49 +1341,71 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       </div>
                     )}
                   </div>
+                  {(() => {
+                    const isWh1Order = isWH1(newWarehouse)
+                    return (
+                      <>
+                        {!isWh1Order && (
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone *</label>
+                            <div className="relative flex items-center">
+                              <Phone className="size-3.5 text-zinc-400 absolute left-3" />
+                              <input
+                                type="text"
+                                required
+                                placeholder="+251 91 123 4567"
+                                value={custPhone}
+                                onChange={(e) => {
+                                  setCustPhone(e.target.value)
+                                  setCreateFormErrors((prev) => {
+                                    const next = { ...prev }
+                                    delete next.phone
+                                    return next
+                                  })
+                                }}
+                                className={`w-full pl-9 pr-3 py-2 rounded-xl text-xs font-bold outline-none transition-colors ${
+                                  createFormErrors.phone ? "bg-rose-50 border border-rose-400 text-rose-900" : "bg-zinc-50 border border-zinc-200"
+                                }`}
+                              />
+                            </div>
+                            {createFormErrors.phone && (
+                              <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                                ⚠️ {createFormErrors.phone}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
-                  <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone *</label>
-                    <div className="relative flex items-center">
-                      <Phone className="size-3.5 text-zinc-400 absolute left-3" />
-                      <input
-                        type="text"
-                        required
-                        placeholder="+251 91 123 4567"
-                        value={custPhone}
-                        onChange={(e) => setCustPhone(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                      />
-                    </div>
-                  </div>
+                        <div className={isWh1Order ? "md:col-span-3" : "md:col-span-2"}>
+                          <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
+                          <select
+                            value={newPaymentType}
+                            onChange={(e) => setNewPaymentType(e.target.value as "Cash" | "Credit")}
+                            className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                          >
+                            <option value="Credit">Credit</option>
+                            <option value="Cash">Sales</option>
+                          </select>
+                        </div>
 
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
-                    <select
-                      value={newPaymentType}
-                      onChange={(e) => setNewPaymentType(e.target.value as "Cash" | "Credit")}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
-                    >
-                      <option value="Cash">Cash</option>
-                      <option value="Credit">Credit</option>
-                    </select>
-                  </div>
-
-                  <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">
-                      Warehouse <span className="text-[10px] font-normal text-zinc-400 font-mono">(Auto)</span>
-                    </label>
-                    <select 
-                      value={newWarehouse}
-                      disabled={true}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-100 border border-zinc-200 text-xs font-bold outline-none text-zinc-700 cursor-not-allowed"
-                    >
-                      <option value="">Select warehouse</option>
-                      {warehouseOptions.map((warehouse) => (
-                        <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
-                      ))}
-                    </select>
-                  </div>
+                        <div className="md:col-span-3">
+                          <label className="block text-xs font-bold text-zinc-700 mb-1">
+                            Fulfillment Warehouse *
+                          </label>
+                          <select 
+                            value={newWarehouse}
+                            onChange={(e) => handleWarehouseChange(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                          >
+                            <option value="">Select warehouse</option>
+                            {warehouseOptions.map((warehouse) => (
+                              <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
 
                 {!customers.some((c) => c.id === newCustomerId) && customerSearchInput.trim() !== "" && (
@@ -1230,7 +1418,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       className="size-4 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
                     />
                     <label htmlFor="saveCustomerCheck" className="text-xs font-bold text-emerald-950 cursor-pointer">
-                      Save new customer details & Trade License to registry for future orders
+                      Save new customer details & {isWH1(newWarehouse) ? "Bank Permit" : "Trade License"} to registry for future orders
                     </label>
                   </div>
                 )}
@@ -1247,18 +1435,23 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 </div>
 
                 {(() => {
+                  const isWh1Order = isWH1(newWarehouse)
                   const selectedCust = customers.find(c => c.id === newCustomerId)
                   if (selectedCust) {
-                    const evaluation = getTradeLicenseStatus(selectedCust)
-                    if (evaluation.status !== "valid") {
+                    const evaluation = getTradeLicenseStatus(selectedCust, newWarehouse)
+                    if (evaluation.status !== "valid" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
                       return (
                         <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-2 mb-3">
                           <AlertTriangle className="size-4 text-rose-600 shrink-0 mt-0.5" />
                           <div>
-                            <span className="font-black uppercase tracking-wider block">Warning: Trade License Missing or Expired</span>
+                            <span className="font-black uppercase tracking-wider block">
+                              Warning: {isWh1Order ? "Bank Permit Missing" : "Trade License Missing or Expired"}
+                            </span>
                             <span className="text-[11px] block mt-0.5 leading-normal">
-                              This customer's trade license has expired (exceeded 30 days) or is missing. 
-                              You <strong>must</strong> upload a new trade license to create this sales order.
+                              {isWh1Order
+                                ? "This customer does not have an attached Bank Permit on file. Please attach a Bank Permit file to proceed."
+                                : "This customer's trade license has expired (exceeded 30 days) or is missing. You must upload a new trade license to create this sales order."
+                              }
                             </span>
                           </div>
                         </div>
@@ -1269,266 +1462,349 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 })()}
 
                 {/* Minimalistic Required Document Attachments Section */}
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">Required Order Documentation</span>
-                      <span className="text-[11px] text-zinc-500 font-medium block">
-                        {newPaymentType === "Cash"
-                          ? "Attach mandatory Trade License and Payment Advice receipt for this cash order"
-                          : "Attach Trade License for this credit order (Payment Advice can be attached later upon payment in edit mode)"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className={`grid gap-3 ${newPaymentType === "Cash" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
-                    {/* Trade License Dropzone */}
-                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                {(() => {
+                  const isWh1Order = isWH1(newWarehouse)
+                  const docLabel = isWh1Order ? "Bank Permit" : "Trade License / Business Permit"
+                  return (
+                    <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                          <FileText className="size-3.5 text-emerald-600" /> Trade License / Business Permit
-                        </span>
-                        {(() => {
-                          const selectedCust = customers.find(c => c.id === newCustomerId || c.name.toLowerCase() === customerSearchInput.toLowerCase())
-                          const evaluation = selectedCust ? getTradeLicenseStatus(selectedCust) : { status: "missing", daysRemaining: 0 }
-
-                          if (isNewlyUploadedTradeLicense && stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
-                              </span>
-                            )
-                          }
-
-                          if (evaluation.status === "expired" && stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                <AlertTriangle className="size-3 text-rose-600" /> Expired License
-                              </span>
-                            )
-                          }
-
-                          if (evaluation.status === "valid" && stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
-                              </span>
-                            )
-                          }
-
-                          if (!stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                                Required
-                              </span>
-                            )
-                          }
-
-                          return (
-                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                              Pre-attached
-                            </span>
-                          )
-                        })()}
+                        <div>
+                          <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">
+                            {isWh1Order ? "Required Bank Permit" : "Required Order Documentation"}
+                          </span>
+                          <span className="text-[11px] text-zinc-500 font-medium block">
+                            {isWh1Order
+                              ? (newPaymentType === "Cash"
+                                  ? "Attach mandatory Bank Permit and Payment Advice receipt for this cash commodity order"
+                                  : "Attach Bank Permit for this export credit order (Payment Advice not needed on credit)")
+                              : (newPaymentType === "Cash"
+                                  ? "Upload Trade License and Payment Advice (deposit receipt / bank slip) for Cash orders"
+                                  : "Upload Trade License (Payment Advice is optional for credit sales)")
+                            }
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                          <FileCheck className="size-3" /> Select File
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0]
-                              if (f) {
-                                const reader = new FileReader()
-                                reader.onload = () => {
-                                  setStagedTradePaperName(f.name)
-                                  setStagedTradePaperUrl(reader.result as string)
-                                  setIsNewlyUploadedTradeLicense(true)
-                                }
-                                reader.readAsDataURL(f)
+
+                      <div className={`grid gap-3 ${newPaymentType === "Cash" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
+                        {/* Trade License / Bank Permit Dropzone */}
+                        <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                          createFormErrors.tradePaper 
+                            ? "bg-rose-50/40 border-rose-400" 
+                            : "bg-white border-zinc-200"
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                              <FileText className="size-3.5 text-emerald-600" /> {docLabel}
+                            </span>
+                            {(() => {
+                              const selectedCust = customers.find(c => c.name === customerSearchInput || c.id === newCustomerId)
+                              const evaluation = selectedCust ? getTradeLicenseStatus(selectedCust, newWarehouse) : { status: "missing", daysRemaining: 0, isPermanent: isWh1Order, docType: isWh1Order ? "Bank Permit" : "Trade License" }
+
+                              if (isNewlyUploadedTradeLicense && stagedTradePaperName) {
+                                return (
+                                  <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
+                                  </span>
+                                )
                               }
-                            }}
-                          />
-                        </label>
-                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                          {stagedTradePaperName || "No file selected"}
-                        </span>
-                        {stagedTradePaperUrl && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewUrl(stagedTradePaperUrl)
-                              setPreviewName(stagedTradePaperName || "Trade License")
-                            }}
-                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
-                          >
-                            View Doc <ExternalLink className="size-3" />
-                          </button>
+
+                              if (isWh1Order && (stagedTradePaperName || selectedCust?.tradePaperFileName)) {
+                                return (
+                                  <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <CheckCircle2 className="size-3 text-emerald-600" /> Bank Permit Attached (Permanent)
+                                  </span>
+                                )
+                              }
+
+                              if (evaluation.status === "expired" && stagedTradePaperName) {
+                                return (
+                                  <span className="text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <AlertTriangle className="size-3 text-rose-600" /> Expired Permit
+                                  </span>
+                                )
+                              }
+
+                              if (evaluation.status === "valid" && stagedTradePaperName) {
+                                return (
+                                  <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
+                                  </span>
+                                )
+                              }
+
+                              if (!stagedTradePaperName) {
+                                return (
+                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                    Required
+                                  </span>
+                                )
+                              }
+
+                              return (
+                                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                                  Pre-attached
+                                </span>
+                              )
+                            })()}
+                          </div>
+                          <div className="flex items-center gap-2 pt-1">
+                            <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                              <FileCheck className="size-3" /> Select File
+                              <input
+                                type="file"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0]
+                                  if (f) {
+                                    const reader = new FileReader()
+                                    reader.onload = () => {
+                                      setStagedTradePaperName(f.name)
+                                      setStagedTradePaperUrl(reader.result as string)
+                                      setIsNewlyUploadedTradeLicense(true)
+                                      setCreateFormErrors((prev) => {
+                                        const next = { ...prev }
+                                        delete next.tradePaper
+                                        return next
+                                      })
+                                    }
+                                    reader.readAsDataURL(f)
+                                  }
+                                }}
+                              />
+                            </label>
+                            <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedTradePaperName || "No file attached"}</span>
+                            {stagedTradePaperUrl && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewUrl(stagedTradePaperUrl)
+                                  setPreviewName(stagedTradePaperName || docLabel)
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                              >
+                                View Doc <ExternalLink className="size-3" />
+                              </button>
+                            )}
+                          </div>
+                          {createFormErrors.tradePaper && (
+                            <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                              ⚠️ {createFormErrors.tradePaper}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Payment Advice Dropzone */}
+                        {newPaymentType === "Cash" && (
+                          <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                            createFormErrors.paymentAdvice 
+                              ? "bg-rose-50/40 border-rose-400" 
+                              : "bg-white border-zinc-200"
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                                <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
+                              </span>
+                              {stagedPaymentAdviceName ? (
+                                <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
+                              ) : (
+                                <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">Required for Cash</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                                <FileCheck className="size-3" /> Select Advice File
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0]
+                                    if (f) {
+                                      const reader = new FileReader()
+                                      reader.onload = () => {
+                                        setStagedPaymentAdviceName(f.name)
+                                        setStagedPaymentAdviceUrl(reader.result as string)
+                                        setCreateFormErrors((prev) => {
+                                          const next = { ...prev }
+                                          delete next.paymentAdvice
+                                          return next
+                                        })
+                                      }
+                                      reader.readAsDataURL(f)
+                                    }
+                                  }}
+                                />
+                              </label>
+                              <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                                {stagedPaymentAdviceName || "No receipt attached"}
+                              </span>
+                              {stagedPaymentAdviceUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewUrl(stagedPaymentAdviceUrl)
+                                    setPreviewName(stagedPaymentAdviceName || "Payment Advice")
+                                  }}
+                                  className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                                >
+                                  View Doc <ExternalLink className="size-3" />
+                                </button>
+                              )}
+                            </div>
+                            {createFormErrors.paymentAdvice && (
+                              <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                                ⚠️ {createFormErrors.paymentAdvice}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
-
-                    {/* Payment Advice Dropzone - ONLY shown for Cash orders in New Order modal */}
-                    {newPaymentType === "Cash" && (
-                      <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                            <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice / Receipt
-                          </span>
-                          {stagedPaymentAdviceName ? (
-                            <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
-                          ) : (
-                            <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Required</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 pt-1">
-                          <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                            <FileCheck className="size-3" /> Select Advice File
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0]
-                                if (f) {
-                                  const reader = new FileReader()
-                                  reader.onload = () => {
-                                    setStagedPaymentAdviceName(f.name)
-                                    setStagedPaymentAdviceUrl(reader.result as string)
-                                  }
-                                  reader.readAsDataURL(f)
-                                }
-                              }}
-                            />
-                          </label>
-                          <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                            {stagedPaymentAdviceName || "No file selected"}
-                          </span>
-                          {stagedPaymentAdviceUrl && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPreviewUrl(stagedPaymentAdviceUrl)
-                                setPreviewName(stagedPaymentAdviceName || "Payment Advice")
-                              }}
-                              className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
-                            >
-                              View Doc <ExternalLink className="size-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  )
+                })()}
 
                 {/* Line Items Table */}
-                <div className="pt-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-xs font-black uppercase text-zinc-900 tracking-wide">
-                      Contract Line Items (Products, Quantities & Prices)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleAddOrderItemRow(false)}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 transition-colors"
-                    >
-                      <Plus className="size-3" /> Add Item Row
-                    </button>
-                  </div>
+                {(() => {
+                  const isWh1Order = isWH1(newWarehouse)
+                  const availableUnits = isWh1Order ? COMMODITY_UNITS : CONTAINER_UNITS
+                  return (
+                    <div className="pt-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <label className="block text-xs font-black uppercase text-zinc-900 tracking-wide">
+                            Contract Line Items ({isWh1Order ? "Commodities in Quintals / Tons" : "Products & Quantities"})
+                          </label>
+                          {createFormErrors.items && (
+                            <span className="text-[10px] font-bold text-rose-600 block mt-0.5">
+                              ⚠️ {createFormErrors.items}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleAddOrderItemRow(false)
+                            setCreateFormErrors((prev) => {
+                              const next = { ...prev }
+                              delete next.items
+                              return next
+                            })
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 transition-colors"
+                        >
+                          <Plus className="size-3" /> Add Item Row
+                        </button>
+                      </div>
 
-                  <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
-                    <table className="w-full text-left">
-                      <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
-                        <tr>
-                          <th className="px-3 py-2 w-[35%]">Product Item</th>
-                          <th className="px-3 py-2 w-[18%] text-center">Qty</th>
-                          <th className="px-3 py-2 w-[20%] text-center">Unit</th>
-                          <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
-                          <th className="px-3 py-2 w-[7%] text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {orderItems.map((item, index) => {
-                          const p = products.find((prod) => prod.id === item.productId)
-                          const avail = p ? (newWarehouse && newWarehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === newWarehouse)?.qty ?? p.quantity) : p.quantity) : 0
-                          const isOver = item.qty > avail
-                          return (
-                            <tr key={index}>
-                              <td className="p-2">
-                                <select
-                                  value={item.productId}
-                                  onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, false)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
-                                >
-                                  {products.map((prod) => (
-                                    <option key={prod.id} value={prod.id}>{prod.name}</option>
-                                  ))}
-                                </select>
-                                <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                                  <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
-                                  {isOver && (
-                                    <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
-                                      <AlertTriangle className="size-3 text-amber-600 shrink-0" />
-                                      <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="p-2 align-top">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={item.qty === 0 ? "" : item.qty}
-                                  onChange={(e) => handleOrderItemChange(index, "qty", e.target.value, false)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-center"
-                                />
-                              </td>
-                              <td className="p-2 align-top">
-                                <select
-                                  value={item.unit}
-                                  onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, false)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
-                                >
-                                  {CONTAINER_UNITS.map((unit) => (
-                                    <option key={unit} value={unit}>{unit}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="p-2 align-top">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={item.unitPrice === 0 ? "" : item.unitPrice}
-                                  onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, false)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
-                                />
-                              </td>
-                              <td className="p-2 text-center align-top pt-2.5">
-                                {orderItems.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveOrderItemRow(index, false)}
-                                    className="p-1 text-zinc-400 hover:text-rose-600 transition-colors"
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </button>
-                                )}
-                              </td>
+                      <div className={`border rounded-2xl overflow-hidden text-xs transition-colors ${
+                        createFormErrors.items ? "border-rose-400 bg-rose-50/10" : "border-zinc-200"
+                      }`}>
+                        <table className="w-full text-left">
+                          <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
+                            <tr>
+                              <th className="px-3 py-2 w-[35%]">Product Item</th>
+                              <th className="px-3 py-2 w-[18%] text-center">Qty</th>
+                              <th className="px-3 py-2 w-[20%] text-center">Unit</th>
+                              <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
+                              <th className="px-3 py-2 w-[7%] text-center"></th>
                             </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {orderItems.map((item, index) => {
+                              const p = products.find((prod) => prod.id === item.productId)
+                              const avail = p ? (newWarehouse && newWarehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === newWarehouse)?.qty ?? p.quantity) : p.quantity) : 0
+                              const isOver = item.qty > avail
+                              return (
+                                <tr key={index}>
+                                  <td className="p-2">
+                                    <select
+                                      value={item.productId}
+                                      onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, false)}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
+                                    >
+                                      {products.map((prod) => (
+                                        <option key={prod.id} value={prod.id}>{prod.name}</option>
+                                      ))}
+                                    </select>
+                                    <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
+                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                                      {isOver && (
+                                        <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
+                                          <AlertTriangle className="size-3 text-amber-600 shrink-0" />
+                                          <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-2 align-top">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={item.qty === 0 ? "" : item.qty}
+                                      onChange={(e) => handleOrderItemChange(index, "qty", e.target.value, false)}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
+                                    />
+                                  </td>
+                                  <td className="p-2 align-top">
+                                    <select
+                                      value={item.unit}
+                                      onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, false)}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
+                                    >
+                                      {availableUnits.map((u) => (
+                                        <option key={u} value={u}>{u}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="p-2 align-top text-right">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.unitPrice === 0 ? "" : item.unitPrice}
+                                      onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, false)}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-right"
+                                    />
+                                  </td>
+                                  <td className="p-2 align-top text-center">
+                                    <button
+                                      type="button"
+                                      disabled={orderItems.length === 1}
+                                      onClick={() => handleRemoveOrderItemRow(index, false)}
+                                      className="p-1 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:hover:text-zinc-400"
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })()}
 
-                  <div className="mt-3 p-3 bg-zinc-50 rounded-2xl border border-zinc-200/80 font-mono text-xs flex justify-between items-center">
-                    <span className="text-zinc-500 font-sans font-bold">Total Contract Amount:</span>
-                    <span className="font-black text-sm text-emerald-800">
-                      ETB {orderItems.reduce((sum, i) => sum + i.total, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
+                <div className="mt-3 p-3 bg-zinc-50 rounded-2xl border border-zinc-200/80 font-mono text-xs flex justify-between items-center">
+                  <span className="text-zinc-500 font-sans font-bold">Total Contract Amount:</span>
+                  <span className="font-black text-sm text-emerald-800">
+                    ETB {orderItems.reduce((sum, i) => sum + i.total, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </span>
                 </div>
+
+                {Object.keys(createFormErrors).length > 0 && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold space-y-1.5 animate-in fade-in-50">
+                    <div className="flex items-center gap-1.5 font-black text-rose-700 uppercase tracking-wider text-[11px]">
+                      <AlertCircle className="size-4 shrink-0 text-rose-600" />
+                      Please complete the required items before creating contract:
+                    </div>
+                    <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-800 font-medium pl-1">
+                      {Object.values(createFormErrors).map((msg, i) => (
+                        <li key={i}>{msg}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
@@ -1572,41 +1848,43 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               exit={{ opacity: 0, scale: 0.95 }}
               className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
             >
-              {/* Reusable Header with 3-Dot Options Dropdown */}
-              <EditModalHeader
-                title={`Edit Sales Order (${editingOrder.id})`}
-                subtitle="Update contract terms, customer details, products, and required order documentation."
-                onClose={() => setIsEditOrderOpen(false)}
-                onRequestDelete={() => setDeletingOrder(editingOrder)}
-                deleteLabel="Delete Sales Order"
-              />
+      <EditModalHeader
+        title={`Edit Sales Order (${editingOrder.id})`}
+        subtitle="Update contract terms, customer details, products, and required order documentation."
+        onClose={() => setIsEditOrderOpen(false)}
+        onRequestDelete={() => setDeletingOrder(editingOrder)}
+        deleteLabel="Delete Sales Order"
+      />
 
-              <form onSubmit={handleSaveEditOrder} className="space-y-4">
-                {/* ROW 1: Customer Name, Phone Number, Payment Type, Warehouse */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  <div className="md:col-span-4">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
-                    <select 
-                      value={editingOrder.customerId}
-                      onChange={(e) => {
-                        const cust = customers.find((c) => c.id === e.target.value)
-                        setEditingOrder({
-                          ...editingOrder,
-                          customerId: e.target.value,
-                          customer: cust ? cust.name : editingOrder.customer,
-                        })
-                        if (cust) {
-                          setEditingCustPhone(cust.phone || editingCustPhone)
-                        }
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    >
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
+      <form onSubmit={handleSaveEditOrder} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+          <div className="md:col-span-4">
+            <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
+            <select 
+              value={editingOrder.customerId}
+              onChange={(e) => {
+                const cust = customers.find((c) => c.id === e.target.value)
+                setEditingOrder({
+                  ...editingOrder,
+                  customerId: e.target.value,
+                  customer: cust ? cust.name : editingOrder.customer,
+                })
+                if (cust) {
+                  setEditingCustPhone(cust.phone || editingCustPhone)
+                }
+              }}
+              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+            >
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          {(() => {
+            const isWh1Editing = isWH1(editingOrder.warehouse)
+            return (
+              <>
+                {!isWh1Editing && (
                   <div className="md:col-span-3">
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Customer Phone *</label>
                     <div className="relative flex items-center">
@@ -1614,350 +1892,453 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       <input
                         type="text"
                         required
-                        placeholder="+251 91 123 4567"
                         value={editingCustPhone}
-                        onChange={(e) => setEditingCustPhone(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                        onChange={(e) => {
+                          setEditingCustPhone(e.target.value)
+                          setEditFormErrors((prev) => {
+                            const next = { ...prev }
+                            delete next.phone
+                            return next
+                          })
+                        }}
+                        className={`w-full pl-9 pr-3 py-2 rounded-xl text-xs font-bold outline-none transition-colors ${
+                          editFormErrors.phone ? "bg-rose-50 border border-rose-400 text-rose-900" : "bg-zinc-50 border border-zinc-200"
+                        }`}
                       />
                     </div>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
-                    <select
-                      value={editingPaymentType}
-                      onChange={(e) => setEditingPaymentType(e.target.value as "Cash" | "Credit")}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
-                    >
-                      <option value="Cash">Cash</option>
-                      <option value="Credit">Credit</option>
-                    </select>
-                  </div>
-
-                  <div className="md:col-span-3">
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Fulfillment Warehouse</label>
-                    <select 
-                      value={editingOrder.warehouse}
-                      onChange={(e) => setEditingOrder({ ...editingOrder, warehouse: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    >
-                      {warehouseOptions.map((warehouse) => (
-                        <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* ROW 2: Contract Description */}
-                <div className="w-full">
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
-                  <textarea 
-                    value={editingOrder.desc}
-                    onChange={(e) => setEditingOrder({ ...editingOrder, desc: e.target.value })}
-                    rows={2}
-                    placeholder="Enter contract terms..."
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
-                  />
-                </div>
-
-                {/* Warning banner in Edit Modal if license is missing or expired */}
-                {(() => {
-                  const selectedCust = customers.find(c => c.id === editingOrder.customerId || c.name === editingOrder.customer)
-                  if (selectedCust) {
-                    const evaluation = getTradeLicenseStatus(selectedCust)
-                    if (evaluation.status !== "valid") {
-                      return (
-                        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-2 mb-3">
-                          <AlertTriangle className="size-4 text-rose-600 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-black uppercase tracking-wider block">Warning: Trade License Missing or Expired</span>
-                            <span className="text-[11px] block mt-0.5 leading-normal">
-                              This customer's trade license has expired (exceeded 30 days) or is missing. 
-                              You <strong>must</strong> upload a new trade license to update this sales order.
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    }
-                  }
-                  return null
-                })()}
-
-                {/* ROW 3: Minimalistic Required Document Attachments Section */}
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">Required Order Documentation</span>
-                      <span className="text-[11px] text-zinc-500 font-medium block">
-                        {editingPaymentType === "Cash"
-                          ? "View attached files or upload missing Trade License and Payment Advice"
-                          : "View attached Trade License (Payment Advice is optional / not required for credit sales)"}
+                    {editFormErrors.phone && (
+                      <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                        ⚠️ {editFormErrors.phone}
                       </span>
-                    </div>
+                    )}
                   </div>
+                )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Trade License Dropzone */}
-                    <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                          <FileText className="size-3.5 text-emerald-600" /> Trade License / Business Permit
-                        </span>
-                        {(() => {
-                          const selectedCust = customers.find(c => c.id === editingOrder.customerId || c.name === editingOrder.customer)
-                          const evaluation = selectedCust ? getTradeLicenseStatus(selectedCust) : { status: "missing", daysRemaining: 0 }
-
-                          if (isNewlyUploadedTradeLicense && stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
-                              </span>
-                            )
-                          }
-
-                          if (evaluation.status === "expired" && stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                <AlertTriangle className="size-3 text-rose-600" /> Expired License
-                              </span>
-                            )
-                          }
-
-                          if (evaluation.status === "valid" && stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
-                              </span>
-                            )
-                          }
-
-                          if (!stagedTradePaperName) {
-                            return (
-                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                                Missing
-                              </span>
-                            )
-                          }
-
-                          return (
-                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                              Attached
-                            </span>
-                          )
-                        })()}
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                          <FileCheck className="size-3" /> Select File
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0]
-                              if (f) {
-                                const reader = new FileReader()
-                                reader.onload = () => {
-                                  setStagedTradePaperName(f.name)
-                                  setStagedTradePaperUrl(reader.result as string)
-                                  setIsNewlyUploadedTradeLicense(true)
-                                }
-                                reader.readAsDataURL(f)
-                              }
-                            }}
-                          />
-                        </label>
-                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedTradePaperName || "No file attached"}</span>
-                        {stagedTradePaperUrl && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewUrl(stagedTradePaperUrl)
-                              setPreviewName(stagedTradePaperName || "Trade License")
-                            }}
-                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
-                          >
-                            View Doc <ExternalLink className="size-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Payment Advice Dropzone */}
-                    <div className={`p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5 ${editingPaymentType === "Credit" && !stagedPaymentAdviceName ? "opacity-75" : ""}`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                          <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
-                        </span>
-                        {stagedPaymentAdviceName ? (
-                          <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
-                        ) : editingPaymentType === "Credit" ? (
-                          <span className="text-[9px] font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">Optional (Credit Sale)</span>
-                        ) : (
-                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">Missing</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                          <FileCheck className="size-3" /> Select File
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0]
-                              if (f) {
-                                const reader = new FileReader()
-                                reader.onload = () => {
-                                  setStagedPaymentAdviceName(f.name)
-                                  setStagedPaymentAdviceUrl(reader.result as string)
-                                }
-                                reader.readAsDataURL(f)
-                              }
-                            }}
-                          />
-                        </label>
-                        <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedPaymentAdviceName || (editingPaymentType === "Credit" ? "Not required for credit sale" : "No file attached")}</span>
-                        {stagedPaymentAdviceUrl && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewUrl(stagedPaymentAdviceUrl)
-                              setPreviewName(stagedPaymentAdviceName || "Payment Advice")
-                            }}
-                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
-                          >
-                            View Doc <ExternalLink className="size-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                <div className={isWh1Editing ? "md:col-span-3" : "md:col-span-2"}>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
+                  <select
+                    value={editingPaymentType}
+                    onChange={(e) => setEditingPaymentType(e.target.value as "Cash" | "Credit")}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                  >
+                    <option value="Credit">Credit</option>
+                    <option value="Cash">Sales</option>
+                  </select>
                 </div>
 
-                {/* ROW 4: Line Items Table */}
-                <div className="pt-2">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-xs font-black uppercase text-zinc-900 tracking-wide">
-                      Contract Line Items
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => handleAddOrderItemRow(true)}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 transition-colors"
-                    >
-                      <Plus className="size-3" /> Add Item Row
-                    </button>
-                  </div>
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Fulfillment Warehouse</label>
+                  <select 
+                    value={editingOrder.warehouse}
+                    onChange={(e) => handleWarehouseChange(e.target.value, true)}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                  >
+                    {warehouseOptions.map((warehouse) => (
+                      <option key={warehouse.value} value={warehouse.value}>{warehouse.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )
+          })()}
+        </div>
 
-                  <div className="border border-zinc-200 rounded-2xl overflow-hidden text-xs">
-                    <table className="w-full text-left">
-                      <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
-                        <tr>
-                          <th className="px-3 py-2 w-[35%]">Product Item</th>
-                          <th className="px-3 py-2 w-[18%] text-center">Qty</th>
-                          <th className="px-3 py-2 w-[20%] text-center">Unit</th>
-                          <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
-                          <th className="px-3 py-2 w-[7%] text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {editingOrderItems.map((item, index) => {
-                          const p = products.find((prod) => prod.id === item.productId)
-                          const avail = p ? (editingOrder.warehouse && editingOrder.warehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === editingOrder.warehouse)?.qty ?? p.quantity) : p.quantity) : 0
-                          const isOver = item.qty > avail
-                          return (
-                            <tr key={index}>
-                              <td className="p-2">
-                                <select
-                                  value={item.productId}
-                                  onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, true)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
-                                >
-                                  {products.map((prod) => (
-                                    <option key={prod.id} value={prod.id}>{prod.name}</option>
-                                  ))}
-                                </select>
-                                <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                                  <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
-                                  {isOver && (
-                                    <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
-                                      <AlertTriangle className="size-3 text-amber-600 shrink-0" />
-                                      <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="p-2 align-top">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={item.qty === 0 ? "" : item.qty}
-                                  onChange={(e) => handleOrderItemChange(index, "qty", e.target.value, true)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-center"
-                                />
-                              </td>
-                              <td className="p-2 align-top">
-                                <select
-                                  value={item.unit}
-                                  onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, true)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
-                                >
-                                  {CONTAINER_UNITS.map((unit) => (
-                                    <option key={unit} value={unit}>{unit}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="p-2 align-top">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={item.unitPrice === 0 ? "" : item.unitPrice}
-                                  onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, true)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
-                                />
-                              </td>
-                              <td className="p-2 text-center align-top pt-2.5">
-                                {editingOrderItems.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveOrderItemRow(index, true)}
-                                    className="p-1 text-zinc-400 hover:text-rose-600 transition-colors"
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+        <div className="w-full">
+          <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
+          <textarea 
+            value={editingOrder.desc}
+            onChange={(e) => setEditingOrder({ ...editingOrder, desc: e.target.value })}
+            rows={2}
+            placeholder="Enter contract terms..."
+            className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
+          />
+        </div>
 
-                  <div className="mt-3 p-3 bg-zinc-50 rounded-2xl border border-zinc-200/80 font-mono text-xs flex justify-between items-center">
-                    <span className="text-zinc-500 font-sans font-bold">Total Contract Amount:</span>
-                    <span className="font-black text-sm text-emerald-800">
-                      ETB {editingOrderItems.reduce((sum, i) => sum + i.total, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+        {(() => {
+          const isWh1Editing = isWH1(editingOrder.warehouse)
+          const selectedCust = customers.find(c => c.id === editingOrder.customerId || c.name === editingOrder.customer)
+          if (selectedCust) {
+            const evaluation = getTradeLicenseStatus(selectedCust, editingOrder.warehouse)
+            if (evaluation.status !== "valid" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
+              return (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-2 mb-3">
+                  <AlertTriangle className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-black uppercase tracking-wider block">
+                      Warning: {isWh1Editing ? "Bank Permit Missing" : "Trade License Missing or Expired"}
+                    </span>
+                    <span className="text-[11px] block mt-0.5 leading-normal">
+                      {isWh1Editing
+                        ? "This customer does not have an attached Bank Permit on file. Please attach a Bank Permit file to update this order."
+                        : "This customer's trade license has expired (exceeded 30 days) or is missing. You must upload a new trade license to update this sales order."
+                      }
                     </span>
                   </div>
                 </div>
+              )
+            }
+          }
+          return null
+        })()}
 
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
-                  <button 
-                    type="button" 
-                    disabled={isSavingEditOrder}
-                    onClick={() => setIsEditOrderOpen(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit" 
-                    disabled={isSavingEditOrder}
-                    className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isSavingEditOrder ? <LoadingDots color="bg-white" size="sm" /> : "Save Order Changes"}
-                  </button>
+        {(() => {
+          const isWh1Editing = isWH1(editingOrder.warehouse)
+          const docLabel = isWh1Editing ? "Bank Permit" : "Trade License / Business Permit"
+          return (
+            <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-900 block">
+                    {isWh1Editing ? "Required Bank Permit" : "Required Order Documentation"}
+                  </span>
+                  <span className="text-[11px] text-zinc-500 font-medium block">
+                    {editingPaymentType === "Cash"
+                      ? (isWh1Editing 
+                          ? "Payment Advice is mandatory when converting/settling a WH1 contract to Cash"
+                          : "View attached files or upload missing Trade License and Payment Advice")
+                      : (isWh1Editing
+                          ? "Bank Permit is attached for this credit commodity order (Payment Advice is hidden)"
+                          : "View attached Trade License (Payment Advice is optional for credit sales)")
+                    }
+                  </span>
                 </div>
+              </div>
+
+              <div className={`grid gap-3 ${editingPaymentType === "Cash" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
+                <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                  editFormErrors.tradePaper 
+                    ? "bg-rose-50/40 border-rose-400" 
+                    : "bg-white border-zinc-200"
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                      <FileText className="size-3.5 text-emerald-600" /> {docLabel}
+                    </span>
+                    {(() => {
+                      const selectedCust = customers.find(c => c.id === editingOrder.customerId || c.name === editingOrder.customer)
+                      const evaluation = selectedCust ? getTradeLicenseStatus(selectedCust, editingOrder.warehouse) : { status: "missing", daysRemaining: 0, isPermanent: isWh1Editing, docType: isWh1Editing ? "Bank Permit" : "Trade License" }
+
+                      if (isNewlyUploadedTradeLicense && stagedTradePaperName) {
+                        return (
+                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
+                          </span>
+                        )
+                      }
+
+                      if (isWh1Editing && (stagedTradePaperName || selectedCust?.tradePaperFileName)) {
+                        return (
+                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <CheckCircle2 className="size-3 text-emerald-600" /> Bank Permit Attached (Permanent)
+                          </span>
+                        )
+                      }
+
+                      if (evaluation.status === "expired" && stagedTradePaperName) {
+                        return (
+                          <span className="text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <AlertTriangle className="size-3 text-rose-600" /> Expired Permit
+                          </span>
+                        )
+                      }
+
+                      if (evaluation.status === "valid" && stagedTradePaperName) {
+                        return (
+                          <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
+                          </span>
+                        )
+                      }
+
+                      if (!stagedTradePaperName) {
+                        return (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                            Required
+                          </span>
+                        )
+                      }
+
+                      return (
+                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                          Pre-attached
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                      <FileCheck className="size-3" /> Select File
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          if (f) {
+                            const reader = new FileReader()
+                            reader.onload = () => {
+                              setStagedTradePaperName(f.name)
+                              setStagedTradePaperUrl(reader.result as string)
+                              setIsNewlyUploadedTradeLicense(true)
+                              setEditFormErrors((prev) => {
+                                const next = { ...prev }
+                                delete next.tradePaper
+                                return next
+                              })
+                            }
+                            reader.readAsDataURL(f)
+                          }
+                        }}
+                      />
+                    </label>
+                    <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{stagedTradePaperName || "No file attached"}</span>
+                    {stagedTradePaperUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreviewUrl(stagedTradePaperUrl)
+                          setPreviewName(stagedTradePaperName || docLabel)
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                      >
+                        View Doc <ExternalLink className="size-3" />
+                      </button>
+                    )}
+                  </div>
+                  {editFormErrors.tradePaper && (
+                    <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                      ⚠️ {editFormErrors.tradePaper}
+                    </span>
+                  )}
+                </div>
+
+                {editingPaymentType === "Cash" && (
+                  <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                    editFormErrors.paymentAdvice 
+                      ? "bg-rose-50/40 border-rose-400" 
+                      : "bg-white border-zinc-200"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                        <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
+                      </span>
+                      {stagedPaymentAdviceName ? (
+                        <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
+                      ) : (
+                        <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">Required for Cash</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                        <FileCheck className="size-3" /> Select Advice File
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) {
+                              const reader = new FileReader()
+                              reader.onload = () => {
+                                setStagedPaymentAdviceName(f.name)
+                                setStagedPaymentAdviceUrl(reader.result as string)
+                                setEditFormErrors((prev) => {
+                                  const next = { ...prev }
+                                  delete next.paymentAdvice
+                                  return next
+                                })
+                              }
+                              reader.readAsDataURL(f)
+                            }
+                          }}
+                        />
+                      </label>
+                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
+                        {stagedPaymentAdviceName || "No receipt attached"}
+                      </span>
+                      {stagedPaymentAdviceUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewUrl(stagedPaymentAdviceUrl)
+                            setPreviewName(stagedPaymentAdviceName || "Payment Advice")
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                        >
+                          View Doc <ExternalLink className="size-3" />
+                        </button>
+                      )}
+                    </div>
+                    {editFormErrors.paymentAdvice && (
+                      <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                        ⚠️ {editFormErrors.paymentAdvice}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {(() => {
+          const isWh1Editing = isWH1(editingOrder.warehouse)
+          const availableEditUnits = isWh1Editing ? COMMODITY_UNITS : CONTAINER_UNITS
+          return (
+            <div className="pt-2">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <label className="block text-xs font-black uppercase text-zinc-900 tracking-wide">
+                    Contract Line Items ({isWh1Editing ? "Commodities in Quintals / Tons" : "Products & Quantities"})
+                  </label>
+                  {editFormErrors.items && (
+                    <span className="text-[10px] font-bold text-rose-600 block mt-0.5">
+                      ⚠️ {editFormErrors.items}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAddOrderItemRow(true)
+                    setEditFormErrors((prev) => {
+                      const next = { ...prev }
+                      delete next.items
+                      return next
+                    })
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 transition-colors"
+                >
+                  <Plus className="size-3" /> Add Item Row
+                </button>
+              </div>
+
+              <div className={`border rounded-2xl overflow-hidden text-xs transition-colors ${
+                editFormErrors.items ? "border-rose-400 bg-rose-50/10" : "border-zinc-200"
+              }`}>
+                <table className="w-full text-left">
+                  <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
+                    <tr>
+                      <th className="px-3 py-2 w-[35%]">Product Item</th>
+                      <th className="px-3 py-2 w-[18%] text-center">Qty</th>
+                      <th className="px-3 py-2 w-[20%] text-center">Unit</th>
+                      <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
+                      <th className="px-3 py-2 w-[7%] text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {editingOrderItems.map((item, index) => {
+                      const p = products.find((prod) => prod.id === item.productId)
+                      const avail = p ? (editingOrder.warehouse && editingOrder.warehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === editingOrder.warehouse)?.qty ?? p.quantity) : p.quantity) : 0
+                      const isOver = item.qty > avail
+                      return (
+                        <tr key={index}>
+                          <td className="p-2">
+                            <select
+                              value={item.productId}
+                              onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, true)}
+                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
+                            >
+                              {products.map((prod) => (
+                                <option key={prod.id} value={prod.id}>{prod.name}</option>
+                              ))}
+                            </select>
+                            <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
+                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                              {isOver && (
+                                <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
+                                  <AlertTriangle className="size-3 text-amber-600 shrink-0" />
+                                  <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 align-top">
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.qty === 0 ? "" : item.qty}
+                              onChange={(e) => handleOrderItemChange(index, "qty", e.target.value, true)}
+                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-center"
+                            />
+                          </td>
+                          <td className="p-2 align-top">
+                            <select
+                              value={item.unit}
+                              onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, true)}
+                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
+                            >
+                              {availableEditUnits.map((unit) => (
+                                <option key={unit} value={unit}>{unit}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="p-2 align-top">
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.unitPrice === 0 ? "" : item.unitPrice}
+                              onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, true)}
+                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
+                            />
+                          </td>
+                          <td className="p-2 text-center align-top pt-2.5">
+                            {editingOrderItems.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveOrderItemRow(index, true)}
+                                className="p-1 text-zinc-400 hover:text-rose-600 transition-colors"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })()}
+
+        <div className="mt-3 p-3 bg-zinc-50 rounded-2xl border border-zinc-200/80 font-mono text-xs flex justify-between items-center">
+          <span className="text-zinc-500 font-sans font-bold">Total Contract Amount:</span>
+          <span className="font-black text-sm text-emerald-800">
+            ETB {editingOrderItems.reduce((sum, i) => sum + i.total, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+          </span>
+        </div>
+
+        {Object.keys(editFormErrors).length > 0 && (
+          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold space-y-1.5 animate-in fade-in-50">
+            <div className="flex items-center gap-1.5 font-black text-rose-700 uppercase tracking-wider text-[11px]">
+              <AlertCircle className="size-4 shrink-0 text-rose-600" />
+              Please complete the required items before saving changes:
+            </div>
+            <ul className="list-disc list-inside space-y-0.5 text-[11px] text-rose-800 font-medium pl-1">
+              {Object.values(editFormErrors).map((msg, i) => (
+                <li key={i}>{msg}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
+          <button 
+            type="button" 
+            disabled={isSavingEditOrder}
+            onClick={() => setIsEditOrderOpen(false)}
+            className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit" 
+            disabled={isSavingEditOrder}
+            className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isSavingEditOrder ? <LoadingDots color="bg-white" size="sm" /> : "Save Order Changes"}
+          </button>
+        </div>
               </form>
             </motion.div>
           </div>

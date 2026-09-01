@@ -6,6 +6,7 @@ import { evaluateStockStatus } from "../core/inventory/stockEngine"
 import { validateTransferNote } from "../core/inventory/transferEngine"
 import { processSalesOrderPipeline } from "../core/sales/orderPipeline"
 import { sortNewestFirst } from "./utils"
+import { OPERATING_WAREHOUSES, withOperatingWarehouses, isWH1 } from "./warehouses"
 
 export interface Warehouse {
   id: string
@@ -361,15 +362,28 @@ export interface Customer {
   status?: string
 }
 
-export function getTradeLicenseStatus(customer: Customer): {
+export function getTradeLicenseStatus(customer: Customer, warehouse?: string): {
   status: "valid" | "expired" | "missing"
   daysRemaining: number
+  isPermanent: boolean
+  docType: "Bank Permit" | "Trade License"
 } {
+  const targetWh = warehouse || customer.warehouseTarget
+  const isWh1Target = targetWh ? isWH1(targetWh) : false
+  const docType = isWh1Target ? "Bank Permit" : "Trade License"
+
   if (!customer.tradePaperUrl || !customer.tradePaperFileName) {
-    return { status: "missing", daysRemaining: 0 }
+    return { status: "missing", daysRemaining: 0, isPermanent: isWh1Target, docType }
   }
+
+  // Bank Permit for WH1 is a permanent compliance document with no expiration date
+  if (isWh1Target) {
+    return { status: "valid", daysRemaining: 9999, isPermanent: true, docType }
+  }
+
+  // Trade License for WH2 / WH3 requires active 30-day compliance tracking
   if (!customer.tradePaperUploadedAt) {
-    return { status: "expired", daysRemaining: 0 }
+    return { status: "expired", daysRemaining: 0, isPermanent: false, docType }
   }
   const uploadedDate = new Date(customer.tradePaperUploadedAt)
   const expiryDate = new Date(uploadedDate.getTime() + 30 * 24 * 60 * 60 * 1000)
@@ -378,9 +392,9 @@ export function getTradeLicenseStatus(customer: Customer): {
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
   
   if (diffDays <= 0) {
-    return { status: "expired", daysRemaining: 0 }
+    return { status: "expired", daysRemaining: 0, isPermanent: false, docType }
   }
-  return { status: "valid", daysRemaining: diffDays }
+  return { status: "valid", daysRemaining: diffDays, isPermanent: false, docType }
 }
 
 export interface Supplier {
@@ -404,7 +418,7 @@ export interface Supplier {
 }
 
 class ErpStore {
-  private warehouses: Warehouse[] = []
+  private warehouses: Warehouse[] = [...OPERATING_WAREHOUSES]
   private products: Product[] = []
   private salesOrders: SalesOrder[] = []
   private purchaseOrders: PurchaseOrder[] = []
@@ -466,7 +480,7 @@ class ErpStore {
         loadResource<PurchaseOrder>("purchase_orders").catch(() => []),
       ])
 
-      this.warehouses = sortNewestFirst(warehouses)
+      this.warehouses = withOperatingWarehouses(warehouses)
       this.products = sortNewestFirst(products).map((product) => this.withInventoryValue(product))
       this.transfers = sortNewestFirst(transfers.map(({ id: _id, ...transfer }) => transfer as Transfer))
       this.stockMovements = sortNewestFirst(stockMovements)
@@ -509,17 +523,27 @@ class ErpStore {
         purchaseOrders,
         customers,
         suppliers,
+        warehouses,
+        products,
       ] = await Promise.all([
         loadResource<SalesOrder>("sales_orders"),
         loadResource<PurchaseOrder>("purchase_orders"),
         loadResource<Customer>("customers"),
         loadResource<Supplier>("suppliers"),
+        loadResource<Warehouse>("warehouses").catch(() => []),
+        loadResource<Product>("inventory_products").catch(() => []),
       ])
 
       this.salesOrders = sortNewestFirst(salesOrders)
       this.purchaseOrders = sortNewestFirst(purchaseOrders)
       this.customers = sortNewestFirst(customers)
       this.suppliers = sortNewestFirst(suppliers)
+      if (warehouses && warehouses.length > 0) {
+        this.warehouses = withOperatingWarehouses(warehouses)
+      }
+      if (products && products.length > 0) {
+        this.products = sortNewestFirst(products).map((product) => this.withInventoryValue(product))
+      }
       this.quotations = []
       this.deliveryNotes = []
 

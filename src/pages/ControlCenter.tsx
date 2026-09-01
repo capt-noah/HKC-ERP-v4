@@ -56,6 +56,7 @@ import { fetchAllShipmentDocs, type ShipmentDocAttachment } from "@/lib/tradeDoc
 import { type HRData, loadHRData, money } from "@/lib/hrApi"
 import { loadResource } from "@/lib/apiPersistence"
 import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
+import { isWH1 } from "@/lib/warehouses"
 import { cn } from "@/lib/utils"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -1673,7 +1674,12 @@ export default function ControlCenter() {
                           filteredApprovals.map((so) => {
                             const status = so.approvalStatus || "Pending"
                             const docs = soDocsMap[so.id] || []
-                            const tradeDoc = docs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                            const isWh1Order = isWH1(so.warehouse)
+                            const tradeDoc = docs.find((d) => 
+                              isWh1Order 
+                                ? (d.document_type === "Bank Permit" || d.document_type === "Trade Paper" || d.document_type === "Trade License") 
+                                : (d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                            )
                             const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
                             const isCredit = so.paymentType === "Credit"
                             const isProcessing = isProcessingAction === so.id
@@ -1696,7 +1702,7 @@ export default function ControlCenter() {
                                     "inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase mt-0.5",
                                     isCredit ? "bg-purple-100 text-purple-800" : "bg-emerald-100 text-emerald-800"
                                   )}>
-                                    {isCredit ? "Credit Sale" : "Cash Sale"}
+                                    {isCredit ? "Credit" : "Sales"}
                                   </span>
                                 </td>
 
@@ -1721,17 +1727,17 @@ export default function ControlCenter() {
                                         type="button"
                                         onClick={() => {
                                           setPreviewDocUrl(tradeDoc.file_url)
-                                          setPreviewDocName(tradeDoc.file_name || "Trade License.pdf")
+                                          setPreviewDocName(tradeDoc.file_name || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"))
                                         }}
                                         className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer"
                                       >
                                         <FileText className="size-3 text-emerald-600" />
-                                        <span className="max-w-[100px] truncate">{tradeDoc.file_name || "Trade License"}</span>
+                                        <span className="max-w-[100px] truncate">{tradeDoc.file_name || (isWh1Order ? "Bank Permit" : "Trade License")}</span>
                                         <Eye className="size-2.5 opacity-60" />
                                       </button>
                                     ) : (
                                       <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-                                        <AlertCircle className="size-3 text-amber-500" /> No Trade License
+                                        <AlertCircle className="size-3 text-amber-500" /> No {isWh1Order ? "Bank Permit" : "Trade License"}
                                       </span>
                                     )}
 
@@ -1865,7 +1871,7 @@ export default function ControlCenter() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-500 font-bold">Warehouse & Terms:</span>
-                  <span className="font-bold text-zinc-800">{approveModalOrder.warehouse} • {approveModalOrder.paymentType || "Cash"}</span>
+                  <span className="font-bold text-zinc-800">{approveModalOrder.warehouse} • {approveModalOrder.paymentType === "Cash" ? "Sales" : "Credit"}</span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-zinc-200">
                   <span className="text-zinc-700 font-black">Total Contract Amount:</span>
