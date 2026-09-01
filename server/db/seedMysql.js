@@ -42,6 +42,30 @@ function findLatestSnapshotDir() {
   return entries.length > 0 ? path.join(backupsRoot, entries[0]) : null
 }
 
+function formatMysqlValue(v) {
+  if (v === undefined || v === null) return null
+  if (v instanceof Date) return v
+  if (typeof v === "string") {
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
+      const d = new Date(v)
+      if (!isNaN(d.getTime())) {
+        const pad = (n, len = 2) => String(n).padStart(len, "0")
+        const y = d.getUTCFullYear()
+        const m = pad(d.getUTCMonth() + 1)
+        const dt = pad(d.getUTCDate())
+        const h = pad(d.getUTCHours())
+        const min = pad(d.getUTCMinutes())
+        const s = pad(d.getUTCSeconds())
+        const ms = pad(d.getUTCMilliseconds(), 3)
+        return `${y}-${m}-${dt} ${h}:${min}:${s}.${ms}`
+      }
+    }
+    return v
+  }
+  if (typeof v === "object") return JSON.stringify(v)
+  return v
+}
+
 export async function seedMysql(targetSnapshotDir) {
   const snapshotDir = targetSnapshotDir || findLatestSnapshotDir()
 
@@ -109,10 +133,7 @@ export async function seedMysql(targetSnapshotDir) {
         // Relational table seed
         for (const row of rows) {
           const keys = Object.keys(row)
-          const values = Object.values(row).map((v) => {
-            if (v && typeof v === "object") return JSON.stringify(v)
-            return v
-          })
+          const values = Object.values(row).map(formatMysqlValue)
 
           const columnList = keys.map((k) => `\`${k}\``).join(", ")
           const placeholders = keys.map(() => "?").join(", ")

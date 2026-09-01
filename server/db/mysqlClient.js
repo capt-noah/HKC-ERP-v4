@@ -159,9 +159,22 @@ export async function getRowMysql({ resource, id }) {
 function formatMysqlValue(v) {
   if (v === undefined || v === null) return null
   if (v instanceof Date) return v
-  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
-    const d = new Date(v)
-    if (!isNaN(d.getTime())) return d
+  if (typeof v === "string") {
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
+      const d = new Date(v)
+      if (!isNaN(d.getTime())) {
+        const pad = (n, len = 2) => String(n).padStart(len, "0")
+        const y = d.getUTCFullYear()
+        const m = pad(d.getUTCMonth() + 1)
+        const dt = pad(d.getUTCDate())
+        const h = pad(d.getUTCHours())
+        const min = pad(d.getUTCMinutes())
+        const s = pad(d.getUTCSeconds())
+        const ms = pad(d.getUTCMilliseconds(), 3)
+        return `${y}-${m}-${dt} ${h}:${min}:${s}.${ms}`
+      }
+    }
+    return v
   }
   if (typeof v === "object") return JSON.stringify(v)
   return v
