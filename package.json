@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3000",
+    "dev": "vite --host 0.0.0.0 --port 1000",
     "start": "node server/index.js",
     "server": "node server/index.js",
     "seed:auth": "node seedAuth.js",
@@ -13,7 +13,7 @@
     "test": "node --test server/*.test.js",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "preview": "vite preview",
+    "preview": "vite preview --port 1000",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
