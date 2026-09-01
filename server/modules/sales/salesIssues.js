@@ -14,9 +14,13 @@ import crypto from "node:crypto"
 
 export async function listSalesIssues(query = {}) {
   try {
+    const sanitizedQuery = {}
+    if (query.id) sanitizedQuery.id = query.id
+    if (query.status && query.status !== "ALL") sanitizedQuery.status = query.status
+
     const issuesRes = await drizzleListRows({
       resource: getResource("sales_issues"),
-      query,
+      query: sanitizedQuery,
     })
 
     const issues = Array.isArray(issuesRes.body) ? issuesRes.body : []
@@ -27,23 +31,91 @@ export async function listSalesIssues(query = {}) {
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const itemsByIssueId = new Map()
 
-    for (const item of allItems) {
-      const issueId = item.sales_issue_id || item.salesIssueId
+    for (const rawItem of allItems) {
+      const item = rawItem?.payload ? { ...rawItem.payload, ...rawItem } : rawItem
+      const issueId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
       if (issueId) {
         const existing = itemsByIssueId.get(issueId) || []
-        existing.push(item)
+        existing.push({
+          id: item.id,
+          sales_issue_id: issueId,
+          item_id: item.item_id || item.productId || item.product_id || item.id,
+          item_name: item.item_name || item.name || "Item",
+          batch_id: item.batch_id || item.batch_no || item.batchNumber || item.batch || "BATCH-MAIN",
+          batch_no: item.batch_no || item.batch_id || item.batchNumber || item.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || "Box",
+          available_quantity: Number(item.available_quantity || item.availableQuantity || 1000),
+          quantity: Number(item.quantity || item.qty || 0),
+          unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
+          amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
+        })
         itemsByIssueId.set(issueId, existing)
       }
     }
 
-    const fullIssues = issues.map((issue) => {
+    let fullIssues = issues.map((rawIssue) => {
+      const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
       const issueItems = itemsByIssueId.get(issue.id) || issue.items || []
+      const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
+      const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
+      const sale_date = issue.sale_date || issue.issueDate || issue.issue_date || (issue.created_at ? issue.created_at.split("T")[0] : new Date().toISOString().split("T")[0])
+      const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
+      const customer_id = issue.customer_id || issue.customerId || customer_name
+      const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"
+      const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
+      const status = issue.status || "Draft"
+      const total_amount = Number(issue.total_amount || issue.totalAmount || issueItems.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+      const total_quantity = Number(issue.total_quantity || issue.totalQuantity || issueItems.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
+      const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
+      const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
+
       return {
         ...issue,
+        id: issue.id,
+        fs_no,
+        fsNo: fs_no,
+        reference_no,
+        referenceNo: reference_no,
+        sale_date,
+        issueDate: sale_date,
+        customer_name,
+        customer: customer_name,
+        customer_id,
+        customerId: customer_id,
+        warehouse_id,
+        warehouse: warehouse_id,
+        payment_type,
+        paymentType: payment_type,
+        status,
+        total_amount,
+        totalAmount: total_amount,
+        total_quantity,
+        totalQuantity: total_quantity,
+        amount_paid,
+        balance_due,
+        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        created_by: issue.created_by || issue.createdBy || "System",
         items: issueItems,
         savedToDb: true,
       }
     })
+
+    if (query.search && String(query.search).trim()) {
+      const q = String(query.search).trim().toLowerCase()
+      fullIssues = fullIssues.filter((i) =>
+        (i.fs_no && i.fs_no.toLowerCase().includes(q)) ||
+        (i.reference_no && i.reference_no.toLowerCase().includes(q)) ||
+        (i.customer_name && i.customer_name.toLowerCase().includes(q)) ||
+        (i.items && i.items.some((it) => it.item_name && it.item_name.toLowerCase().includes(q)))
+      )
+    }
+
+    if (query.batch && query.batch !== "ALL") {
+      const b = String(query.batch).trim().toLowerCase()
+      fullIssues = fullIssues.filter((i) =>
+        i.items && i.items.some((it) => it.batch_no && it.batch_no.toLowerCase() === b)
+      )
+    }
 
     return { status: 200, body: fullIssues }
   } catch (err) {
@@ -63,20 +135,76 @@ export async function getSalesIssue(id) {
       return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
     }
 
-    const issue = issueRes.body
+    const rawIssue = issueRes.body
+    const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
     const itemsRes = await drizzleListRows({
       resource: getResource("sales_issue_items"),
-      query: { sales_issue_id: `eq.${id}` },
     })
 
-    const items = Array.isArray(itemsRes.body)
-      ? itemsRes.body.filter((i) => (i.sales_issue_id || i.salesIssueId) === id)
-      : []
+    const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
+    const items = allItems
+      .filter((i) => {
+        const item = i?.payload ? { ...i.payload, ...i } : i
+        return (item.sales_issue_id || item.salesIssueId) === id
+      })
+      .map((rawItem) => {
+        const item = rawItem?.payload ? { ...rawItem.payload, ...rawItem } : rawItem
+        return {
+          id: item.id,
+          sales_issue_id: id,
+          item_id: item.item_id || item.productId || item.product_id || item.id,
+          item_name: item.item_name || item.name || "Item",
+          batch_id: item.batch_id || item.batch_no || item.batchNumber || item.batch || "BATCH-MAIN",
+          batch_no: item.batch_no || item.batch_id || item.batchNumber || item.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || "Box",
+          available_quantity: Number(item.available_quantity || item.availableQuantity || 1000),
+          quantity: Number(item.quantity || item.qty || 0),
+          unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
+          amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
+        }
+      })
+
+    const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
+    const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
+    const sale_date = issue.sale_date || issue.issueDate || issue.issue_date || (issue.created_at ? issue.created_at.split("T")[0] : new Date().toISOString().split("T")[0])
+    const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
+    const customer_id = issue.customer_id || issue.customerId || customer_name
+    const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"
+    const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
+    const status = issue.status || "Draft"
+    const total_amount = Number(issue.total_amount || issue.totalAmount || items.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+    const total_quantity = Number(issue.total_quantity || issue.totalQuantity || items.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
+    const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
+    const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
 
     return {
       status: 200,
       body: {
         ...issue,
+        id: issue.id,
+        fs_no,
+        fsNo: fs_no,
+        reference_no,
+        referenceNo: reference_no,
+        sale_date,
+        issueDate: sale_date,
+        customer_name,
+        customer: customer_name,
+        customer_id,
+        customerId: customer_id,
+        warehouse_id,
+        warehouse: warehouse_id,
+        payment_type,
+        paymentType: payment_type,
+        status,
+        total_amount,
+        totalAmount: total_amount,
+        total_quantity,
+        totalQuantity: total_quantity,
+        amount_paid,
+        balance_due,
+        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        created_by: issue.created_by || issue.createdBy || "System",
         items,
         savedToDb: true,
       },

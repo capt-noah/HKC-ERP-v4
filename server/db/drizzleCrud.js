@@ -87,12 +87,24 @@ async function parseResponse(response) {
 
 function unwrapRow(row, storage) {
   if (!row) return null
-  if (storage === "jsonb_document") {
+  if (storage === "jsonb_document" || row.payload !== undefined) {
     const payload = typeof row.payload === "string" ? JSON.parse(row.payload) : (row.payload || {})
-    return { id: row.id, ...payload }
+    return { id: row.id, ...payload, ...row }
   }
   return row
 }
+
+const RESERVED_CLIENT_PARAMS = new Set([
+  "page",
+  "pageSize",
+  "search",
+  "batch",
+  "q",
+  "apikey",
+  "range",
+  "count",
+  "sort",
+])
 
 // ── Generic Drizzle CRUD Methods (Works with Direct Pool, MySQL, or Supabase PostgREST) ──
 
@@ -126,7 +138,8 @@ export async function drizzleListRows({ resource, query = {} }) {
     url.searchParams.set("select", resource.storage === "jsonb_document" ? "id,payload" : "*")
     url.searchParams.set("order", "created_at.desc")
     for (const [k, v] of Object.entries(query)) {
-      if (k !== "select") url.searchParams.set(k, v)
+      if (k === "select" || RESERVED_CLIENT_PARAMS.has(k) || v === undefined || v === null || v === "") continue
+      url.searchParams.set(k, v)
     }
 
     const response = await fetch(url, { headers: authHeaders() })
