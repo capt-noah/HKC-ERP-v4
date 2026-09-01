@@ -4,9 +4,9 @@ import { drizzleListRows, drizzleGetRow, drizzleCreateRow, drizzleUpdateRow } fr
 import { getResource } from "../../db/resourceRegistry.js"
 import { logActivity } from "../common/activityLogger.js"
 import { validateStrongPassword, sanitizeUser } from "./authUtils.js"
-import crypto from "node:crypto"
+import { config } from "../../config.js"
 
-const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_dev_only"
+const JWT_SECRET = config.jwtSecret || process.env.JWT_SECRET || "fallback_secret_for_dev_only"
 
 export async function login(req, res) {
   const { username, password } = req.body
