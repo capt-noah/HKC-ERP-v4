@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt"
+import bcrypt from "bcryptjs"
 import { drizzleListRows, drizzleGetRow, drizzleCreateRow, drizzleUpdateRow, drizzleDeleteRow } from "./db/drizzleCrud.js"
 import { getResource } from "./db/resourceRegistry.js"
 import { validateStrongPassword } from "./modules/auth/authUtils.js"

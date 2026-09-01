@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt"
+import bcrypt from "bcryptjs"
 import readline from "readline"
 import { drizzleUpdateRow, drizzleListRows, drizzleCreateRow } from "../db/drizzleCrud.js"
 import { getResource } from "../db/resourceRegistry.js"
