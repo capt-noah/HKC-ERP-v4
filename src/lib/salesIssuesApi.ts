@@ -1,4 +1,4 @@
-import { API_BASE } from "./apiPersistence"
+import { API_BASE, getAuthHeaders } from "./apiPersistence"
 
 export type SalesIssueStatus = "Draft" | "Posted" | "Cancelled"
 export type PaymentType = "Cash" | "Credit"
@@ -64,10 +64,12 @@ async function parseResponse(response: Response) {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const authHeaders = getAuthHeaders()
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
       ...(init?.headers || {}),
     },
   })

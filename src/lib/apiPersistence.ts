@@ -35,7 +35,7 @@ function errorMessage(body: unknown, fallback: string) {
   return fallback
 }
 
-function getAuthHeaders(): Record<string, string> {
+export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {}
   try {
     const raw = localStorage.getItem("auth-storage")

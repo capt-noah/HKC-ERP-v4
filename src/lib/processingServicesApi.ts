@@ -33,7 +33,7 @@ export interface ProcessingServiceOrder {
   updated_at?: string
 }
 
-import { API_BASE } from "./apiPersistence"
+import { API_BASE, getAuthHeaders } from "./apiPersistence"
 import { sortNewestFirst } from "./utils"
 
 export async function fetchProcessingServices(status?: string): Promise<ProcessingServiceOrder[]> {
@@ -42,7 +42,9 @@ export async function fetchProcessingServices(status?: string): Promise<Processi
     if (status && status !== "ALL") {
       url.searchParams.set("status", status)
     }
-    const res = await fetch(url.toString())
+    const res = await fetch(url.toString(), {
+      headers: { ...getAuthHeaders() },
+    })
     if (res.ok) {
       const data = await res.json()
       if (Array.isArray(data)) return sortNewestFirst(data)
@@ -56,7 +58,7 @@ export async function fetchProcessingServices(status?: string): Promise<Processi
 export async function createProcessingService(payload: Partial<ProcessingServiceOrder>): Promise<ProcessingServiceOrder> {
   const res = await fetch(`${API_BASE}/api/processing-services`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
@@ -69,7 +71,7 @@ export async function createProcessingService(payload: Partial<ProcessingService
 export async function updateProcessingService(id: string, payload: Partial<ProcessingServiceOrder>): Promise<ProcessingServiceOrder> {
   const res = await fetch(`${API_BASE}/api/processing-services/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
@@ -88,18 +90,30 @@ export async function transitionProcessingServiceStage(
     storageFee?: number
     totalFee?: number
     deliveryDate?: string
+    [key: string]: any
   }
 ): Promise<{ ok: boolean; journalEntry?: unknown } & ProcessingServiceOrder> {
   const res = await fetch(`${API_BASE}/api/processing-services/${id}/transition`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ stage, ...(snapshotData || {}) }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || "Failed to advance stage.")
+    throw new Error(err.error || `Failed to advance order to ${stage}.`)
   }
   return res.json()
+}
+
+export async function deleteProcessingService(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/processing-services/${id}`, {
+    method: "DELETE",
+    headers: { ...getAuthHeaders() },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || "Failed to delete processing service order.")
+  }
 }
 
 export async function uploadProcessingServiceContract(
@@ -112,7 +126,7 @@ export async function uploadProcessingServiceContract(
       try {
         const res = await fetch(`${API_BASE}/api/processing-services/${id}/upload-contract`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           body: JSON.stringify({
             contract_url: reader.result as string,
             contract_file_name: file.name,
@@ -131,12 +145,5 @@ export async function uploadProcessingServiceContract(
     reader.onerror = () => reject(new Error("Failed to read contract file."))
     reader.readAsDataURL(file)
   })
-}
-
-export async function deleteProcessingService(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/processing-services/${id}`, { method: "DELETE" })
-  if (!res.ok) {
-    throw new Error("Failed to delete processing service order.")
-  }
 }
 

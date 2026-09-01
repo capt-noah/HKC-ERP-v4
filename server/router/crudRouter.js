@@ -42,10 +42,34 @@ crudRouter.use("/:resource", (req, res, next) => {
     if ((req.method === "PATCH" || req.method === "PUT") && req.params.id === user.id) isAllowed = true
   }
 
-  // Allow inventory_admin read-only access to suppliers & purchase_orders for receiving goods
-  if (userRoles.includes("inventory_admin") && (req.params.resource === "suppliers" || req.params.resource === "purchase_orders")) {
-    if (req.method === "GET") {
+  // Cross-module READ permissions for ERP operational flow
+  if (req.method === "GET") {
+    const resName = req.params.resource
+
+    // Company settings and tax rules readable by all logged-in staff
+    if (resName === "company_settings" || resName === "tax_rules") {
       isAllowed = true
+    }
+
+    // Warehouses and inventory products readable by sales, finance, and inventory admins
+    if (resName === "warehouses" || resName === "inventory_products") {
+      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
+        isAllowed = true
+      }
+    }
+
+    // Customers and suppliers readable by sales, finance, and inventory admins
+    if (resName === "customers" || resName === "suppliers" || resName === "purchase_orders") {
+      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
+        isAllowed = true
+      }
+    }
+
+    // Sales orders, sales issues, and processing services readable by finance manager for invoicing & AR
+    if (resName === "sales_orders" || resName === "sales_issues" || resName === "processing_services") {
+      if (userRoles.includes("finance_manager")) {
+        isAllowed = true
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle } from "lucide-react"
+import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle, Lock, ExternalLink } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -1223,7 +1223,8 @@ export default function SalesIssued() {
                               <span className="text-[10px] text-zinc-400 block">{so.warehouse}</span>
                             </div>
                             <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 shrink-0 inline-flex items-center gap-1">
-                              🔒 {so.lockReason}
+                              <Lock className="size-3 text-amber-700 shrink-0" />
+                              <span>{so.lockReason}</span>
                             </span>
                           </div>
                         ))}
@@ -1419,7 +1420,7 @@ export default function SalesIssued() {
                                   }}
                                   className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                                 >
-                                  View Doc ↗
+                                  View Doc <ExternalLink className="size-3" />
                                 </button>
                               )}
                             </>
@@ -1500,7 +1501,7 @@ export default function SalesIssued() {
                                 }}
                                 className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               >
-                                View Doc ↗
+                                View Doc <ExternalLink className="size-3" />
                               </button>
                             )}
                           </div>

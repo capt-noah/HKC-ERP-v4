@@ -1,4 +1,4 @@
-import { API_BASE } from "./apiPersistence"
+import { API_BASE, getAuthHeaders } from "./apiPersistence"
 import { erpStore } from "./erpStore"
 
 export interface ShipmentDocAttachment {
@@ -45,7 +45,9 @@ export function readFileAsDataUrl(file: File): Promise<{ fileName: string; fileU
  */
 export async function fetchAllShipmentDocs(): Promise<ShipmentDocAttachment[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/shipment-documents`)
+    const res = await fetch(`${API_BASE}/api/shipment-documents`, {
+      headers: { ...getAuthHeaders() },
+    })
     if (res.ok) {
       const data = await res.json()
       if (Array.isArray(data)) return data
@@ -67,7 +69,9 @@ export async function fetchDocumentsForRecord(recordId: string, recordType?: str
     if (recordType) {
       url.searchParams.set("record_type", recordType)
     }
-    const res = await fetch(url.toString())
+    const res = await fetch(url.toString(), {
+      headers: { ...getAuthHeaders() },
+    })
     if (res.ok) {
       const data = await res.json()
       if (Array.isArray(data)) return data
@@ -91,7 +95,7 @@ export async function uploadShipmentDoc(doc: Partial<ShipmentDocAttachment>): Pr
 
   const res = await fetch(`${API_BASE}/api/shipment-documents`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(payload),
   })
 
@@ -109,6 +113,7 @@ export async function deleteShipmentDoc(id: string): Promise<void> {
   try {
     await fetch(`${API_BASE}/api/shipment-documents/${id}`, {
       method: "DELETE",
+      headers: { ...getAuthHeaders() },
     })
   } catch (err) {
     console.warn("deleteShipmentDoc warning:", err)
