@@ -19,7 +19,12 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import StoreTransfersTab from "@/components/StoreTransfersTab"
 import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry } from "@/lib/erpStore"
-import { withOperatingWarehouses } from "@/lib/warehouses"
+import {
+  withOperatingWarehouses,
+  resolveWarehouseScope,
+  isWarehouseInScope,
+  isProductInWarehouseScope,
+} from "@/lib/warehouses"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
@@ -95,34 +100,22 @@ export default function StockProducts() {
   const { user } = useAuthStore()
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
   const userWarehouseIds = user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])
+  const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
+  
   const resolvedWarehouseIds = useMemo(() => {
-    const allWhs = erp.getWarehouses()
-    const set = new Set<string>()
-    userWarehouseIds.forEach((id: string) => {
-      set.add(id)
-      const matched = allWhs.find(w => w.id === id || w.code === id)
-      if (matched) {
-        if (matched.id) set.add(matched.id)
-        if (matched.code) set.add(matched.code)
-      }
-    })
-    return Array.from(set)
+    return resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
   }, [userWarehouseIds, erp])
 
   const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
 
   const allProducts = erp.getProducts()
-  const products = isInventoryAdminOnly
-    ? allProducts.filter(p => 
-        resolvedWarehouseIds.includes(p.warehouse) || 
-        (p.stockBreakdown || []).some(entry => resolvedWarehouseIds.includes(entry.warehouse))
-      )
+  const products = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
+    ? allProducts.filter(p => isProductInWarehouseScope(p, resolvedWarehouseIds))
     : allProducts
 
   const isLoading = erp.isLoading()
-  const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
-  const warehouseRecords = isInventoryAdminOnly
-    ? allWarehouses.filter(w => resolvedWarehouseIds.includes(w.id) || resolvedWarehouseIds.includes(w.code))
+  const warehouseRecords = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
+    ? allWarehouses.filter(w => isWarehouseInScope(w.id, resolvedWarehouseIds) || isWarehouseInScope(w.code, resolvedWarehouseIds))
     : allWarehouses
   const isWH1 = (w: string) => w === "WH1" || w === "WH1-AGRI-EXP"
 

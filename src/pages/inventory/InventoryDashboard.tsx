@@ -16,7 +16,12 @@ import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore } from "@/lib/erpStore"
-import { withOperatingWarehouses } from "@/lib/warehouses"
+import {
+  withOperatingWarehouses,
+  resolveWarehouseScope,
+  isWarehouseInScope,
+  isProductInWarehouseScope,
+} from "@/lib/warehouses"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
@@ -47,40 +52,28 @@ export default function InventoryDashboard() {
   const { user } = useAuthStore()
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
   const userWarehouseIds = user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])
+  const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
+  
   const resolvedWarehouseIds = useMemo(() => {
-    const allWhs = erp.getWarehouses()
-    const set = new Set<string>()
-    userWarehouseIds.forEach((id: string) => {
-      set.add(id)
-      const matched = allWhs.find(w => w.id === id || w.code === id)
-      if (matched) {
-        if (matched.id) set.add(matched.id)
-        if (matched.code) set.add(matched.code)
-      }
-    })
-    return Array.from(set)
+    return resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
   }, [userWarehouseIds, erp])
 
   const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
 
   const allProducts = erp.getProducts()
-  const products = isInventoryAdminOnly
-    ? allProducts.filter(p => 
-        resolvedWarehouseIds.includes(p.warehouse) || 
-        (p.stockBreakdown || []).some(entry => resolvedWarehouseIds.includes(entry.warehouse))
-      )
+  const products = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
+    ? allProducts.filter(p => isProductInWarehouseScope(p, resolvedWarehouseIds))
     : allProducts
 
-  const allWarehouses = withOperatingWarehouses(erp.getWarehouses())
-  const warehouses = isInventoryAdminOnly
-    ? allWarehouses.filter(w => resolvedWarehouseIds.includes(w.id) || resolvedWarehouseIds.includes(w.code))
+  const warehouses = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
+    ? allWarehouses.filter(w => isWarehouseInScope(w.id, resolvedWarehouseIds) || isWarehouseInScope(w.code, resolvedWarehouseIds))
     : allWarehouses
 
   const allMovements = erp.getStockMovements()
-  const movements = isInventoryAdminOnly
+  const movements = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
     ? allMovements.filter(m => 
-        (m.fromWarehouse && resolvedWarehouseIds.includes(m.fromWarehouse)) || 
-        (m.toWarehouse && resolvedWarehouseIds.includes(m.toWarehouse))
+        (m.fromWarehouse && isWarehouseInScope(m.fromWarehouse, resolvedWarehouseIds)) || 
+        (m.toWarehouse && isWarehouseInScope(m.toWarehouse, resolvedWarehouseIds))
       )
     : allMovements
 

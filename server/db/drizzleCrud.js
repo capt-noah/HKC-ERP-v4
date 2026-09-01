@@ -3,6 +3,18 @@ import * as schema from "./schema/index.js"
 import { eq, desc, sql } from "drizzle-orm"
 import { config } from "../config.js"
 import crypto from "node:crypto"
+import {
+  listRowsMysql,
+  getRowMysql,
+  createRowMysql,
+  updateRowMysql,
+  deleteRowMysql,
+  replaceRowsMysql,
+} from "./mysqlClient.js"
+
+function isMysql() {
+  return process.env.DB_DRIVER === "mysql" || Boolean(process.env.MYSQL_URL)
+}
 
 // Master mapping from resource table name to Drizzle schema table object
 export const tableMap = {
@@ -82,9 +94,13 @@ function unwrapRow(row, storage) {
   return row
 }
 
-// ── Generic Drizzle CRUD Methods (Works with Direct Pool or Supabase PostgREST) ──
+// ── Generic Drizzle CRUD Methods (Works with Direct Pool, MySQL, or Supabase PostgREST) ──
 
 export async function drizzleListRows({ resource, query = {} }) {
+  if (isMysql()) {
+    return await listRowsMysql({ resource, query })
+  }
+
   const table = getDrizzleTable(resource.table)
   if (!table) {
     return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
@@ -125,6 +141,10 @@ export async function drizzleListRows({ resource, query = {} }) {
 }
 
 export async function drizzleGetRow({ resource, id }) {
+  if (isMysql()) {
+    return await getRowMysql({ resource, id })
+  }
+
   const table = getDrizzleTable(resource.table)
   if (!table) {
     return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
@@ -158,6 +178,10 @@ export async function drizzleGetRow({ resource, id }) {
 }
 
 export async function drizzleCreateRow({ resource, body }) {
+  if (isMysql()) {
+    return await createRowMysql({ resource, body })
+  }
+
   const table = getDrizzleTable(resource.table)
   if (!table) {
     return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
@@ -203,6 +227,10 @@ export async function drizzleCreateRow({ resource, body }) {
 }
 
 export async function drizzleUpdateRow({ resource, id, body }) {
+  if (isMysql()) {
+    return await updateRowMysql({ resource, id, body })
+  }
+
   const table = getDrizzleTable(resource.table)
   if (!table) {
     return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
@@ -260,6 +288,10 @@ export async function drizzleUpdateRow({ resource, id, body }) {
 }
 
 export async function drizzleDeleteRow({ resource, id }) {
+  if (isMysql()) {
+    return await deleteRowMysql({ resource, id })
+  }
+
   const table = getDrizzleTable(resource.table)
   if (!table) {
     return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
@@ -289,6 +321,10 @@ export async function drizzleDeleteRow({ resource, id }) {
 }
 
 export async function drizzleReplaceRows({ resource, body }) {
+  if (isMysql()) {
+    return await replaceRowsMysql({ resource, body })
+  }
+
   const table = getDrizzleTable(resource.table)
   if (!table) {
     return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }

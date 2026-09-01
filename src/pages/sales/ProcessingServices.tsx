@@ -112,7 +112,7 @@ export default function ProcessingServices() {
   }, [userWarehouseIds, erp])
 
   const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
-  const hasWH1Access = !isInventoryAdminOnly || resolvedWarehouseIds.includes("WH1") || resolvedWarehouseIds.includes("WH1-AGRI-EXP")
+  const hasWH1Access = !isInventoryAdminOnly || resolvedWarehouseIds.length === 0 || resolvedWarehouseIds.includes("WH1") || resolvedWarehouseIds.includes("WH1-AGRI-EXP")
 
   const [services, setServices] = useState<ProcessingServiceOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)

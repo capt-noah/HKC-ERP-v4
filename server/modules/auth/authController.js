@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken"
 import { drizzleListRows, drizzleGetRow, drizzleCreateRow, drizzleUpdateRow } from "../../db/drizzleCrud.js"
 import { getResource } from "../../db/resourceRegistry.js"
 import { logActivity } from "../common/activityLogger.js"
+import { validateStrongPassword, sanitizeUser } from "./authUtils.js"
 import crypto from "node:crypto"
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_dev_only"
@@ -48,6 +49,14 @@ export async function login(req, res) {
     const fullname = user.fullname || [user.first_name || user.firstName, user.last_name || user.lastName].filter(Boolean).join(" ") || user.username
     const roles = Array.isArray(user.roles) && user.roles.length > 0 ? user.roles : [user.role || "viewer"]
     const primaryRole = roles[0]
+    const warehouse_id = user.warehouse_id || user.warehouseId || null
+    let warehouse_ids = []
+    if (Array.isArray(user.warehouse_ids)) {
+      warehouse_ids = user.warehouse_ids
+    } else if (typeof user.warehouse_ids === "string" && user.warehouse_ids.trim()) {
+      try { warehouse_ids = JSON.parse(user.warehouse_ids) } catch { warehouse_ids = [] }
+    }
+    const employee_id = user.employee_id || user.employeeId || null
 
     // Generate JWT (30 days expiration)
     const token = jwt.sign(
@@ -57,6 +66,9 @@ export async function login(req, res) {
         roles,
         fullname,
         role: primaryRole,
+        warehouse_id,
+        warehouse_ids,
+        employee_id,
       },
       JWT_SECRET,
       { expiresIn: "30d" }
@@ -82,6 +94,9 @@ export async function login(req, res) {
         fullname,
         first_name: user.first_name || user.firstName,
         last_name: user.last_name || user.lastName,
+        warehouse_id,
+        warehouse_ids,
+        employee_id,
       },
     })
   } catch (error) {
@@ -100,21 +115,13 @@ export async function getCurrentUser(req, res) {
       return res.status(404).json({ error: "User not found" })
     }
 
-    const u = result.body
-    const fullname = u.fullname || [u.first_name || u.firstName, u.last_name || u.lastName].filter(Boolean).join(" ") || u.username
-    const roles = Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [u.role || "viewer"]
+    const safeUser = sanitizeUser(result.body)
+    const roles = Array.isArray(safeUser.roles) && safeUser.roles.length > 0 ? safeUser.roles : [safeUser.role || "viewer"]
 
     res.status(200).json({
-      id: u.id,
-      username: u.username,
+      ...safeUser,
       roles,
       role: roles[0],
-      fullname,
-      first_name: u.first_name || u.firstName,
-      last_name: u.last_name || u.lastName,
-      status: u.status || (u.isActive ? "active" : "inactive"),
-      created_at: u.created_at || u.createdAt,
-      updated_at: u.updated_at || u.updatedAt,
     })
   } catch (error) {
     console.error("getCurrentUser error:", error)
@@ -143,6 +150,10 @@ export async function updateCurrentUserProfile(req, res) {
       }
     }
     if (password) {
+      const passCheck = validateStrongPassword(password)
+      if (!passCheck.valid) {
+        return res.status(400).json({ error: passCheck.error })
+      }
       updateBody.password_hash = await bcrypt.hash(password, 10)
     }
 
@@ -151,7 +162,7 @@ export async function updateCurrentUserProfile(req, res) {
       return res.status(result.status || 500).json(result.body || { error: "Failed to update profile" })
     }
 
-    res.status(200).json({ message: "Profile updated successfully", user: result.body })
+    res.status(200).json({ message: "Profile updated successfully", user: sanitizeUser(result.body) })
   } catch (error) {
     console.error("updateCurrentUserProfile error:", error)
     res.status(500).json({ error: "Internal server error", details: error.message })
@@ -159,10 +170,15 @@ export async function updateCurrentUserProfile(req, res) {
 }
 
 export async function register(req, res) {
-  const { username, password, roles, role, status, fullname, firstName, lastName } = req.body
+  const { username, password, roles, role, status, fullname, firstName, lastName, employee_id, warehouse_ids } = req.body
 
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" })
+  }
+
+  const passCheck = validateStrongPassword(password)
+  if (!passCheck.valid) {
+    return res.status(400).json({ error: passCheck.error })
   }
 
   const assignedRoles = Array.isArray(roles) && roles.length > 0 ? roles : [role || "viewer"]
@@ -195,6 +211,8 @@ export async function register(req, res) {
         first_name: fName,
         last_name: lName,
         status: status || "active",
+        employee_id: employee_id || null,
+        warehouse_ids: Array.isArray(warehouse_ids) ? warehouse_ids : [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -204,7 +222,7 @@ export async function register(req, res) {
       return res.status(result.status || 500).json(result.body || { error: "Failed to create user" })
     }
 
-    res.status(201).json({ message: "User created successfully", id })
+    res.status(201).json({ message: "User created successfully", id, user: sanitizeUser(result.body) })
   } catch (error) {
     console.error("Register error:", error)
     res.status(500).json({ error: "Internal server error", details: error.message })

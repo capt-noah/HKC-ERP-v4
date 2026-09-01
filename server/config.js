@@ -30,6 +30,10 @@ export const config = {
 }
 
 export function assertConfig() {
+  if (process.env.DB_DRIVER === "mysql" || Boolean(process.env.MYSQL_URL)) {
+    return // MySQL driver active; Supabase keys not required
+  }
+
   if (!config.supabaseRestUrl.includes("/rest/v1/")) {
     throw new Error("SUPABASE_REST_URL must point to the project's /rest/v1/ endpoint.")
   }

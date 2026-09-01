@@ -1,32 +1,39 @@
 import bcrypt from "bcrypt"
-import { createRow } from "./server/db/supabaseClient.js"
+import { drizzleCreateRow, drizzleUpdateRow, drizzleListRows } from "./server/db/drizzleCrud.js"
+import { getResource } from "./server/db/resourceRegistry.js"
 
 async function seedSuperAdmin() {
-  console.log("Seeding initial superadmin user...")
+  console.log("Seeding / updating initial superadmin user...")
   const username = "admin"
-  const password = "admin" // For testing
+  const password = "adminPassword123!"
 
-  
   try {
     const password_hash = await bcrypt.hash(password, 10)
+    const resource = getResource("users")
     
-    const response = await createRow({
-      resource: { table: "users", storage: "direct" },
-      body: { 
-        username, 
-        password_hash, 
-        role: "superadmin" 
-      },
-    })
-    
-    if (response.status >= 400) {
-      if (JSON.stringify(response.body).includes("duplicate key")) {
-        console.log("Superadmin already exists.")
-      } else {
-        console.error("Failed to seed superadmin:", response.body)
-      }
+    const existing = await drizzleListRows({ resource, query: { username: `eq.${username}` } })
+    const user = Array.isArray(existing.body) && existing.body.length > 0 ? existing.body[0] : null
+
+    if (user) {
+      await drizzleUpdateRow({
+        resource,
+        id: user.id,
+        body: { password_hash, status: "active" }
+      })
+      console.log(`✓ Superadmin password updated! Username: admin | Password: ${password}`)
     } else {
-      console.log("Superadmin seeded successfully! Username: admin | Password: SuperadminPassword1!")
+      await drizzleCreateRow({
+        resource,
+        body: { 
+          username, 
+          password_hash, 
+          roles: ["superadmin"],
+          role: "superadmin",
+          status: "active",
+          fullname: "Administrator"
+        },
+      })
+      console.log(`✓ Superadmin created! Username: admin | Password: ${password}`)
     }
   } catch (err) {
     console.error("Error seeding auth:", err)

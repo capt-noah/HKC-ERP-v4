@@ -1,6 +1,7 @@
 import { Router } from "express"
 import { getResource, listResources } from "../db/resourceRegistry.js"
 import { crudService } from "../modules/common/crudService.js"
+import { validateStrongPassword, sanitizeUser } from "../modules/auth/authUtils.js"
 import bcrypt from "bcrypt"
 
 export const crudRouter = Router()
@@ -72,7 +73,13 @@ crudRouter.get("/:resource", async (req, res, next) => {
     if (result.headers?.["Content-Range"]) {
       res.setHeader("Content-Range", result.headers["Content-Range"])
     }
-    res.status(result.status).json(result.body)
+
+    let responseBody = result.body
+    if (req.params.resource === "users" && Array.isArray(responseBody)) {
+      responseBody = responseBody.map(sanitizeUser)
+    }
+
+    res.status(result.status).json(responseBody)
   } catch (err) {
     next(err)
   }
@@ -99,8 +106,26 @@ crudRouter.post("/:resource", async (req, res, next) => {
       res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
       return
     }
-    const result = await crudService.create({ resource, body: req.body, headers: req.headers })
-    res.status(result.status).json(result.body)
+
+    let body = req.body
+    if (req.params.resource === "users") {
+      if (body.password) {
+        const passCheck = validateStrongPassword(body.password)
+        if (!passCheck.valid) {
+          return res.status(400).json({ error: passCheck.error })
+        }
+        const password_hash = await bcrypt.hash(body.password, 10)
+        body = { ...body, password_hash }
+        delete body.password
+      }
+      if (Array.isArray(body.roles) && body.roles.length > 0) {
+        body.role = body.roles[0]
+      }
+    }
+
+    const result = await crudService.create({ resource, body, headers: req.headers })
+    const responseBody = req.params.resource === "users" ? sanitizeUser(result.body) : result.body
+    res.status(result.status).json(responseBody)
   } catch (err) {
     next(err)
   }
@@ -114,7 +139,8 @@ crudRouter.get("/:resource/:id", async (req, res, next) => {
       return
     }
     const result = await crudService.get({ resource, id: req.params.id, query: req.query, headers: req.headers })
-    res.status(result.status).json(result.body)
+    const responseBody = req.params.resource === "users" ? sanitizeUser(result.body) : result.body
+    res.status(result.status).json(responseBody)
   } catch (err) {
     next(err)
   }
@@ -129,14 +155,24 @@ crudRouter.patch("/:resource/:id", async (req, res, next) => {
     }
 
     let body = req.body
-    if (req.params.resource === "users" && body && body.password) {
-      const password_hash = await bcrypt.hash(body.password, 10)
-      body = { ...body, password_hash }
-      delete body.password
+    if (req.params.resource === "users") {
+      if (body && body.password) {
+        const passCheck = validateStrongPassword(body.password)
+        if (!passCheck.valid) {
+          return res.status(400).json({ error: passCheck.error })
+        }
+        const password_hash = await bcrypt.hash(body.password, 10)
+        body = { ...body, password_hash }
+        delete body.password
+      }
+      if (body && Array.isArray(body.roles) && body.roles.length > 0) {
+        body.role = body.roles[0]
+      }
     }
 
     const result = await crudService.update({ resource, id: req.params.id, body, headers: req.headers })
-    res.status(result.status).json(result.body)
+    const responseBody = req.params.resource === "users" ? sanitizeUser(result.body) : result.body
+    res.status(result.status).json(responseBody)
   } catch (err) {
     next(err)
   }
