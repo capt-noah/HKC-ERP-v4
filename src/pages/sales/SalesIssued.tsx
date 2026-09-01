@@ -894,7 +894,7 @@ export default function SalesIssued() {
                       <td style={{ width: `${salesTable.colWidths.payment_status}px` }} className="px-3 py-3">
                         {isCash ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Sales
+                            Cash
                           </span>
                         ) : dueAmt <= 0 && paidAmt > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
