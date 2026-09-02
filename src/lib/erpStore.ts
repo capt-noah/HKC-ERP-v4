@@ -53,6 +53,7 @@ export interface BinCardMovementEntry {
   qtyIssued: number
   balance: number
   expiryDate: string
+  mfgDate?: string
   party: string
   unitPrice?: number
   remark: string
@@ -381,12 +382,12 @@ export function getTradeLicenseStatus(customer: Customer, warehouse?: string): {
     return { status: "valid", daysRemaining: 9999, isPermanent: true, docType }
   }
 
-  // Trade License for WH2 / WH3 requires active 30-day compliance tracking
+  // Trade License for WH2 / WH3 requires active 180-day (6 months) compliance tracking
   if (!customer.tradePaperUploadedAt) {
     return { status: "expired", daysRemaining: 0, isPermanent: false, docType }
   }
   const uploadedDate = new Date(customer.tradePaperUploadedAt)
-  const expiryDate = new Date(uploadedDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const expiryDate = new Date(uploadedDate.getTime() + 180 * 24 * 60 * 60 * 1000)
   const today = new Date()
   const diffMs = expiryDate.getTime() - today.getTime()
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
@@ -1203,9 +1204,13 @@ class ErpStore {
       status: "Released" as const,
     }))
 
+    const packSize = Number(prod.quantityPerPack || 1)
+    const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
+
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,
@@ -1236,9 +1241,13 @@ class ErpStore {
       status: "Released" as const,
     }))
 
+    const packSize = Number(prod.quantityPerPack || 1)
+    const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
+
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,
@@ -1259,10 +1268,13 @@ class ErpStore {
     const nextVal = totalQuantity * Number(prod.unitCost || 0)
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
+    const packSize = Number(prod.quantityPerPack || 1)
+    const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
 
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,

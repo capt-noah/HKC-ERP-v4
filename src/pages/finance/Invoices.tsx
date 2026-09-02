@@ -579,7 +579,7 @@ export default function Invoices() {
                         </div>
                         <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden">
                           <div
-                            className={`h-full transition-all duration-300 ${dueVal <= 0 ? "bg-emerald-600" : "bg-blue-600"}`}
+                            className={`h-full transition-all duration-300 ${dueVal <= 0 ? "bg-emerald-600" : "bg-emerald-500"}`}
                             style={{ width: `${pct}%` }}
                           />
                         </div>
@@ -595,112 +595,112 @@ export default function Invoices() {
                   )
                 })()}
 
-                {/* Recorded Installment Receipts History */}
-                {(() => {
-                  const invPayments = store.getPaymentsForInvoice(activeInvoice.id)
-                  if (invPayments.length === 0) return null
-                  return (
-                    <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50 space-y-2">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 block">
-                        Recorded Installment Receipts ({invPayments.length})
+                  {/* Recorded Installment Receipts History */}
+                  {(() => {
+                    const invPayments = store.getPaymentsForInvoice(activeInvoice.id)
+                    if (invPayments.length === 0) return null
+                    return (
+                      <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50 space-y-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 block">
+                          Recorded Installment Receipts ({invPayments.length})
+                        </span>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                          {invPayments.map((p, idx) => (
+                            <div key={p.id || idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-zinc-200 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-black text-[10px] bg-zinc-100 px-1.5 py-0.5 rounded">#{p.installment_no || idx + 1}</span>
+                                <span className="font-bold text-zinc-800">{p.date}</span>
+                                <span className="font-mono text-[11px] text-zinc-500">({p.reference})</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-black text-emerald-700">ETB {money(p.amount)}</span>
+                                {p.payment_advice_url && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPreviewDocUrl(p.payment_advice_url!)
+                                      setPreviewDocName(p.payment_advice_filename || "Payment Slip")
+                                    }}
+                                    className="text-emerald-700 font-bold hover:underline text-[11px] cursor-pointer"
+                                  >
+                                    Slip ↗
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Attached Supporting Documents & Payment Advice */}
+                  <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                        <Paperclip className="size-3.5" /> Attached Supporting Documents & Payment Advice
                       </span>
-                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                        {invPayments.map((p, idx) => (
-                          <div key={p.id || idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-zinc-200 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-black text-[10px] bg-zinc-100 px-1.5 py-0.5 rounded">#{p.installment_no || idx + 1}</span>
-                              <span className="font-bold text-zinc-800">{p.date}</span>
-                              <span className="font-mono text-[11px] text-zinc-500">({p.reference})</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-black text-emerald-700">ETB {money(p.amount)}</span>
-                              {p.payment_advice_url && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPreviewDocUrl(p.payment_advice_url!)
-                                    setPreviewDocName(p.payment_advice_filename || "Payment Slip")
-                                  }}
-                                  className="text-blue-600 font-bold hover:underline text-[11px]"
-                                >
-                                  Slip ↗
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                      <span className="text-[10px] font-bold text-zinc-400">
+                        {isAttachmentsLoading ? (
+                          <Skeleton className="h-3 w-10 bg-zinc-200/80 rounded-full" />
+                        ) : (
+                          `${invoiceAttachments.length} ${invoiceAttachments.length === 1 ? "file" : "files"}`
+                        )}
+                      </span>
+                    </div>
+
+                    {isAttachmentsLoading ? (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Skeleton className="h-8 w-44 bg-zinc-200/80 rounded-xl" />
+                        <Skeleton className="h-8 w-36 bg-zinc-200/80 rounded-xl" />
+                      </div>
+                    ) : invoiceAttachments.length === 0 ? (
+                      <p className="text-xs text-zinc-400 font-medium italic">
+                        No payment advice or supporting documents attached yet. Click "Record Payment" to attach payment slip.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {invoiceAttachments.map((att) => (
+                          <button
+                            key={att.id}
+                            type="button"
+                            onClick={() => {
+                              setPreviewDocUrl(att.file_url)
+                              setPreviewDocName(att.file_name)
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-800 text-xs font-bold transition-all shadow-xs cursor-pointer"
+                          >
+                            <FileText className="size-3.5 text-zinc-500" />
+                            <span className="truncate max-w-[160px]">{att.file_name}</span>
+                            <Eye className="size-3 text-zinc-400" />
+                          </button>
                         ))}
                       </div>
-                    </div>
-                  )
-                })()}
-
-                {/* Attached Supporting Documents & Payment Advice */}
-                <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
-                      <Paperclip className="size-3.5" /> Attached Supporting Documents & Payment Advice
-                    </span>
-                    <span className="text-[10px] font-bold text-zinc-400">
-                      {isAttachmentsLoading ? (
-                        <Skeleton className="h-3 w-10 bg-zinc-200/80 rounded-full" />
-                      ) : (
-                        `${invoiceAttachments.length} ${invoiceAttachments.length === 1 ? "file" : "files"}`
-                      )}
-                    </span>
+                    )}
                   </div>
 
-                  {isAttachmentsLoading ? (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <Skeleton className="h-8 w-44 bg-zinc-200/80 rounded-xl" />
-                      <Skeleton className="h-8 w-36 bg-zinc-200/80 rounded-xl" />
-                    </div>
-                  ) : invoiceAttachments.length === 0 ? (
-                    <p className="text-xs text-zinc-400 font-medium italic">
-                      No payment advice or supporting documents attached yet. Click "Record Payment" to attach payment slip.
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {invoiceAttachments.map((att) => (
-                        <button
-                          key={att.id}
-                          type="button"
-                          onClick={() => {
-                            setPreviewDocUrl(att.file_url)
-                            setPreviewDocName(att.file_name)
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-800 text-xs font-bold transition-all shadow-xs cursor-pointer"
-                        >
-                          <FileText className="size-3.5 text-zinc-500" />
-                          <span className="truncate max-w-[160px]">{att.file_name}</span>
-                          <Eye className="size-3 text-zinc-400" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Bottom Action Footer */}
-                <div className="flex items-center justify-end gap-2 pt-4 border-t border-black/5">
-                  {!isSelectedInvoicePaid && (
+                  {/* Bottom Action Footer */}
+                  <div className="flex items-center justify-end gap-2 pt-4 border-t border-black/5">
+                    {!isSelectedInvoicePaid && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(activeInvoice)}
+                        className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] transition-all shadow-sm cursor-pointer"
+                        title="Record Payment Installment"
+                      >
+                        <Receipt className="size-3 text-white" /> Record Payment
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => handleOpenEditModal(activeInvoice)}
-                      className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-extrabold text-[11px] transition-all shadow-sm cursor-pointer"
-                      title="Record Payment Installment"
+                      onClick={() => setPrintingInvoice(activeInvoice)}
+                      className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                      title="Export Sales Invoice"
                     >
-                      <Receipt className="size-3 text-white" /> Record Payment
+                      <Download className="size-3 text-zinc-700" /> Export
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setPrintingInvoice(activeInvoice)}
-                    className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                    title="Export Sales Invoice"
-                  >
-                    <Download className="size-3 text-zinc-700" /> Export
-                  </button>
-                </div>
-              </GlassCard>
+                  </div>
+                </GlassCard>
             ) : (
               <GlassCard className="p-12 text-center text-gray-400 text-sm border border-black/5 flex flex-col items-center justify-center min-h-[500px] space-y-3">
                 <div className="w-12 h-12 rounded-full bg-black/5 flex items-center justify-center text-gray-400">
@@ -907,7 +907,7 @@ export default function Invoices() {
                         <button
                           type="button"
                           onClick={() => setEditPayAmount(String(dueAmt))}
-                          className="text-[11px] font-black text-blue-700 hover:underline cursor-pointer"
+                          className="text-[11px] font-black text-emerald-700 hover:underline cursor-pointer"
                         >
                           Pay Full Due (ETB {money(dueAmt)})
                         </button>
@@ -1005,7 +1005,7 @@ export default function Invoices() {
                       <button
                         type="submit"
                         disabled={isSavingEdit}
-                        className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-black shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                        className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5 transition-colors"
                       >
                         {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : <>Save & Record <ArrowRight className="size-3.5" /></>}
                       </button>

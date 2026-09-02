@@ -75,10 +75,10 @@ export default function HkcDocAttachmentPanel({
           <button
             type="button"
             onClick={() => setIsCameraOpen(true)}
-            className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-xs font-black inline-flex items-center gap-1.5 active:scale-95 transition-all text-blue-800 dark:text-blue-200 cursor-pointer shadow-2xs"
+            className="px-3 py-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-xs font-black inline-flex items-center gap-1.5 active:scale-95 transition-all text-emerald-800 dark:text-emerald-200 cursor-pointer shadow-2xs"
             title="Snap photo directly from camera"
           >
-            <Camera className="size-3.5 text-blue-600 dark:text-blue-400" />
+            <Camera className="size-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Snap Photo</span>
           </button>
 
@@ -131,7 +131,7 @@ export default function HkcDocAttachmentPanel({
                       {file.fileUrl.startsWith("data:") ? (
                         <img src={file.fileUrl} alt={file.fileName} className="size-full object-cover" />
                       ) : (
-                        <ImageIcon className="size-4 text-blue-500" />
+                        <ImageIcon className="size-4 text-emerald-600" />
                       )}
                     </div>
                   ) : (
@@ -151,7 +151,7 @@ export default function HkcDocAttachmentPanel({
                     <button
                       type="button"
                       onClick={() => setPreviewImage({ fileName: file.fileName, fileUrl: file.fileUrl })}
-                      className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg cursor-pointer transition-colors"
+                      className="p-1.5 hover:bg-emerald-50 text-emerald-700 rounded-lg cursor-pointer transition-colors"
                       title="Preview photo"
                     >
                       <Eye className="size-3.5" />

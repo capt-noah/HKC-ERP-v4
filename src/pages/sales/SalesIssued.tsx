@@ -207,9 +207,11 @@ export default function SalesIssued() {
     setCustomerName(so.customer)
     const matchedWh = warehouses.find((w) => w.code === so.warehouse || w.id === so.warehouse || w.name === so.warehouse)
     const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(so.warehouse)
-    const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
     setWarehouseId(targetWhId)
-    setPaymentType(so.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+    const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
+    const rawTerms = (so.payment_terms || so.paymentTerms || so.paymentType || so.payment_type || "").toString().toLowerCase()
+    const isCreditOrder = rawTerms.includes("credit") || rawTerms.includes("net")
+    setPaymentType(isCreditOrder ? "Credit" : "Cash")
     setReferenceNo(so.id)
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
     setIssueFormErrors({})
@@ -329,7 +331,9 @@ export default function SalesIssued() {
       const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse)
       const targetIsWh1 = isWH1(preselectedSo.warehouse) || isWH1(targetWhId)
       setWarehouseId(targetWhId)
-      setPaymentType(preselectedSo.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+      const rawTerms = (preselectedSo.payment_terms || preselectedSo.paymentTerms || preselectedSo.paymentType || preselectedSo.payment_type || "").toString().toLowerCase()
+      const isCreditOrder = rawTerms.includes("credit") || rawTerms.includes("net")
+      setPaymentType(isCreditOrder ? "Credit" : "Cash")
       setReferenceNo(preselectedSo.id)
       const allProducts = erp.getProducts()
 
@@ -875,7 +879,8 @@ export default function SalesIssued() {
                 ) : salesTable.sorted().length === 0 ? (
                   <tr><td colSpan={salesIssueColumns.length} className="py-16 text-center text-xs font-bold text-zinc-400">No sales issued records match your filters.</td></tr>
                 ) : salesTable.sorted().map((row) => {
-                  const isCash = (row.payment_type || "Cash") === "Cash"
+                  const isCredit = (row.payment_type || (row as any).paymentType || "").toString().toLowerCase().includes("credit")
+                  const isCash = !isCredit
                   const paymentsForIssue = financeStore.getPaymentsForSalesIssue(row.id)
                   const totalAmt = Number(row.total_amount || 0)
                   const paidAmt = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(row.amount_paid || 0)
@@ -896,7 +901,7 @@ export default function SalesIssued() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                             Cash
                           </span>
-                        ) : dueAmt <= 0 && paidAmt > 0 ? (
+                        ) : totalAmt > 0 && dueAmt <= 0 && paidAmt > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
                             <CheckCircle2 className="size-3 text-emerald-600" /> Credit • Fully Settled
                           </span>
@@ -915,7 +920,7 @@ export default function SalesIssued() {
                               Credit • Unpaid (0%)
                             </span>
                             <span className="text-[10px] font-mono text-rose-600 font-bold">
-                              Due: {money(dueAmt)}
+                              Due: {money(dueAmt || totalAmt)}
                             </span>
                           </div>
                         )}
@@ -932,10 +937,10 @@ export default function SalesIssued() {
                             <button
                               type="button"
                               onClick={() => openRecordPayment(row)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-[11px] transition-all border border-blue-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs cursor-pointer"
                               title="Record Payment Installment"
                             >
-                              <Receipt className="size-3 text-blue-700" /> Pay
+                              <Receipt className="size-3 text-emerald-700" /> Pay
                             </button>
                           )}
                           <button
@@ -1062,7 +1067,7 @@ export default function SalesIssued() {
                         <div>
                           <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Financial Settlement Progress</span>
                           <h4 className="text-sm font-black text-zinc-900 flex items-center gap-2">
-                            Terms: <span className={isCredit ? "text-blue-700" : "text-emerald-700"}>{editing.payment_type}</span>
+                            Terms: <span className={isCredit ? "text-zinc-900" : "text-emerald-700"}>{editing.payment_type}</span>
                             {isCredit && (
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                                 dueAmt <= 0 ? "bg-emerald-100 text-emerald-800" : paidAmt > 0 ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800"
@@ -1079,7 +1084,7 @@ export default function SalesIssued() {
                               setFormOpen(false)
                               openRecordPayment(editing)
                             }}
-                            className="px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer self-start sm:self-auto"
+                            className="px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black flex items-center gap-1.5 shadow-sm cursor-pointer self-start sm:self-auto transition-colors"
                           >
                             <Receipt className="size-3.5" /> Record Installment
                           </button>
@@ -1089,7 +1094,7 @@ export default function SalesIssued() {
                       {/* Progress Bar */}
                       <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden">
                         <div
-                          className={`h-full transition-all duration-300 ${dueAmt <= 0 ? "bg-emerald-600" : "bg-blue-600"}`}
+                          className={`h-full transition-all duration-300 ${dueAmt <= 0 ? "bg-emerald-600" : "bg-emerald-500"}`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
@@ -1132,7 +1137,7 @@ export default function SalesIssued() {
                                         setPreviewDocUrl(p.payment_advice_url!)
                                         setPreviewDocName(p.payment_advice_filename || "Payment Slip")
                                       }}
-                                      className="text-blue-600 font-bold hover:underline text-[11px]"
+                                      className="text-emerald-700 font-bold hover:underline text-[11px] cursor-pointer"
                                     >
                                       View Slip ↗
                                     </button>
@@ -1190,7 +1195,7 @@ export default function SalesIssued() {
                                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold ${
                                   isSelected 
                                     ? "bg-white/20 text-white" 
-                                    : (isCredit ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800")
+                                    : (isCredit ? "bg-zinc-100 text-zinc-800" : "bg-emerald-100 text-emerald-800")
                                 }`}>
                                   {isCredit ? "Credit" : "Sales"}
                                 </span>
@@ -1418,7 +1423,7 @@ export default function SalesIssued() {
                                     setPreviewDocUrl(stagedTradePaperUrl)
                                     setPreviewDocName(stagedTradePaperName || docLabel)
                                   }}
-                                  className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                  className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                                 >
                                   View Doc <ExternalLink className="size-3" />
                                 </button>
@@ -1442,10 +1447,10 @@ export default function SalesIssued() {
                         }`}>
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                              <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
+                              <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipt
                             </span>
                             {stagedPaymentAdviceName ? (
-                              <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                              <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
                                 Attached
                               </span>
                             ) : isDocsLoading ? (
@@ -1499,7 +1504,7 @@ export default function SalesIssued() {
                                   setPreviewDocUrl(stagedPaymentAdviceUrl)
                                   setPreviewDocName(stagedPaymentAdviceName || "Payment Advice")
                                 }}
-                                className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               >
                                 View Doc <ExternalLink className="size-3" />
                               </button>
@@ -1742,7 +1747,7 @@ export default function SalesIssued() {
               {/* Header */}
               <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="size-9 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
+                  <div className="size-9 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
                     <Receipt className="size-5" />
                   </div>
                   <div>
@@ -1798,7 +1803,7 @@ export default function SalesIssued() {
                         <button
                           type="button"
                           onClick={() => setPayAmount(String(dueAmt))}
-                          className="text-[11px] font-black text-blue-700 hover:underline cursor-pointer"
+                          className="text-[11px] font-black text-emerald-700 hover:underline cursor-pointer"
                         >
                           Pay Full Remaining (ETB {money(dueAmt)})
                         </button>
@@ -1899,7 +1904,7 @@ export default function SalesIssued() {
                       <button
                         type="submit"
                         disabled={isSubmittingPayment}
-                        className="px-5 py-2 rounded-xl bg-blue-700 text-white font-black hover:bg-blue-800 shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                        className="px-5 py-2 rounded-xl bg-emerald-700 text-white font-black hover:bg-emerald-800 shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5 transition-colors"
                       >
                         {isSubmittingPayment ? <LoadingDots color="bg-white" size="sm" /> : <>Record Payment <ArrowRight className="size-3.5" /></>}
                       </button>

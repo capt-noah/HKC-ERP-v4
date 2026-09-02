@@ -1061,7 +1061,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     )
                   }
                   return (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black bg-zinc-100 text-zinc-800 border border-zinc-200">
                       Credit (Unpaid)
                     </span>
                   )
@@ -1521,7 +1521,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             <span className="text-[11px] block mt-0.5 leading-normal">
                               {isWh1Order
                                 ? "This customer does not have an attached Bank Permit on file. Please attach a Bank Permit file to proceed."
-                                : "This customer's trade license has expired (exceeded 30 days) or is missing. You must upload a new trade license to create this sales order."
+                                : "This customer's trade license has expired (exceeded 6 months / 180 days) or is missing. You must upload a new trade license to create this sales order."
                               }
                             </span>
                           </div>
@@ -1651,7 +1651,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                   setPreviewUrl(stagedTradePaperUrl)
                                   setPreviewName(stagedTradePaperName || docLabel)
                                 }}
-                                className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                                className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               >
                                 View Doc <ExternalLink className="size-3" />
                               </button>
@@ -1673,10 +1673,10 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           }`}>
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                                <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
+                                <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipt
                               </span>
                               {stagedPaymentAdviceName ? (
-                                <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
+                                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
                               ) : (
                                 <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">Required for Cash</span>
                               )}
@@ -1715,7 +1715,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                     setPreviewUrl(stagedPaymentAdviceUrl)
                                     setPreviewName(stagedPaymentAdviceName || "Payment Advice")
                                   }}
-                                  className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                                  className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                                 >
                                   View Doc <ExternalLink className="size-3" />
                                 </button>
@@ -1804,7 +1804,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       )
                                     })()}
                                     <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Order ? ` ${item.unit}` : ""}</span></span>
                                       {isOver && (
                                         <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
                                           <AlertTriangle className="size-3 text-amber-600 shrink-0" />
@@ -2048,7 +2048,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     <span className="text-[11px] block mt-0.5 leading-normal">
                       {isWh1Editing
                         ? "This customer does not have an attached Bank Permit on file. Please attach a Bank Permit file to update this order."
-                        : "This customer's trade license has expired (exceeded 30 days) or is missing. You must upload a new trade license to update this sales order."
+                        : "This customer's trade license has expired (exceeded 6 months / 180 days) or is missing. You must upload a new trade license to update this sales order."
                       }
                     </span>
                   </div>
@@ -2176,7 +2176,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           setPreviewUrl(stagedTradePaperUrl)
                           setPreviewName(stagedTradePaperName || docLabel)
                         }}
-                        className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                        className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                       >
                         View Doc <ExternalLink className="size-3" />
                       </button>
@@ -2197,10 +2197,10 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   }`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                        <CheckCircle2 className="size-3.5 text-blue-600" /> Payment Advice Receipt
+                        <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipt
                       </span>
                       {stagedPaymentAdviceName ? (
-                        <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">Attached</span>
+                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
                       ) : (
                         <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">Required for Cash</span>
                       )}
@@ -2239,7 +2239,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             setPreviewUrl(stagedPaymentAdviceUrl)
                             setPreviewName(stagedPaymentAdviceName || "Payment Advice")
                           }}
-                          className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                          className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                         >
                           View Doc <ExternalLink className="size-3" />
                         </button>
@@ -2327,7 +2327,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               )
                             })()}
                             <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Editing ? ` ${item.unit}` : ""}</span></span>
                               {isOver && (
                                 <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
                                   <AlertTriangle className="size-3 text-amber-600 shrink-0" />

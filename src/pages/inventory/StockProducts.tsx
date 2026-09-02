@@ -381,8 +381,6 @@ export default function StockProducts() {
         { key: "voucherNo", label: "Voucher No", align: "left" },
         { key: "customer", label: "Customer", align: "left" },
         { key: "plateNumber", label: "Plate No", align: "left" },
-        { key: "entryDate", label: "Entry Date", align: "left" },
-        { key: "leaveDate", label: "Leave Date", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM", align: "left" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
@@ -541,6 +539,7 @@ export default function StockProducts() {
             qtyReceived: addTotalQuantity,
             qtyIssued: 0,
             balance: addTotalQuantity,
+            mfgDate: isWH1Form ? undefined : (addMfgDate || undefined),
             expiryDate: addExpDate,
             party: "Initial Stock Deposit",
             unitPrice: Number(addUnitPrice || 0),
@@ -734,7 +733,7 @@ export default function StockProducts() {
     
     const priceVal = isWH1(warehouse) ? Number(editForm.price || 0) : Number(editForm.unitCost || 0)
     const unitCost = priceVal
-    const sellingPrice = isWH1(warehouse) ? priceVal : Number(editForm.sellingPrice || 0)
+    const sellingPrice = priceVal
     const reorderLevel = editForm.reorderLevel === "" ? undefined : Number(editForm.reorderLevel)
 
     if (isWH1(warehouse)) {
@@ -753,8 +752,8 @@ export default function StockProducts() {
         return
       }
     } else {
-      if (!name || !sku || !warehouse || !unit || !Number.isFinite(unitCost) || !Number.isFinite(sellingPrice)) {
-        showToast("Cannot save stock details", "warning", "Complete item name, SKU, warehouse, unit, cost, and selling price.")
+      if (!name || !sku || !warehouse || !unit || !Number.isFinite(unitCost)) {
+        showToast("Cannot save stock details", "warning", "Complete item name, SKU, warehouse, unit, and unit price.")
         return
       }
     }
@@ -1021,12 +1020,6 @@ export default function StockProducts() {
                           if (isWH1Item && isWH1(selectedWarehouse)) {
                             const entries = prod.wh1Entries || []
                             const totalReceived = entries.reduce((sum, e) => sum + e.quantityReceived, 0)
-                            const entryDates = entries.map(e => new Date(e.entryDate).getTime()).filter(t => !Number.isNaN(t))
-                            const earliestDate = entryDates.length ? new Date(Math.min(...entryDates)).toISOString().slice(0, 10) : prod.entryDate || "-"
-                            const latestDate = entryDates.length ? new Date(Math.max(...entryDates)).toISOString().slice(0, 10) : prod.entryDate || "-"
-                            
-                            const leaveDates = entries.map(e => e.leaveDate ? new Date(e.leaveDate).getTime() : 0).filter(t => t > 0)
-                            const latestLeave = leaveDates.length ? new Date(Math.max(...leaveDates)).toISOString().slice(0, 10) : prod.leaveDate || "-"
 
                             return (
                               <Fragment key={prod.id}>
@@ -1069,14 +1062,6 @@ export default function StockProducts() {
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
                                     {prod.plateNumber || (entries[0]?.plateNumber || "—")}
                                   </td>
-
-                                  {/* Entry date */}
-                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">
-                                    {earliestDate === latestDate ? earliestDate : `${earliestDate} to ${latestDate}`}
-                                  </td>
-
-                                  {/* Leave date */}
-                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">{latestLeave}</td>
 
                                   {/* Total quantity */}
                                   <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
@@ -1226,8 +1211,16 @@ export default function StockProducts() {
                                 {/* Shelf Number */}
                                 <td className="py-4 px-4 font-mono font-bold text-zinc-600 truncate">{prod.shelfNo || "—"}</td>
 
-                                {/* Batch */}
-                                <td className="py-4 px-4 font-mono font-bold text-zinc-700 truncate">{prod.batch || "—"}</td>
+                                {/* Batch (Parent level shows — / multiple indicator; child batches display specific batch numbers) */}
+                                <td className="py-4 px-4 font-mono font-bold text-zinc-400">
+                                  {binEntries.length > 1 ? (
+                                    <span className="px-2 py-0.5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-600 border border-zinc-200">
+                                      {binEntries.length} batches
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
 
                                 {/* MFG */}
                                 <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.manufacturingDate)}</td>
@@ -1271,12 +1264,12 @@ export default function StockProducts() {
                                 {/* Packaging Unit */}
                                 <td className="py-4 px-4 font-bold text-zinc-600 uppercase">{prod.unit}</td>
 
-                                {/* Unit Price */}
-                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
-                                  ETB {money(prod.sellingPrice || prod.unitCost || 0)}
+                                {/* Unit Price (Parent level shows — because different batches have varying prices; child rows display batch unit price) */}
+                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-400">
+                                  —
                                 </td>
 
-                                {/* Total Stock Value */}
+                                {/* Total Stock Value (Aggregate across all child batches) */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
                                   ETB {money(prod.totalStockValue || 0)}
                                 </td>
@@ -1551,26 +1544,19 @@ export default function StockProducts() {
                 </label>
 
                 {!isWH1(editForm.warehouse) && (
-                  <>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Cost Price</span>
-                      <input type="number" min="0" value={editForm.unitCost} onChange={(e) => updateEditForm({ unitCost: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Selling Price</span>
-                      <input type="number" min="0" value={editForm.sellingPrice} onChange={(e) => updateEditForm({ sellingPrice: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
-                    </label>
-                  </>
+                  <label className="space-y-1">
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">Unit Price (ETB)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editForm.unitCost}
+                      onChange={(e) => updateEditForm({ unitCost: e.target.value, sellingPrice: e.target.value, price: e.target.value })}
+                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
+                      placeholder="e.g. 150"
+                    />
+                  </label>
                 )}
-                
-                <label className="space-y-1">
-                  <span className="block text-[11px] font-black uppercase text-zinc-500">Compliance Status</span>
-                  <select value={editForm.approvalStatus || "Approved"} onChange={(e) => updateEditForm({ approvalStatus: e.target.value as Product["approvalStatus"] })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs">
-                    <option value="Approved">Approved</option>
-                    <option value="Submitted">Submitted</option>
-                    <option value="Not Submitted">Not Submitted</option>
-                  </select>
-                </label>
               </div>
 
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
