@@ -25,6 +25,7 @@ import {
   savePaymentAdvice,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
+import { uploadFile } from "@/lib/fileUpload"
 
 import {
   createSalesIssue,
@@ -483,7 +484,7 @@ export default function SalesIssued() {
 
   const handleRecordInstallmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!payingIssue) return
+    if (!payingIssue || isSubmittingPayment) return
     const numAmount = parseFloat(payAmount)
     if (isNaN(numAmount) || numAmount <= 0) {
       showToast("Invalid Amount", "warning", "Please enter a valid installment payment amount.")
@@ -505,12 +506,19 @@ export default function SalesIssued() {
       let stagedSlipUrl = ""
       let stagedSlipName = ""
       if (payAdviceFile) {
-        stagedSlipName = payAdviceFile.name
-        stagedSlipUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.readAsDataURL(payAdviceFile)
-        })
+        try {
+          const uploadRes = await uploadFile(payAdviceFile, "sales_issued")
+          stagedSlipName = uploadRes.originalName
+          stagedSlipUrl = uploadRes.url
+        } catch (uploadErr) {
+          console.warn("Server upload failed, falling back to data URL:", uploadErr)
+          stagedSlipName = payAdviceFile.name
+          stagedSlipUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.readAsDataURL(payAdviceFile)
+          })
+        }
 
         try {
           await savePaymentAdvice({
@@ -663,6 +671,7 @@ export default function SalesIssued() {
   }, [products, warehouseId])
 
   const handleSave = async () => {
+    if (isSaving) return
     const isWh1Active = isWH1(warehouseId)
     const errors: Record<string, string> = {}
     if (!fsNo.trim()) errors.fsNo = "FS Number is required."
@@ -670,7 +679,7 @@ export default function SalesIssued() {
     if (!customerName.trim()) errors.customer = "Customer Name is required."
     if (!warehouseId) errors.warehouse = "Warehouse selection is required."
 
-    const matchedCust = erp.getCustomers().find((c) => c.name.toLowerCase() === customerName.trim().toLowerCase() || c.id === customerName)
+    const matchedCust = erp.getCustomers().find((c) => (c.name || "").toLowerCase() === customerName.trim().toLowerCase() || c.id === customerName)
     if (matchedCust) {
       const evaluation = getTradeLicenseStatus(matchedCust, warehouseId)
       if (evaluation.status === "missing" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
