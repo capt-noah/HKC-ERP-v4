@@ -6,6 +6,7 @@ import { salesRouter } from "./salesRouter.js"
 import { authRouter } from "../modules/auth/authRouter.js"
 import { authenticateToken, authorizeRoles } from "../modules/auth/authMiddleware.js"
 import { activityLoggerMiddleware } from "../modules/common/activityLogger.js"
+import { uploadRouter } from "./uploadRouter.js"
 
 export const masterRouter = Router()
 
@@ -33,6 +34,7 @@ masterRouter.get("/api", (_req, res) => {
 })
 
 // Domain routers (Order matters: specific domain routes before generic /api/:resource fallback)
+masterRouter.use("/api", uploadRouter)
 masterRouter.use("/api", salesRouter)
 masterRouter.use("/api", financeRouter)
 masterRouter.use("/api", crudRouter)
