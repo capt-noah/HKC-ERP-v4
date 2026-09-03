@@ -46,10 +46,84 @@ app.use(logger.requestLogger)
 // 3. Parse JSON request bodies before any route handler runs.
 app.use(express.json({ limit: "10mb" }))
 
-// 4. API & Backend routes
+import { pool } from "./db/client.js"
+import { ensureSuperAdmin } from "./modules/auth/authController.js"
+
+// Auto-bootstrap superadmin account in background on startup
+void ensureSuperAdmin()
+
+// 4. API Diagnostics & Health Endpoints (Matching Plesk architecture)
+app.get("/hello", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "HKC ERP Express server running on Plesk",
+    timestamp: new Date().toISOString(),
+    nodeVersion: process.version,
+    port: process.env.PORT || config.port,
+    dbHost: config.dbHost,
+    dbName: config.dbName,
+  })
+})
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", message: "HKC is working" })
+})
+
+app.get("/api/auth/seed", async (req, res) => {
+  try {
+    await ensureSuperAdmin()
+    res.json({ status: "success", message: "Superadmin account verified/seeded: admin / SuperadminPassword1!" })
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message })
+  }
+})
+
+app.get("/api/db-test", async (req, res) => {
+  try {
+    const [ping] = await pool.query("SELECT 1+1 AS result, NOW() AS server_time")
+    const [tables] = await pool.query("SHOW TABLES")
+    let usersList = []
+    try {
+      const [rows] = await pool.query("SELECT id, username, role, status, is_active FROM users")
+      usersList = rows
+    } catch {}
+    res.json({
+      status: "success",
+      ping: ping[0],
+      database: config.dbName,
+      host: config.dbHost,
+      totalTables: tables.length,
+      users: usersList,
+      tables,
+    })
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message })
+  }
+})
+
+app.get("/api/db-test/sales-issues", async (req, res) => {
+  try {
+    const [issues] = await pool.query("SELECT * FROM `sales_issues` ORDER BY created_at DESC LIMIT 20").catch(async () => {
+      const [rows] = await pool.query("SELECT * FROM `sales_issues` LIMIT 20")
+      return [rows]
+    })
+    const [items] = await pool.query("SELECT * FROM `sales_issue_items` LIMIT 50")
+    res.json({
+      status: "success",
+      totalIssues: issues.length,
+      totalItems: items.length,
+      issues,
+      items,
+    })
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message })
+  }
+})
+
+// 5. API & Backend routes
 app.use("/", masterRouter)
 
-// 2. Serve uploaded files statically with caching, security headers, and cross-folder resolver fallback
+// 6. Serve uploaded files statically with caching, security headers, and cross-folder resolver fallback
 const uploadsPath = path.resolve(__dirname, "../uploads")
 if (!fs.existsSync(uploadsPath)) {
   fs.mkdirSync(uploadsPath, { recursive: true })
@@ -95,12 +169,12 @@ app.use("/uploads", (req, res, next) => {
   return res.status(404).json({ error: `File '${filename}' not found in server storage.` })
 })
 
-// 3. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
+// 7. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath, { maxAge: "1d", index: false }))
 }
 
-// 3. SPA Client-Side Catch-All Fallback (eliminates page refresh trap on Plesk across all Express versions)
+// 8. SPA Client-Side Catch-All Fallback (eliminates page refresh trap on Plesk across all Express versions)
 app.use((req, res, next) => {
   if (req.method !== "GET") return next()
   const indexPath = path.join(distPath, "index.html")
@@ -124,11 +198,18 @@ app.use((err, req, res, _next) => {
   })
 })
 
-const server = app.listen(config.port, config.host, () => {
-  console.log(`HKC ERP API listening on http://${config.host}:${config.port}`)
-})
+const rawPort = process.env.PORT || config.port || 1000
+const isNamedPipeOrSocket = typeof rawPort === "string" && isNaN(Number(rawPort))
 
-// Graceful shutdown — Render sends SIGTERM before killing the container.
+const server = isNamedPipeOrSocket
+  ? app.listen(rawPort, () => {
+      console.log(`HKC ERP API listening on socket/pipe ${rawPort}`)
+    })
+  : app.listen(Number(rawPort), () => {
+      console.log(`HKC ERP API listening on port ${rawPort}`)
+    })
+
+// Graceful shutdown
 function shutdown(signal) {
   console.log(`${signal} received — shutting down gracefully.`)
   server.close(() => {
@@ -136,7 +217,6 @@ function shutdown(signal) {
     process.exit(0)
   })
 
-  // Force-exit if connections don't drain within 10 seconds.
   setTimeout(() => {
     console.error("Forced exit after timeout.")
     process.exit(1)
@@ -145,3 +225,15 @@ function shutdown(signal) {
 
 process.on("SIGTERM", () => shutdown("SIGTERM"))
 process.on("SIGINT", () => shutdown("SIGINT"))
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[SERVER UNHANDLED REJECTION]:", reason)
+})
+
+process.on("uncaughtException", (err) => {
+  console.error("[SERVER UNCAUGHT EXCEPTION]:", err)
+})
+
+export { app, server }
+export default app
+
