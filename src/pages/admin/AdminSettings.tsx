@@ -20,17 +20,15 @@ import {
   X,
   Percent,
   MapPin,
-  Tag,
-  UserCheck,
   MoreVertical,
   Coins,
   ShieldCheck,
   Scale,
-  BookOpen,
 } from "lucide-react"
-import { useErpStore, type Warehouse } from "@/lib/erpStore"
+import { useErpStore, type Warehouse, type WarehouseType } from "@/lib/erpStore"
 import { useFinanceStore, type TaxRule } from "@/lib/financeStore"
 import { DEFAULT_ETHIOPIAN_TAX_BRACKETS, DEFAULT_ETHIOPIAN_PENSION_CONFIG, type TaxBracket } from "@/core/hr/payrollEngine"
+import { isExportWarehouse, getWarehouseType } from "@/lib/warehouses"
 import { cn } from "@/lib/utils"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 
@@ -100,7 +98,7 @@ export default function AdminSettings() {
   const warehouses = erp.getWarehouses()
 
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates" | "accounts">("general")
+  const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates">("general")
   const [isSaved, setIsSaved] = useState(false)
 
   // 1. General & Entity Profile State
@@ -159,11 +157,7 @@ export default function AdminSettings() {
   const [whName, setWhName] = useState("")
   const [whCode, setWhCode] = useState("")
   const [whLocation, setWhLocation] = useState("")
-  const [whType, setWhType] = useState("Dry Storage / Processing")
-  const [whSpecialization, setWhSpecialization] = useState("Commercial & Specialty Coffee")
-  const [whTargetMarkets, setWhTargetMarkets] = useState("Domestic & Export")
-  const [whManager, setWhManager] = useState("")
-  const [whStatus, setWhStatus] = useState("Active")
+  const [whType, setWhType] = useState<WarehouseType>("EXPORT_WH")
   const [activeWhMenuId, setActiveWhMenuId] = useState<string | null>(null)
 
   const syncFormFromSettings = (s: any) => {
@@ -476,21 +470,13 @@ export default function AdminSettings() {
       setWhName(wh.name)
       setWhCode(wh.code || wh.id)
       setWhLocation(wh.location || "")
-      setWhType(wh.type || "Dry Storage / Processing")
-      setWhSpecialization(wh.specialization || "Commercial & Specialty Coffee")
-      setWhTargetMarkets(wh.targetMarkets || "Domestic & Export")
-      setWhManager(wh.manager || "")
-      setWhStatus(wh.status || "Active")
+      setWhType(wh.warehouse_type || getWarehouseType(wh, warehouses))
     } else {
       setEditingWarehouse(null)
       setWhName("")
       setWhCode("")
       setWhLocation("")
-      setWhType("Dry Storage / Processing")
-      setWhSpecialization("Commercial & Specialty Coffee")
-      setWhTargetMarkets("Domestic & Export")
-      setWhManager("")
-      setWhStatus("Active")
+      setWhType("EXPORT_WH")
     }
     setWhModalOpen(true)
   }
@@ -505,30 +491,20 @@ export default function AdminSettings() {
 
     try {
       setIsSavingWh(true)
+      const payload: Omit<Warehouse, "id"> & { id?: string } = {
+        name: whName.trim(),
+        code: whCode.trim() || (editingWarehouse ? editingWarehouse.id : `WH-${Date.now().toString(36).toUpperCase()}`),
+        location: whLocation.trim(),
+        warehouse_type: whType,
+        type: whType === "EXPORT_WH" ? "Export Hub" : "Pharmaceutical Hub",
+      }
+
       if (editingWarehouse) {
-        await erp.updateWarehouse(editingWarehouse.id, {
-          name: whName.trim(),
-          code: whCode.trim() || editingWarehouse.id,
-          location: whLocation.trim(),
-          type: whType,
-          specialization: whSpecialization.trim(),
-          targetMarkets: whTargetMarkets.trim(),
-          manager: whManager.trim() || "Unassigned",
-          status: whStatus,
-        })
+        await erp.updateWarehouse(editingWarehouse.id, payload)
         showToast("Warehouse Updated", "success", `Warehouse '${whName}' updated successfully.`)
       } else {
-        await erp.addWarehouse({
-          name: whName.trim(),
-          code: whCode.trim(),
-          location: whLocation.trim(),
-          type: whType,
-          specialization: whSpecialization.trim(),
-          targetMarkets: whTargetMarkets.trim(),
-          manager: whManager.trim() || "Unassigned",
-          status: whStatus,
-        })
-        showToast("Warehouse Created", "success", `New warehouse facility '${whName}' added.`)
+        await erp.addWarehouse(payload)
+        showToast("Warehouse Created", "success", `New ${whType === "EXPORT_WH" ? "Export" : "Pharmaceutical"} facility '${whName}' added.`)
       }
       setWhModalOpen(false)
     } catch (err: any) {
@@ -577,7 +553,6 @@ export default function AdminSettings() {
     { id: "tax" as const, label: "Tax Rates & Rules", icon: Receipt, description: "Configure VAT, withholding & customs rates" },
     { id: "warehouses" as const, label: "Warehouse Facilities", icon: WarehouseIcon, description: "Change warehouse names, codes & details" },
     { id: "rates" as const, label: "Processing & Storage", icon: SlidersHorizontal, description: "Toll fee rates & tiered monthly storage" },
-    { id: "accounts" as const, label: "GL Account Mappings", icon: BookOpen, description: "Default inventory, revenue, and COGS accounts" },
   ]
 
   return (
@@ -864,7 +839,7 @@ export default function AdminSettings() {
                           <div>
                             <h3 className="text-lg font-bold text-black">Employment Income Tax Brackets</h3>
                             <p className="text-xs text-gray-400">
-                              Progressive tax rates and deductibles under Proclamation No. 1395/2025 applied to Taxable Base ((Basic + Allowances) - 7% Pension).
+                              Progressive tax rates and deductibles under Proclamation No. 1395/2025 applied to Taxable Base (Basic Salary + Taxable Allowances + Extras).
                             </p>
                           </div>
                         </div>
@@ -1075,9 +1050,22 @@ export default function AdminSettings() {
                                 <div>
                                   <div className="flex items-start justify-between gap-2 mb-3">
                                     <div>
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
-                                        {wh.code || "WH"}
-                                      </span>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-black/5 text-gray-700 border border-black/10">
+                                          {wh.code || wh.id}
+                                        </span>
+                                        {isExportWarehouse(wh, warehouses) ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                            <span className="size-1.5 rounded-full bg-emerald-600 inline-block" />
+                                            Export Warehouse
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-800 border border-indigo-300 flex items-center gap-1">
+                                            <span className="size-1.5 rounded-full bg-indigo-600 inline-block" />
+                                            Pharmaceutical Warehouse
+                                          </span>
+                                        )}
+                                      </div>
                                       <h4 className="text-base font-bold text-black mt-1.5 leading-snug">{wh.name}</h4>
                                     </div>
                                     <div className="relative">
@@ -1111,21 +1099,10 @@ export default function AdminSettings() {
                                       <MapPin className="size-3.5 text-gray-400 shrink-0" />
                                       <span className="truncate">{wh.location || "Location not specified"}</span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <Tag className="size-3.5 text-gray-400 shrink-0" />
-                                      <span>{wh.type || "Dry Storage / Processing"}</span>
-                                    </div>
-                                    {wh.manager && (
-                                      <div className="flex items-center gap-2">
-                                        <UserCheck className="size-3.5 text-gray-400 shrink-0" />
-                                        <span>{wh.manager}</span>
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
 
-                                <div className="flex items-center justify-between pt-3 border-t border-black/5 text-xs">
-                                  <span className="font-semibold text-gray-400">{wh.targetMarkets || "Domestic & Export"}</span>
+                                <div className="flex items-center justify-end pt-3 border-t border-black/5 text-xs">
                                   <button
                                     onClick={() => handleOpenEditWarehouseModal(wh)}
                                     className="px-3 py-1 rounded-xl bg-white border border-black/10 text-xs font-bold text-black hover:bg-black/5 transition-colors shadow-2xs"
@@ -1231,99 +1208,10 @@ export default function AdminSettings() {
                     </GlassCard>
                   </motion.div>
                 )}
-
-                {/* Tab 6: GL Account Mappings */}
-                {activeTab === "accounts" && (
-                  <motion.div key="accounts" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
-                    <GlassCard>
-                      <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
-                        <div className="p-2.5 rounded-2xl bg-indigo-100 text-indigo-700">
-                          <BookOpen className="size-5" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-black">Chart of Accounts GL Mappings</h3>
-                          <p className="text-xs text-gray-400">Map automated ERP transactions directly to corresponding General Ledger accounts.</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Inventory Asset Account</label>
-                          <select
-                            value={defaultInventoryAcc}
-                            onChange={(e) => setDefaultInventoryAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Inventory Account...</option>
-                            {accounts.filter((a) => a.account_type === "Asset" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Sales Revenue Account</label>
-                          <select
-                            value={defaultRevenueAcc}
-                            onChange={(e) => setDefaultRevenueAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Revenue Account...</option>
-                            {accounts.filter((a) => a.account_type === "Revenue" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Cost of Goods Sold (COGS) Account</label>
-                          <select
-                            value={defaultCogsAcc}
-                            onChange={(e) => setDefaultCogsAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select COGS Account...</option>
-                            {accounts.filter((a) => a.account_type === "Expense" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Damage / Adjustment Loss Account</label>
-                          <select
-                            value={defaultDamageAcc}
-                            onChange={(e) => setDefaultDamageAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Adjustment Account...</option>
-                            {accounts.filter((a) => a.account_type === "Expense" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Primary Settlement Bank / Cash Account</label>
-                          <select
-                            value={defaultCashAcc}
-                            onChange={(e) => setDefaultCashAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Cash/Bank Account...</option>
-                            {accounts.filter((a) => a.account_type === "Asset" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </GlassCard>
-                  </motion.div>
-                )}
               </AnimatePresence>
 
             {/* Bottom Action Buttons (for tabs with general form inputs) */}
-            {["general", "pension", "tax", "rates", "accounts"].includes(activeTab) && (
+            {["general", "pension", "tax", "rates"].includes(activeTab) && (
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   onClick={handleDiscardChanges}
@@ -1719,54 +1607,49 @@ export default function AdminSettings() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">Facility Type</label>
-                    <select
-                      value={whType}
-                      onChange={(e) => setWhType(e.target.value)}
-                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white"
+                {/* Dual Warehouse Operational Type Selector */}
+                <div>
+                  <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">
+                    Warehouse Operational Classification <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setWhType("EXPORT_WH")}
+                      className={cn(
+                        "p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer",
+                        whType === "EXPORT_WH"
+                          ? "bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs"
+                          : "bg-black/[0.02] border-black/10 hover:border-black/20"
+                      )}
                     >
-                      <option value="Dry Storage / Processing">Dry Storage / Processing</option>
-                      <option value="Bonded Export Warehouse">Bonded Export Warehouse</option>
-                      <option value="Regional Transit Depot">Regional Transit Depot</option>
-                      <option value="Cold / Climate Controlled">Cold / Climate Controlled</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">Operational Status</label>
-                    <select
-                      value={whStatus}
-                      onChange={(e) => setWhStatus(e.target.value)}
-                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Maintenance">Maintenance</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
-                  </div>
-                </div>
+                      <div className="flex items-center gap-2.5">
+                        <div className={cn("size-7 rounded-xl flex items-center justify-center text-xs font-bold", whType === "EXPORT_WH" ? "bg-emerald-600 text-white" : "bg-black/10 text-black")}>
+                          EXP
+                        </div>
+                        <span className="text-xs font-black text-black">Export Warehouse</span>
+                      </div>
+                      {whType === "EXPORT_WH" && <Check className="size-4 text-emerald-600" />}
+                    </button>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">Facility Specialization</label>
-                    <input
-                      type="text"
-                      value={whSpecialization}
-                      placeholder="e.g. Export Grade 1 & 2 Coffee"
-                      onChange={(e) => setWhSpecialization(e.target.value)}
-                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">Assigned Manager</label>
-                    <input
-                      type="text"
-                      value={whManager}
-                      placeholder="e.g. Dawit Tadesse"
-                      onChange={(e) => setWhManager(e.target.value)}
-                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setWhType("PHARMA_WH")}
+                      className={cn(
+                        "p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer",
+                        whType === "PHARMA_WH"
+                          ? "bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs"
+                          : "bg-black/[0.02] border-black/10 hover:border-black/20"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className={cn("size-7 rounded-xl flex items-center justify-center text-xs font-bold", whType === "PHARMA_WH" ? "bg-indigo-600 text-white" : "bg-black/10 text-black")}>
+                          PH
+                        </div>
+                        <span className="text-xs font-black text-black">Pharmaceutical Warehouse</span>
+                      </div>
+                      {whType === "PHARMA_WH" && <Check className="size-4 text-indigo-600" />}
+                    </button>
                   </div>
                 </div>
               </div>

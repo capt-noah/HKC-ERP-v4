@@ -4,11 +4,15 @@ import crypto from "node:crypto"
 
 // Master mapping from resource table name to Drizzle schema table object (for type-safe schema checks/migrations)
 export const tableMap = {
-  // Inventory (4)
+  // Inventory (8 Dedicated Relational Tables)
   warehouses: schema.warehouses,
-  inventory_products: schema.inventoryProducts,
+  export_products: schema.exportProducts,
+  pharma_products: schema.pharmaProducts,
+  pharma_product_batches: schema.pharmaProductBatches,
   stock_movements: schema.stockMovements,
   store_transfers: schema.storeTransfers,
+  store_transfer_items: schema.storeTransferItems,
+  export_warehouse_movements: schema.exportWarehouseMovements,
 
   // Sales & Purchasing (9)
   customers: schema.customers,
@@ -50,6 +54,17 @@ export function getDrizzleTable(tableName) {
   return tableMap[tableName] || null
 }
 
+function parseJsonField(val) {
+  if (typeof val === "string") {
+    try {
+      return JSON.parse(val)
+    } catch {
+      return val
+    }
+  }
+  return val
+}
+
 export function unwrapRow(row, storage) {
   if (!row) return null
   const isDoc = storage === "jsonb_document" || storage === "json_document"
@@ -62,12 +77,121 @@ export function unwrapRow(row, storage) {
         payload = {}
       }
     }
+    // Safeguard against nested payload wrapper
+    while (payload && typeof payload === "object" && payload.payload && typeof payload.payload === "object" && !Array.isArray(payload.payload)) {
+      payload = { ...payload, ...payload.payload }
+      delete payload.payload
+    }
     const merged = { ...(payload || {}), id: row.id || payload?.id }
     if (row.created_at && !merged.created_at) merged.created_at = row.created_at
     if (row.updated_at && !merged.updated_at) merged.updated_at = row.updated_at
     return merged
   }
-  return row
+
+  // Relational Row Unwrapping & Bidirectional CamelCase Normalization
+  const out = { ...row }
+
+  // Auto-parse any JSON fields
+  for (const k of ["batches", "wh1_entries", "bin_card_entries", "items", "payload", "lines"]) {
+    if (out[k] !== undefined) {
+      out[k] = parseJsonField(out[k])
+    }
+  }
+
+  // Normalization for inventory_products
+  if (out.warehouse_id !== undefined && out.warehouse === undefined) out.warehouse = out.warehouse_id
+  if (out.warehouse !== undefined && out.warehouse_id === undefined) out.warehouse_id = out.warehouse
+  if (out.shelf_number !== undefined && out.shelfNo === undefined) out.shelfNo = out.shelf_number
+  if (out.shelf_number !== undefined && out.shelf_no === undefined) out.shelf_no = out.shelf_number
+  if (out.strength !== undefined && out.dosage === undefined) out.dosage = out.strength
+  if (out.dosage_form !== undefined && out.dosageForm === undefined) out.dosageForm = out.dosage_form
+  if (out.quantity_per_pack !== undefined && out.quantityPerPack === undefined) out.quantityPerPack = Number(out.quantity_per_pack)
+  if (out.number_of_cartons !== undefined && out.numberOfCartons === undefined) out.numberOfCartons = Number(out.number_of_cartons)
+  if (out.unit_cost !== undefined) {
+    out.unitCost = Number(out.unit_cost)
+    out.unit_cost = Number(out.unit_cost)
+  }
+  if (out.selling_price !== undefined) {
+    out.sellingPrice = Number(out.selling_price)
+    out.selling_price = Number(out.selling_price)
+  }
+  if (out.quantity !== undefined) out.quantity = Number(out.quantity)
+  if (out.quantity_sold !== undefined) {
+    out.quantitySold = Number(out.quantity_sold)
+    out.quantity_sold = Number(out.quantity_sold)
+  }
+  if (out.total_quantity !== undefined) {
+    out.totalQuantity = Number(out.total_quantity)
+    out.total_quantity = Number(out.total_quantity)
+  }
+  if (out.total_stock_value !== undefined) {
+    out.totalStockValue = Number(out.total_stock_value)
+    out.total_stock_value = Number(out.total_stock_value)
+  }
+  if (out.reorder_level !== undefined) {
+    out.reorderLevel = Number(out.reorder_level)
+    out.reorder_level = Number(out.reorder_level)
+  }
+  if (out.min_stock_level !== undefined) {
+    out.minStockLevel = Number(out.min_stock_level)
+    out.min_stock_level = Number(out.min_stock_level)
+  }
+  if (out.sub_category !== undefined && out.subCategory === undefined) out.subCategory = out.sub_category
+  if (out.storage_condition !== undefined && out.storageCondition === undefined) out.storageCondition = out.storage_condition
+  if (out.supplier_id !== undefined && out.supplier === undefined) out.supplier = out.supplier_id
+  if (out.supplier_name !== undefined && out.supplierName === undefined) out.supplierName = out.supplier_name
+  if (out.wh1_entries !== undefined && out.wh1Entries === undefined) out.wh1Entries = out.wh1_entries
+  if (out.bin_card_entries !== undefined && out.binCardEntries === undefined) out.binCardEntries = out.bin_card_entries
+
+  // Normalization for stock_movements
+  if (out.product_id !== undefined && out.productId === undefined) out.productId = out.product_id
+  if (out.movement_type !== undefined && out.type === undefined) out.type = out.movement_type
+  if (out.movement_date !== undefined && out.date === undefined) out.date = out.movement_date
+  if (out.warehouse_id !== undefined) {
+    if (out.warehouseId === undefined) out.warehouseId = out.warehouse_id
+    if (out.fromWarehouse === undefined) out.fromWarehouse = out.warehouse_id
+    if (out.warehouse === undefined) out.warehouse = out.warehouse_id
+  }
+  if (out.batch_no !== undefined && out.batchNo === undefined) out.batchNo = out.batch_no
+  if (out.expiry_date !== undefined && out.expiryDate === undefined) out.expiryDate = out.expiry_date
+  if (out.quantity !== undefined) {
+    out.quantity = Number(out.quantity)
+    if (out.qty === undefined) out.qty = Number(out.quantity)
+  }
+  if (out.notes !== undefined) {
+    if (out.remarks === undefined) out.remarks = out.notes
+    if (out.reason === undefined) out.reason = out.notes
+  }
+  if (out.balance_after !== undefined) {
+    out.balanceAfter = Number(out.balance_after)
+    out.balance_after = Number(out.balance_after)
+  }
+  if (out.performed_by !== undefined) {
+    if (out.performedBy === undefined) out.performedBy = out.performed_by
+    if (out.nameEntered === undefined) out.nameEntered = out.performed_by
+  }
+  if (out.reference_type !== undefined && out.referenceType === undefined) out.referenceType = out.reference_type
+  if (out.reference_id !== undefined && out.reference === undefined) out.reference = out.reference_id
+
+  // Normalization for store_transfers
+  if (out.transfer_no !== undefined && out.transferNo === undefined) out.transferNo = out.transfer_no
+  if (out.from_warehouse_id !== undefined) {
+    if (out.fromWarehouse === undefined) out.fromWarehouse = out.from_warehouse_id
+    if (out.from_warehouse === undefined) out.from_warehouse = out.from_warehouse_id
+  }
+  if (out.to_warehouse_id !== undefined) {
+    if (out.toWarehouse === undefined) out.toWarehouse = out.to_warehouse_id
+    if (out.to_warehouse === undefined) out.to_warehouse = out.to_warehouse_id
+  }
+  if (out.request_date !== undefined) {
+    if (out.requestDate === undefined) out.requestDate = out.request_date
+    if (out.date === undefined) out.date = out.request_date
+  }
+  if (out.requested_by !== undefined && out.requestedBy === undefined) out.requestedBy = out.requested_by
+  if (out.approved_by !== undefined && out.approvedBy === undefined) out.approvedBy = out.approved_by
+  if (out.completed_date !== undefined && out.completedDate === undefined) out.completedDate = out.completed_date
+
+  return out
 }
 
 // ── Native Resilient MySQL CRUD Methods (Direct Pool Connection for Maximum Compatibility) ──
@@ -240,6 +364,137 @@ async function getTableColumns(tableName) {
   }
 }
 
+function sanitizeSqlValue(val) {
+  if (val === undefined) return null
+  if (val instanceof Date) return val
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+    const d = new Date(val)
+    if (!isNaN(d.getTime())) return d
+  }
+  if (typeof val === "object" && val !== null) {
+    return JSON.stringify(val)
+  }
+  return val
+}
+
+function normalizeBodyToDbColumns(body, validCols) {
+  if (!body || typeof body !== "object") return body
+  const normalized = {}
+
+  const aliases = {
+    warehouse: "warehouse_id",
+    warehouseId: "warehouse_id",
+    unitCost: "unit_cost",
+    sellingPrice: "selling_price",
+    quantitySold: "quantity_sold",
+    totalQuantity: "total_quantity",
+    totalStockValue: "total_stock_value",
+    reorderLevel: "reorder_level",
+    minStockLevel: "min_stock_level",
+    subCategory: "sub_category",
+    productType: "product_type",
+    storageCondition: "storage_condition",
+    supplier: "supplier_id",
+    supplierId: "supplier_id",
+    supplierName: "supplier_name",
+    wh1Entries: "wh1_entries",
+    binCardEntries: "bin_card_entries",
+    productId: "product_id",
+    productName: "product_name",
+    movementType: "movement_type",
+    balanceAfter: "balance_after",
+    batchNo: "batch_no",
+    batch_no: "batch_no",
+    qty: "quantity",
+    quantity: "quantity",
+    remarks: "notes",
+    reason: "notes",
+    expiryDate: "expiry_date",
+    referenceType: "reference_type",
+    referenceId: "reference_id",
+    reference: "reference_id",
+    performedBy: "performed_by",
+    nameEntered: "performed_by",
+    movementDate: "movement_date",
+    transferNo: "transfer_no",
+    fromWarehouse: "from_warehouse_id",
+    fromWarehouseId: "from_warehouse_id",
+    from_warehouse: "from_warehouse_id",
+    toWarehouse: "to_warehouse_id",
+    toWarehouseId: "to_warehouse_id",
+    to_warehouse: "to_warehouse_id",
+    requestDate: "request_date",
+    completedDate: "completed_date",
+    requestedBy: "requested_by",
+    approvedBy: "approved_by",
+    voucherNo: "voucher_no",
+    plateNumber: "plate_number",
+    grossQuantity: "gross_quantity",
+    rejectQuantity: "reject_quantity",
+    netQuantity: "net_quantity",
+    unitPrice: "unit_price",
+    createdBy: "created_by",
+    issuedBy: "requested_by",
+    receivedBy: "approved_by",
+    commodityType: "commodity_type",
+    cropYear: "crop_year",
+    cleanYieldPct: "clean_yield_pct",
+    moistureContent: "moisture_content",
+    driverName: "driver_name",
+    genericName: "generic_name",
+    dosageForm: "dosage_form",
+    dosage: "strength",
+    strength: "strength",
+    shelfNo: "shelf_number",
+    shelf_no: "shelf_number",
+    shelfNumber: "shelf_number",
+    warehouse: "warehouse_id",
+    warehouseId: "warehouse_id",
+    quantityPerPack: "quantity_per_pack",
+    numberOfCartons: "number_of_cartons",
+    shelfLifeMonths: "shelf_life_months",
+    mfgDate: "mfg_date",
+    qaStatus: "qa_status",
+    paymentType: "payment_type",
+    payment_type: "payment_type",
+    paymentTerms: "payment_terms",
+    payment_terms: "payment_terms",
+    amountPaid: "amount_paid",
+    amount_paid: "amount_paid",
+    balanceDue: "balance_due",
+    balance_due: "balance_due",
+    settlementStatus: "settlement_status",
+    settlement_status: "settlement_status",
+    dueDate: "due_date",
+    due_date: "due_date",
+    invoiceType: "invoice_type",
+    invoice_type: "invoice_type",
+    partyType: "party_type",
+    party_type: "party_type",
+    purchaseOrderId: "purchase_order_id",
+    purchase_order_id: "purchase_order_id",
+  }
+
+  for (const [key, val] of Object.entries(body)) {
+    if (validCols && validCols.has(key)) {
+      normalized[key] = val
+    } else if (aliases[key] && (!validCols || validCols.has(aliases[key]))) {
+      normalized[aliases[key]] = val
+    } else {
+      const snake = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+      if (validCols && validCols.has(snake)) {
+        normalized[snake] = val
+      }
+    }
+  }
+
+  if (body.id && !normalized.id) {
+    normalized.id = body.id
+  }
+
+  return normalized
+}
+
 export async function drizzleCreateRow({ resource, body }) {
   if (!resource || !resource.table) {
     return { status: 404, body: { error: `Invalid resource specification.` } }
@@ -251,7 +506,37 @@ export async function drizzleCreateRow({ resource, body }) {
 
   try {
     if (isDoc) {
-      const { id: _ignoredId, ...payloadData } = body || {}
+      let rawData = { ...(body || {}) }
+      if (rawData.payload && typeof rawData.payload === "object" && !Array.isArray(rawData.payload)) {
+        rawData = { ...rawData, ...rawData.payload }
+        delete rawData.payload
+      }
+      const { id: _ignoredId, ...payloadData } = rawData
+
+      // Server-side de-duplication for directory tables (suppliers & customers)
+      if (tableName === "suppliers" || tableName === "customers") {
+        const candidateName = (payloadData.name || payloadData.client_company_name || "").toLowerCase().trim()
+        if (candidateName) {
+          const [existingRows] = await pool.query(`SELECT id, payload FROM \`${tableName}\``)
+          for (const row of existingRows) {
+            let rowPayload = row.payload
+            if (typeof rowPayload === "string") {
+              try { rowPayload = JSON.parse(rowPayload) } catch {}
+            }
+            const existingName = (rowPayload?.name || rowPayload?.client_company_name || "").toLowerCase().trim()
+            if (existingName === candidateName || String(row.id) === String(id)) {
+              // Merge and update existing record rather than creating duplicate
+              const merged = { ...(rowPayload || {}), ...payloadData, id: row.id }
+              await pool.query(
+                `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
+                [JSON.stringify(merged), row.id]
+              )
+              return { status: 200, body: merged }
+            }
+          }
+        }
+      }
+
       const payloadString = JSON.stringify({ id, ...payloadData })
       await pool.query(
         `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))`,
@@ -260,15 +545,16 @@ export async function drizzleCreateRow({ resource, body }) {
       return { status: 200, body: { id, ...payloadData } }
     } else {
       const validCols = await getTableColumns(tableName)
-      const fields = Object.keys(body).filter((k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k)))
+      const normalizedBody = normalizeBodyToDbColumns(body, validCols)
+      if (!normalizedBody.id) normalizedBody.id = id
+
+      const fields = Object.keys(normalizedBody).filter(
+        (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
+      )
       if (fields.length === 0) {
-        return { status: 200, body: { id, ...body } }
+        return { status: 200, body: unwrapRow({ id, ...body }, "relational") }
       }
-      const values = fields.map((k) => {
-        const val = body[k]
-        if (typeof val === "object" && val !== null) return JSON.stringify(val)
-        return val
-      })
+      const values = fields.map((k) => sanitizeSqlValue(normalizedBody[k]))
       const placeholders = fields.map(() => "?").join(", ")
       const colNames = fields.map((f) => `\`${f}\``).join(", ")
 
@@ -276,7 +562,7 @@ export async function drizzleCreateRow({ resource, body }) {
         `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders})`,
         values
       )
-      return { status: 200, body: { id, ...body } }
+      return { status: 200, body: unwrapRow({ ...normalizedBody, id }, "relational") }
     }
   } catch (err) {
     console.error(`[MYSQL CREATE ERROR] ${tableName}:`, err)
@@ -299,7 +585,12 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const existingPayload = (getRes.status === 200 && getRes.body) ? getRes.body : {}
       const targetId = existingPayload.id || cleanId
 
-      const mergedPayload = { ...existingPayload, ...body, id: targetId }
+      let rawUpdate = { ...(body || {}) }
+      if (rawUpdate.payload && typeof rawUpdate.payload === "object" && !Array.isArray(rawUpdate.payload)) {
+        rawUpdate = { ...rawUpdate, ...rawUpdate.payload }
+        delete rawUpdate.payload
+      }
+      const mergedPayload = { ...existingPayload, ...rawUpdate, id: targetId }
       await pool.query(
         `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
         [JSON.stringify(mergedPayload), String(targetId)]
@@ -312,21 +603,21 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const targetDbId = existingRow?.id || cleanId
 
       const validCols = await getTableColumns(tableName)
-      const fields = Object.keys(body).filter((k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k)))
+      const normalizedBody = normalizeBodyToDbColumns(body, validCols)
+
+      const fields = Object.keys(normalizedBody).filter(
+        (k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k))
+      )
       if (fields.length === 0) {
-        return { status: 200, body: { id: targetDbId, ...body } }
+        return { status: 200, body: unwrapRow({ id: targetDbId, ...existingRow, ...body }, "relational") }
       }
 
       const setClauses = fields.map((f) => `\`${f}\` = ?`).join(", ")
-      const values = fields.map((k) => {
-        const val = body[k]
-        if (typeof val === "object" && val !== null) return JSON.stringify(val)
-        return val
-      })
+      const values = fields.map((k) => sanitizeSqlValue(normalizedBody[k]))
       values.push(String(targetDbId))
 
       await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)
-      return { status: 200, body: { id: targetDbId, ...body } }
+      return { status: 200, body: unwrapRow({ id: targetDbId, ...existingRow, ...normalizedBody }, "relational") }
     }
   } catch (err) {
     console.error(`[MYSQL UPDATE ERROR] ${tableName}:${id}:`, err)
@@ -378,15 +669,17 @@ export async function drizzleReplaceRows({ resource, body }) {
           [id, payloadString]
         )
       } else {
-        const fields = Object.keys(item)
+        const validCols = await getTableColumns(tableName)
+        const normalizedItem = normalizeBodyToDbColumns(item, validCols)
+        if (!normalizedItem.id) normalizedItem.id = id
+
+        const fields = Object.keys(normalizedItem).filter(
+          (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
+        )
         const colNames = fields.map((f) => `\`${f}\``).join(", ")
         const placeholders = fields.map(() => "?").join(", ")
         const updates = fields.filter((f) => f !== "id").map((f) => `\`${f}\` = VALUES(\`${f}\`)`).join(", ")
-        const values = fields.map((k) => {
-          const val = item[k]
-          if (typeof val === "object" && val !== null) return JSON.stringify(val)
-          return val
-        })
+        const values = fields.map((k) => sanitizeSqlValue(normalizedItem[k]))
 
         const sql = `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders}) ${
           updates.length > 0 ? `ON DUPLICATE KEY UPDATE ${updates}` : ""

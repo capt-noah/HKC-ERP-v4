@@ -404,23 +404,23 @@ export default function InventoryDashboard() {
                     <button
                       onClick={() => setExpiryTierTab("CRITICAL")}
                       className={`flex-1 py-1 px-1.5 rounded-lg transition-all text-center ${
-                        expiryTierTab === "CRITICAL" ? "bg-white text-amber-900 shadow-xs font-black" : "hover:text-zinc-900"
+                        expiryTierTab === "CRITICAL" ? "bg-white text-rose-700 shadow-xs font-black" : "hover:text-zinc-900"
                       }`}
                     >
-                      Critical ({expirySummary.totalCriticalCount})
+                      Critical ≤6mo ({expirySummary.totalCriticalCount})
                     </button>
                     <button
                       onClick={() => setExpiryTierTab("WARNING")}
                       className={`flex-1 py-1 px-1.5 rounded-lg transition-all text-center ${
-                        expiryTierTab === "WARNING" ? "bg-white text-yellow-900 shadow-xs font-black" : "hover:text-zinc-900"
+                        expiryTierTab === "WARNING" ? "bg-white text-amber-800 shadow-xs font-black" : "hover:text-zinc-900"
                       }`}
                     >
-                      Watch ({expirySummary.totalWarningCount})
+                      Watch ≤9mo ({expirySummary.totalWarningCount})
                     </button>
                     <button
                       onClick={() => setExpiryTierTab("EXPIRED")}
                       className={`flex-1 py-1 px-1.5 rounded-lg transition-all text-center ${
-                        expiryTierTab === "EXPIRED" ? "bg-white text-rose-900 shadow-xs font-black" : "hover:text-zinc-900"
+                        expiryTierTab === "EXPIRED" ? "bg-white text-rose-950 shadow-xs font-black" : "hover:text-zinc-900"
                       }`}
                     >
                       Expired ({expirySummary.totalExpiredCount})
@@ -443,7 +443,7 @@ export default function InventoryDashboard() {
                       <div className="py-12 text-center text-zinc-400">
                         <Clock className="size-8 mx-auto mb-2 text-zinc-300 stroke-1" />
                         <p className="text-xs font-bold">No {expiryTierTab !== "ALL" ? expiryTierTab.toLowerCase() : "near-expiry"} batches found.</p>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">All inventory batches are within healthy shelf life thresholds.</p>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">All WH2 & WH3 inventory batches are within healthy shelf life thresholds (&gt; 9 months).</p>
                       </div>
                     ) : (
                       expirySummary.items.slice(0, 6).map((alert) => (
@@ -457,9 +457,9 @@ export default function InventoryDashboard() {
                             {alert.tier === "EXPIRED" ? (
                               <AlertOctagon className="size-4 text-rose-600" />
                             ) : alert.tier === "CRITICAL" ? (
-                              <AlertTriangle className="size-4 text-amber-600" />
+                              <AlertTriangle className="size-4 text-rose-600" />
                             ) : (
-                              <Clock className="size-4 text-yellow-600" />
+                              <Clock className="size-4 text-amber-600" />
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -477,15 +477,19 @@ export default function InventoryDashboard() {
                             <span
                               className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
                                 alert.tier === "EXPIRED"
-                                  ? "bg-rose-50 text-rose-800 border-rose-200"
+                                  ? "bg-rose-100 text-rose-800 border-rose-300"
                                   : alert.tier === "CRITICAL"
-                                  ? "bg-amber-100 text-amber-900 border-amber-300"
-                                  : "bg-yellow-50 text-yellow-800 border-yellow-200"
+                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                  : "bg-amber-50 text-amber-800 border-amber-200"
                               }`}
                             >
                               {alert.daysRemaining <= 0
                                 ? "EXPIRED"
-                                : `${alert.daysRemaining}d left`}
+                                : alert.daysRemaining <= 30
+                                ? `${alert.daysRemaining}d (Critical)`
+                                : alert.tier === "CRITICAL"
+                                ? `${alert.monthsRemaining} mo (Critical)`
+                                : `${alert.monthsRemaining} mo (Watch)`}
                             </span>
                             <p className="text-[9px] font-black font-mono text-zinc-500 mt-1">{alert.quantity.toLocaleString()} {alert.unit}</p>
                           </div>

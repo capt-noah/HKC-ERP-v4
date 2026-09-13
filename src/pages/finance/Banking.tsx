@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import {
-  Landmark,
-  ArrowRightLeft,
   CheckCircle2,
   Download,
 } from "lucide-react"
@@ -38,7 +36,6 @@ export default function Banking() {
   const store = useFinanceStore()
   const isLoading = store.isLoading()
 
-  const [activeTab, setActiveTab] = useState<"BankRecon" | "Reconciliation">("BankRecon")
   const [clearedLineIds, setClearedLineIds] = useState<Set<string>>(new Set())
   const [bankSearch, setBankSearch] = useState("")
   const [bankDateFilter, setBankDateFilter] = useState("ALL")
@@ -46,9 +43,7 @@ export default function Banking() {
   const [bankCustomEnd, setBankCustomEnd] = useState("")
   const [bankStatusFilter, setBankStatusFilter] = useState("ALL")
   const [bankTypeFilter, setBankTypeFilter] = useState("ALL")
-  const [allocSearch, setAllocSearch] = useState("")
 
-  const invoices = store.getInvoices()
   const accounts = store.getAccounts()
   const entries = store.getJournalEntries()
   const lines = store.getJournalEntryLines()
@@ -74,16 +69,6 @@ export default function Banking() {
       line.reference.toLowerCase().includes(q) ||
       line.payee.toLowerCase().includes(q) ||
       line.date.includes(q)
-    )
-  })
-
-  const openInvoices = invoices.filter((inv) => {
-    if (inv.balance_due <= 0) return false
-    if (!allocSearch.trim()) return true
-    const q = allocSearch.toLowerCase()
-    return (
-      inv.invoice_number.toLowerCase().includes(q) ||
-      inv.customer_name.toLowerCase().includes(q)
     )
   })
 
@@ -139,9 +124,9 @@ export default function Banking() {
         {/* Header */}
         <motion.div variants={fade} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">Banking & Treasury Management</h1>
+            <h1 className="text-3xl font-black text-black tracking-tight">Bank Reconciliation</h1>
             <p className="text-xs text-gray-500 font-medium mt-0.5">
-              Reconcile bank statements and match customer payments.
+              Reconcile bank statements against general ledger cash accounts and track cleared transactions.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -149,48 +134,7 @@ export default function Banking() {
           </div>
         </motion.div>
 
-        {/* Tab Selection Bar */}
-        <motion.div variants={fade} className="flex border-b border-zinc-200/60 mb-6 pb-px items-center justify-between overflow-x-auto scrollbar-none">
-          <div className="flex gap-1 min-w-max">
-            {[
-              { id: "BankRecon", label: "Bank Reconciliation", icon: Landmark },
-              { id: "Reconciliation", label: "Payment & Account Allocation", icon: ArrowRightLeft },
-            ].map((tab) => {
-              const isActive = activeTab === tab.id
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-black relative tracking-tight transition-colors uppercase whitespace-nowrap"
-                >
-                  <Icon className={`size-3.5 ${isActive ? "text-emerald-600" : "text-zinc-400"}`} />
-                  <span className={isActive ? "text-zinc-950 font-black" : "text-zinc-400 hover:text-zinc-700"}>
-                    {tab.label}
-                  </span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="banking-tabs"
-                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600"
-                    />
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </motion.div>
-
-        {/* Tab Content */}
-        <AnimatePresence mode="wait">
-          {activeTab === "BankRecon" && (
-            <motion.div
-              key="bank-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
+        <motion.div variants={fade} className="flex flex-col gap-4">
               {/* KPI Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <GlassCard className="p-4">
@@ -419,59 +363,7 @@ export default function Banking() {
                   </div>
                 )}
               </GlassCard>
-            </motion.div>
-          )}
-
-          {activeTab === "Reconciliation" && (
-            <motion.div
-              key="recon-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
-              <GlassCard className="flex flex-col">
-                <FinanceTableToolbar
-                  title="Payment Reconciliation & Invoice Allocation"
-                  subtitle="Match unallocated customer deposits against open AR invoices."
-                  searchValue={allocSearch}
-                  onSearchChange={setAllocSearch}
-                  searchPlaceholder="Search invoice #, customer..."
-                />
-              </GlassCard>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <GlassCard className="p-4 flex flex-col gap-3">
-                  <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">Unallocated Receipts</h4>
-                  <div className="flex flex-col gap-2 text-xs">
-                    {store.getPayments().filter((payment) => payment.direction === "Received" && !payment.linked_invoice_id).length === 0 ? <p className="py-4 text-center text-zinc-400">No unallocated receipts.</p> : store.getPayments().filter((payment) => payment.direction === "Received" && !payment.linked_invoice_id).map((payment) => <div key={payment.id} className="p-3 bg-zinc-50/80 rounded-xl border border-zinc-200/60 flex justify-between items-center"><div><div className="font-bold text-zinc-900">{payment.reference}</div><div className="text-[10px] text-zinc-400">Received {payment.date} via {payment.method}</div></div><span className="font-mono font-bold text-emerald-700">ETB {payment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>)}
-                  </div>
-                </GlassCard>
-
-                <GlassCard className="p-4 flex flex-col gap-3">
-                  <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">Open Outstanding Invoices</h4>
-                  <div className="flex flex-col gap-2 text-xs max-h-[350px] overflow-y-auto">
-                    {openInvoices.map((inv) => (
-                      <div key={inv.id} className="p-3 bg-zinc-50/80 rounded-xl border border-zinc-200/60 flex justify-between items-center">
-                        <div>
-                          <div className="font-bold text-zinc-900">{inv.invoice_number} | {inv.customer_name}</div>
-                          <div className="text-[10px] text-zinc-400">Due {inv.due_date} • Balance: ETB {inv.balance_due.toLocaleString()}</div>
-                        </div>
-                        <button
-                          onClick={() => showToast("Payment Allocated", "success", `Allocated receipt against invoice ${inv.invoice_number}.`)}
-                          className="px-3 py-1 rounded-full bg-black text-white text-[10px] font-bold hover:bg-zinc-800 transition-all"
-                        >
-                          Allocate
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </GlassCard>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </motion.div>
       </motion.div>
     </div>
   )

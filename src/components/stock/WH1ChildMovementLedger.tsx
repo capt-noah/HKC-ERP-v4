@@ -1,15 +1,14 @@
-import { ArrowDownLeft, ArrowUpRight, Printer, Edit3 } from "lucide-react"
+import { ArrowDownLeft, ArrowUpRight, MinusCircle, Edit3 } from "lucide-react"
 import type { Product, WH1Entry, BinCardMovementEntry } from "@/lib/erpStore"
 
 interface WH1ChildMovementLedgerProps {
   product: Product
   onEditEntry?: (product: Product, entry: WH1Entry) => void
-  onPrintGRV?: (product: Product, entry?: WH1Entry) => void
 }
 
 interface UnifiedWH1Row {
   id: string
-  type: "entry" | "leave"
+  type: "entry" | "leave" | "reject"
   date: string
   voucherNo: string
   party: string
@@ -26,62 +25,95 @@ interface UnifiedWH1Row {
 export default function WH1ChildMovementLedger({
   product,
   onEditEntry,
-  onPrintGRV,
 }: WH1ChildMovementLedgerProps) {
-  // Build unified transaction list from binCardEntries or wh1Entries
+  // Build unified transaction list by combining BOTH inbound arrival entries, outbound leaves, and reject losses
   const rows: UnifiedWH1Row[] = (() => {
-    const binEntries = product.binCardEntries || []
     const wh1Entries = product.wh1Entries || []
+    const binEntries = product.binCardEntries || []
 
-    if (binEntries.length > 0) {
-      let runningBal = 0
-      return binEntries.map((rec, idx) => {
-        const isEntry = Number(rec.qtyReceived || 0) > 0 || rec.type === "entry"
-        const qtyIn = Number(rec.qtyReceived || 0)
-        const qtyOut = Number(rec.qtyIssued || 0)
-        runningBal = rec.balance !== undefined && rec.balance !== null ? Number(rec.balance) : runningBal + qtyIn - qtyOut
-
-        // Attempt to find matching wh1Entry for editing/printing
-        const matchingWH1 = wh1Entries.find(
-          (w) => (w.voucherNo && rec.voucherNo && w.voucherNo === rec.voucherNo) || w.entryId === rec.id
-        ) || wh1Entries[idx]
-
-        return {
-          id: rec.id || `row-${idx}`,
-          type: isEntry ? "entry" : "leave",
-          date: rec.date || "—",
-          voucherNo: rec.voucherNo || (rec.batchNo?.startsWith("GRV-") ? rec.batchNo.slice(4) : rec.batchNo || "—"),
-          party: rec.party || (isEntry ? "Supplier Arrival" : "Customer Dispatch"),
-          plateNumber: rec.plateNumber || (matchingWH1?.plateNumber || "—"),
-          qtyIn,
-          qtyOut,
-          balance: runningBal,
-          unitPrice: Number(rec.unitPrice || product.unitCost || 0),
-          remark: rec.remark || "",
-          rawEntry: matchingWH1,
-          rawBinEntry: rec,
-        }
-      })
-    }
-
-    // Fallback: If only wh1Entries exist (pre-existing test data)
-    let runningBal = 0
-    return wh1Entries.map((e, idx) => {
-      const qtyIn = Number(e.quantityReceived || 0)
-      runningBal += qtyIn
+    // 1. Inbound truckload entries from wh1Entries
+    const inboundRows: UnifiedWH1Row[] = wh1Entries.map((e, idx) => {
+      const eAny = e as any
+      const isReject = eAny.type === "reject" || Boolean(eAny.isReject)
+      const isLeave = eAny.type === "leave" || (Number(eAny.quantityIssued || 0) > 0 && Number(e.quantityReceived || 0) === 0)
+      const qtyIn = isReject || isLeave ? 0 : Number(e.quantityReceived || 0)
+      const qtyOut = isReject ? Number(eAny.rejectQuantity || eAny.quantityIssued || e.quantityReceived || 0) : isLeave ? Number(eAny.quantityIssued || 0) : 0
       return {
-        id: e.entryId || `entry-${idx}`,
-        type: "entry" as const,
-        date: e.entryDate || product.entryDate || "—",
-        voucherNo: e.voucherNo ? `No. ${e.voucherNo}` : "—",
-        party: e.customer || "Supplier Arrival",
-        plateNumber: e.plateNumber || "—",
+        id: e.entryId || `wh1e-${idx}`,
+        type: isReject ? ("reject" as const) : isLeave ? ("leave" as const) : ("entry" as const),
+        date: e.entryDate || eAny.date || product.entryDate || "—",
+        voucherNo: e.voucherNo ? (e.voucherNo.startsWith("No.") ? e.voucherNo : `No. ${e.voucherNo}`) : "—",
+        party: e.customer || eAny.supplier || eAny.party || (isReject ? "Cleaning Rejection" : isLeave ? "Customer Dispatch" : "Supplier Arrival"),
+        plateNumber: e.plateNumber || product.plateNumber || "—",
         qtyIn,
-        qtyOut: 0,
-        balance: runningBal,
+        qtyOut,
+        balance: 0,
         unitPrice: Number(e.unitPrice || product.unitCost || 0),
-        remark: e.notes || "",
+        remark: e.notes || eAny.remark || "",
         rawEntry: e,
+      }
+    })
+
+    // 2. Outbound leave entries and reject losses from binCardEntries
+    const binRows: UnifiedWH1Row[] = []
+    binEntries.forEach((rec, idx) => {
+      const isReject = (rec.type as string) === "reject" || (rec.remark && /reject|loss|cleaning/i.test(rec.remark))
+      const isEntry = !isReject && (Number(rec.qtyReceived || 0) > 0 || rec.type === "entry")
+      const qtyIn = isReject ? 0 : Number(rec.qtyReceived || 0)
+      const qtyOut = Number(rec.qtyIssued || 0)
+
+      // Avoid duplicating an inbound arrival if already in inboundRows
+      if (isEntry) {
+        const isDuplicate = inboundRows.some(
+          (ir) =>
+            ir.id === rec.id ||
+            (rec.voucherNo && ir.voucherNo.includes(rec.voucherNo)) ||
+            (rec.party && ir.party === rec.party && ir.qtyIn === qtyIn)
+        )
+        if (isDuplicate) return
+      }
+
+      // Check if it matches a wh1Entry
+      const matchingWH1 = wh1Entries.find(
+        (w) => (w.voucherNo && rec.voucherNo && w.voucherNo === rec.voucherNo) || w.entryId === rec.id
+      )
+
+      binRows.push({
+        id: rec.id || `bin-${idx}`,
+        type: isReject ? ("reject" as const) : isEntry ? ("entry" as const) : ("leave" as const),
+        date: rec.date || "—",
+        voucherNo: rec.voucherNo || (rec.batchNo?.startsWith("GRV-") ? rec.batchNo.slice(4) : rec.batchNo || "—"),
+        party: rec.party || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
+        plateNumber: rec.plateNumber || (matchingWH1?.plateNumber || "—"),
+        qtyIn,
+        qtyOut,
+        balance: 0,
+        unitPrice: Number(rec.unitPrice || product.unitCost || 0),
+        remark: rec.remark || "",
+        rawEntry: matchingWH1,
+        rawBinEntry: rec,
+      })
+    })
+
+    // Combine: Chronologically ordered stock movement transactions
+    const allRows = [...inboundRows, ...binRows]
+
+    allRows.sort((a, b) => {
+      const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
+      const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      if (a.type === "entry" && b.type !== "entry") return -1
+      if (a.type !== "entry" && b.type === "entry") return 1
+      return 0
+    })
+
+    // 3. Compute dynamic sequential running balance
+    let runningBal = 0
+    return allRows.map((row) => {
+      runningBal += row.qtyIn - row.qtyOut
+      return {
+        ...row,
+        balance: runningBal,
       }
     })
   })()
@@ -107,7 +139,7 @@ export default function WH1ChildMovementLedger({
                 <th className="py-3 px-4">Customer / Supplier</th>
                 <th className="py-3 px-4">Truck Plate</th>
                 <th className="py-3 px-4 text-right text-emerald-700">Qty In (+)</th>
-                <th className="py-3 px-4 text-right text-amber-800">Qty Out (-)</th>
+                <th className="py-3 px-4 text-right text-rose-700">Qty Out / Loss (-)</th>
                 <th className="py-3 px-4 text-right text-zinc-950 bg-zinc-100/50">Running Balance</th>
                 <th className="py-3 px-4 text-right">Unit Price</th>
                 <th className="py-3 px-4 text-center">Actions</th>
@@ -116,14 +148,17 @@ export default function WH1ChildMovementLedger({
             <tbody className="divide-y divide-zinc-150">
               {rows.map((row) => {
                 const isEntry = row.type === "entry"
+                const isReject = row.type === "reject"
 
                 return (
                   <tr
                     key={row.id}
                     className={`transition-colors border-b border-zinc-100/80 ${
                       isEntry
-                        ? "border-l-[3px] border-l-emerald-500 hover:bg-emerald-50/20"
-                        : "border-l-[3px] border-l-amber-500 hover:bg-amber-50/20"
+                        ? "border-l-[3px] border-l-emerald-500 bg-emerald-50/20 hover:bg-emerald-50/40"
+                        : isReject
+                        ? "border-l-[3px] border-l-rose-600 bg-rose-50/30 hover:bg-rose-50/50"
+                        : "border-l-[3px] border-l-amber-500 bg-amber-50/20 hover:bg-amber-50/40"
                     }`}
                   >
                     {/* Directional Visual Micro-Pill */}
@@ -131,6 +166,10 @@ export default function WH1ChildMovementLedger({
                       {isEntry ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200/60 shadow-2xs">
                           <ArrowDownLeft className="size-3 text-emerald-600" /> Entry
+                        </span>
+                      ) : isReject ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
+                          <MinusCircle className="size-3 text-rose-600" /> Reject Loss
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200/60 shadow-2xs">
@@ -153,11 +192,19 @@ export default function WH1ChildMovementLedger({
                     <td className="py-2.5 px-4 font-mono font-bold whitespace-nowrap">
                       {isEntry ? (
                         <span className="text-rose-700">
-                          {row.voucherNo ? (row.voucherNo.startsWith("No.") ? row.voucherNo : `No. ${row.voucherNo}`) : "—"}
+                          {row.voucherNo && row.voucherNo !== "—" && row.voucherNo !== "N/A"
+                            ? (row.voucherNo.startsWith("No.") ? row.voucherNo : `No. ${row.voucherNo}`)
+                            : "—"}
                         </span>
                       ) : (
                         <span className="text-zinc-900 font-black">
-                          {row.voucherNo ? (row.voucherNo.startsWith("FS-") ? row.voucherNo : `FS-${row.voucherNo}`) : "—"}
+                          {(() => {
+                            if (!row.voucherNo || row.voucherNo === "—" || row.voucherNo === "N/A") {
+                              const match = row.remark?.match(/(FS-[A-Z0-9-]+|SO-[A-Z0-9-]+)/i)
+                              return match ? match[1] : "—"
+                            }
+                            return row.voucherNo.startsWith("FS-") ? row.voucherNo : `FS-${row.voucherNo}`
+                          })()}
                         </span>
                       )}
                     </td>
@@ -201,29 +248,15 @@ export default function WH1ChildMovementLedger({
                     {/* Actions */}
                     <td className="py-2.5 px-4 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
-                        {isEntry && row.rawEntry && (
-                          <>
-                            {onPrintGRV && (
-                              <button
-                                type="button"
-                                onClick={() => onPrintGRV(product, row.rawEntry)}
-                                className="px-2 py-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-[10px] font-bold inline-flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                                title="Print Receiving Voucher"
-                              >
-                                <Printer className="size-3 text-zinc-500" /> GRV
-                              </button>
-                            )}
-                            {onEditEntry && (
-                              <button
-                                type="button"
-                                onClick={() => onEditEntry(product, row.rawEntry!)}
-                                className="px-2 py-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-[10px] font-bold inline-flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                                title="Edit Entry Details"
-                              >
-                                <Edit3 className="size-3 text-zinc-500" /> Edit
-                              </button>
-                            )}
-                          </>
+                        {isEntry && row.rawEntry && onEditEntry && (
+                          <button
+                            type="button"
+                            onClick={() => onEditEntry(product, row.rawEntry!)}
+                            className="px-2 py-1 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-[10px] font-bold inline-flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                            title="Edit Entry Details"
+                          >
+                            <Edit3 className="size-3 text-zinc-500" /> Edit
+                          </button>
                         )}
                         {!isEntry && (
                           <span className="text-[10px] text-zinc-400 italic">Dispatched</span>

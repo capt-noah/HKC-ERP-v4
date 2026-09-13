@@ -6,7 +6,6 @@ import {
   Search,
   Plus,
   Edit,
-  Trash2,
   Upload,
   CheckCircle2,
   ShieldCheck,
@@ -28,6 +27,7 @@ import { useErpStore, getTradeLicenseStatus, type Customer, type Supplier } from
 import { isWH1 } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
+import { uploadFile } from "@/lib/fileUpload"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
@@ -154,22 +154,24 @@ export default function PartnersRegistry() {
     setShowAddSupplierModal(true)
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "supplier" = "trade") => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "supplier" = "trade") => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = (reader.result as string) || ""
+    try {
+      const folder = fileType === "supplier" ? "suppliers" : "customers"
+      const res = await uploadFile(file, folder)
       if (fileType === "supplier") {
-        setSuppTradePaperName(file.name)
-        setSuppTradePaperUrl(url)
+        setSuppTradePaperName(res.originalName)
+        setSuppTradePaperUrl(res.url)
       } else {
-        setCustTradePaperName(file.name)
-        setCustTradePaperUrl(url)
+        setCustTradePaperName(res.originalName)
+        setCustTradePaperUrl(res.url)
         setIsNewlyUploadedCustLicense(true)
       }
+    } catch (err: any) {
+      console.error("File upload failed:", err)
+      showToast("Upload Failed", "warning", err.message || "Failed to upload file")
     }
-    reader.readAsDataURL(file)
   }
 
   const handleSaveCustomer = async (e: React.FormEvent) => {
@@ -387,7 +389,7 @@ export default function PartnersRegistry() {
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">Total Registered Suppliers</span>
               <p className="text-xl sm:text-2xl font-black font-mono text-zinc-900 mt-0.5">{suppliers.length}</p>
             </div>
-            <div className="p-2.5 sm:p-3 rounded-2xl bg-zinc-100 text-zinc-700">
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-zinc-100 text-zinc-800">
               <Building2 className="size-4 sm:size-5" />
             </div>
           </GlassCard>
@@ -395,11 +397,11 @@ export default function PartnersRegistry() {
           <GlassCard className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">Active Trade Licenses</span>
-              <p className="text-xl sm:text-2xl font-black font-mono text-emerald-700 mt-0.5">
+              <p className="text-xl sm:text-2xl font-black font-mono text-purple-700 mt-0.5">
                 {customers.filter((c) => c.tradePaperFileName).length + suppliers.filter((s) => s.tradePaperFileName).length}
               </p>
             </div>
-            <div className="p-2.5 sm:p-3 rounded-2xl bg-emerald-100 text-emerald-700">
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-purple-100 text-purple-700">
               <ShieldCheck className="size-4 sm:size-5" />
             </div>
           </GlassCard>
@@ -429,7 +431,7 @@ export default function PartnersRegistry() {
                     : "text-zinc-600 hover:text-zinc-900"
                 }`}
               >
-                <Building2 className="size-3.5 text-zinc-600" /> Suppliers ({suppliers.length})
+                <Building2 className="size-3.5 text-zinc-700" /> Suppliers ({suppliers.length})
               </button>
             </div>
 
@@ -597,14 +599,6 @@ export default function PartnersRegistry() {
                             >
                               <Edit className="size-3 text-zinc-700" /> Edit
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCustomer(c)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                              title="Delete Customer"
-                            >
-                              <Trash2 className="size-3 text-rose-600" /> Delete
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -680,7 +674,7 @@ export default function PartnersRegistry() {
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           {s.tradePaperFileName ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200">
                               <CheckCircle2 className="size-3 text-emerald-600" /> {s.tradePaperFileName}
                             </span>
                           ) : (
@@ -698,14 +692,6 @@ export default function PartnersRegistry() {
                               title="Edit Supplier"
                             >
                               <Edit className="size-3 text-zinc-700" /> Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSupplier(s)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                              title="Delete Supplier"
-                            >
-                              <Trash2 className="size-3 text-rose-600" /> Delete
                             </button>
                           </div>
                         </td>
@@ -832,7 +818,7 @@ export default function PartnersRegistry() {
                 title={editingCustomer ? `Edit Customer: ${editingCustomer.name}` : "Onboard New Customer"}
                 subtitle={editingCustomer ? `ID: ${editingCustomer.id} • ${editingCustomer.category}` : "Register customer profile and default Trade License for future orders."}
                 onClose={() => setShowAddCustomerModal(false)}
-                onRequestDelete={editingCustomer ? () => setDeletingCustomer(editingCustomer) : undefined}
+                onRequestDelete={editingCustomer ? () => handleDeleteCustomer(editingCustomer) : undefined}
                 deleteLabel="Delete Customer Profile"
               />
 
@@ -990,7 +976,7 @@ export default function PartnersRegistry() {
                           {!isWh1 && editingCustomer && getTradeLicenseStatus(editingCustomer, custWarehouseTarget).status === "expired" && !isNewlyUploadedCustLicense && custTradePaperName && (
                             <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
                               <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
-                              <span>This trade license has expired (&gt;6 months / 180 days). Please select a renewed file to upload.</span>
+                              <span>This trade license has expired (&gt;6 months). Please select a renewed file to upload.</span>
                             </div>
                           )}
                           <div className="flex items-center gap-2 pt-1">
@@ -1055,7 +1041,7 @@ export default function PartnersRegistry() {
                 title={editingSupplier ? `Edit Supplier: ${editingSupplier.name}` : "Onboard New Supplier"}
                 subtitle={editingSupplier ? `ID: ${editingSupplier.id} • ${editingSupplier.category}` : "Register supplier details and contact profile."}
                 onClose={() => setShowAddSupplierModal(false)}
-                onRequestDelete={editingSupplier ? () => setDeletingSupplier(editingSupplier) : undefined}
+                onRequestDelete={editingSupplier ? () => handleDeleteSupplier(editingSupplier) : undefined}
                 deleteLabel="Delete Supplier Profile"
               />
 
@@ -1159,8 +1145,8 @@ export default function PartnersRegistry() {
                       <span className="text-[10px] text-zinc-500 font-medium block">Pre-attached automatically for import Purchase Orders</span>
                     </div>
                     {suppTradePaperName && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
-                        <CheckCircle2 className="size-3" /> Attached
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                        <CheckCircle2 className="size-3 text-emerald-600" /> Attached
                       </span>
                     )}
                   </div>
@@ -1179,14 +1165,14 @@ export default function PartnersRegistry() {
                     type="button"
                     disabled={isSubmittingSupplier}
                     onClick={() => setShowAddSupplierModal(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
+                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmittingSupplier}
-                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {isSubmittingSupplier ? <LoadingDots color="bg-white" size="sm" /> : (editingSupplier ? "Save Changes" : "Create Supplier")}
                   </button>
